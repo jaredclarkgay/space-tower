@@ -41,11 +41,11 @@ export function renderPanel(){
   bpSlots.innerHTML='';
   for(let bi=0;bi<BPF;bi++){const m=S.modules[fi][bi],div=document.createElement('div'),win=isWinBlock(bi),elev=isElevBlock(bi);
     div.className='slot'+(m?' filled':'')+(win||elev?' win':'')+(S.selMod&&!m&&lit&&!win&&!elev?' placeable':'');
-    if(elev){div.innerHTML='<div style="font-size:9px;opacity:0.4">🛗</div>';div.style.background='rgba(20,20,30,0.6)';div.style.borderColor='rgba(80,80,100,0.4)';div.style.cursor='default'}
-    else if(win){div.innerHTML='<div style="font-size:9px;opacity:0.2">🪟</div>';div.style.background='rgba(130,180,210,0.08)';div.style.borderColor='rgba(100,150,180,0.2)';div.style.cursor='default'}
+    if(elev){div.innerHTML='<div style="font-size:14px;opacity:0.4">🛗</div>';div.style.background='rgba(20,20,30,0.6)';div.style.borderColor='rgba(80,80,100,0.4)';div.style.cursor='default'}
+    else if(win){div.innerHTML='<div style="font-size:14px;opacity:0.2">🪟</div>';div.style.background='rgba(130,180,210,0.08)';div.style.borderColor='rgba(100,150,180,0.2)';div.style.cursor='default'}
     else if(m){div.style.borderColor=m.col;div.innerHTML=`<div class="si">${m.ic}</div><div class="sn">${m.nm}</div><div class="ss" data-sell="${bi}">sell 💰${m.sell}</div>`}
-    else if(S.selMod&&lit)div.innerHTML='<div style="font-size:14px;opacity:0.4">+</div>';
-    else div.innerHTML=`<div style="font-size:7px;opacity:0.12">${bi+1}</div>`;
+    else if(S.selMod&&lit)div.innerHTML='<div style="font-size:20px;opacity:0.4">+</div>';
+    else div.innerHTML=`<div style="font-size:12px;opacity:0.12">${bi+1}</div>`;
     div.dataset.slot=bi;bpSlots.appendChild(div)}
   bpList.innerHTML='';bpLock.innerHTML='';
   if(!lit){const u=fd.unlock;if(u){const ok=canUnlock(fi),div=document.createElement('div');div.className='unlock-box '+(ok?'ready':'locked');
@@ -69,11 +69,11 @@ export function renderPanel(){
   if(mobTab==='res'){bpMob.innerHTML=`<div class="rb" style="border-color:#ff6b35;margin-bottom:5px"><div class="l">⚡ ENERGY</div><div class="v" style="color:#ff6b35">${S.res.energy}</div><div class="rate">⬆${S.enProd} ⬇${S.enDraw}</div></div><div class="rb" style="border-color:#ffd700;margin-bottom:5px"><div class="l">💰 CREDITS</div><div class="v" style="color:#ffd700">${S.res.credits}</div><div class="rate">+${5+S.crRate}/2s</div></div><div class="rb" style="border-color:#4a9eff;margin-bottom:5px"><div class="l">👥 POP</div><div class="v" style="color:#4a9eff">${S.res.population}</div></div><div class="rb" style="border-color:#00ff88"><div class="l">😊 MORALE</div><div class="sat-wrap"><div class="sat-fill" style="width:${S.sat}%;background:${sc}"></div><div class="sat-txt">${Math.floor(S.sat)}%</div></div></div>`}
   else if(mobTab==='floor'){let h=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><div class="nav" id="mn-prev" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:14px">◀</div><div style="flex:1;text-align:center;font-size:12px;font-weight:bold;color:${lit?'#ffd700':'#ff6b35'}">F${fi+1} · ${fd.name}</div><div class="nav" id="mn-next" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:14px">▶</div></div><div style="display:grid;grid-template-columns:repeat(6,1fr);gap:3px">`;
     for(let bi=0;bi<BPF;bi++){const m=S.modules[fi][bi],win=isWinBlock(bi),elev=isElevBlock(bi);
-      if(elev)h+=`<div class="slot" data-slot="${bi}" style="background:rgba(20,20,30,0.6);border-color:rgba(80,80,100,0.4);cursor:default"><div style="font-size:9px;opacity:0.4">🛗</div></div>`;
-      else if(win)h+=`<div class="slot" data-slot="${bi}" style="background:rgba(130,180,210,0.08);border-color:rgba(100,150,180,0.2);cursor:default"><div style="font-size:9px;opacity:0.2">🪟</div></div>`;
+      if(elev)h+=`<div class="slot" data-slot="${bi}" style="background:rgba(20,20,30,0.6);border-color:rgba(80,80,100,0.4);cursor:default"><div style="font-size:14px;opacity:0.4">🛗</div></div>`;
+      else if(win)h+=`<div class="slot" data-slot="${bi}" style="background:rgba(130,180,210,0.08);border-color:rgba(100,150,180,0.2);cursor:default"><div style="font-size:14px;opacity:0.2">🪟</div></div>`;
       else if(m)h+=`<div class="slot filled" style="border-color:${m.col}" data-slot="${bi}"><div class="si">${m.ic}</div><div class="sn">${m.nm}</div><div class="ss" data-sell="${bi}">sell💰${m.sell}</div></div>`;
-      else if(S.selMod&&lit)h+=`<div class="slot placeable" data-slot="${bi}"><div style="font-size:12px;opacity:0.4">+</div></div>`;
-      else h+=`<div class="slot" data-slot="${bi}"><div style="font-size:7px;opacity:0.12">${bi+1}</div></div>`}
+      else if(S.selMod&&lit)h+=`<div class="slot placeable" data-slot="${bi}"><div style="font-size:20px;opacity:0.4">+</div></div>`;
+      else h+=`<div class="slot" data-slot="${bi}"><div style="font-size:12px;opacity:0.12">${bi+1}</div></div>`}
     h+='</div>';
     if(!lit&&fd.unlock){const u=fd.unlock,ok=canUnlock(fi);h+=`<div class="unlock-box ${ok?'ready':'locked'}" id="mn-unlock" style="margin-top:6px"><div style="font-weight:bold;color:${ok?'#00ff88':'#ff6b35'}">${ok?'✨ TAP TO FUND':'🔒 LOCKED'}</div>`;
       if(u.energy!=null)h+=`<div>⚡${S.res.energy}/${u.energy}${S.res.energy>=u.energy?' ✓':''}</div>`;if(u.population!=null)h+=`<div>👥${S.res.population}/${u.population}${S.res.population>=u.population?' ✓':''}</div>`;if(u.sat!=null)h+=`<div>😊${Math.floor(S.sat)}/${u.sat}%${S.sat>=u.sat?' ✓':''}</div>`;h+='</div>'}

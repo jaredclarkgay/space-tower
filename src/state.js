@@ -17,6 +17,7 @@ export const S={
   modules:Array.from({length:NF},()=>Array(BPF).fill(null)),
   selMod:null,panelFloor:0,panelDirty:true,frame:0,incomeTk:0,decayTk:0,saveTk:0,
   elevOpen:false,elevDoors:0,elevDoorTarget:0,elevAnim:'idle',elevAnimT:0,elevFrom:-1,elevTo:-1,elevSelected:0,
+  compendium:{entries:{}},
 };
 
 export let cZoom=MOB?0.5:0.7;

@@ -13,7 +13,7 @@ export function isElevBlock(bi){return bi===6} // block 6 is the elevator shaft
 export const ELEV_X=150; // center of elevator shaft in world coords (TL + 6*PG + PG/2)
 
 export const MOB='ontouchstart'in window||navigator.maxTouchPoints>0||matchMedia('(pointer:coarse)').matches;
-export const PH=MOB?0.42:0.34;
+export const PH=0.42;
 
 // ═══ SEEDED RANDOM ═══
 let _s=42;

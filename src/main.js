@@ -2,12 +2,13 @@
 import { S, recalc, cZoom, tZoom, setCZoom, setTZoom } from './state.js';
 import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk } from './constants.js';
 import { FD } from './floors.js';
-import { HC } from './npcs.js';
+import { CASUAL_TOPS_M } from './npcs.js';
 import { initCanvas, draw, showMsg, floatText, getInter, nearSuit } from './render.js';
 import { setupInput } from './input.js';
 import { setupPanel, renderPanel } from './panel.js';
 import { genWorld } from './world.js';
 import { loadGame, autoSave } from './save.js';
+import { setupCompendium, isCompendiumOpen } from './compendium.js';
 import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, soundOn, toggleSound } from './sound.js';
 import { ELEV_X, NF } from './constants.js';
 
@@ -51,10 +52,20 @@ function rideElev(targetFloor){
 }
 addEventListener('keydown',e=>{if(e.code==='Escape'&&S.elevOpen)closeElev()});
 
+// ─── NPC Discovery ───
+function discoverNpc(n, lineText){
+  if(!S.compendium.entries[n.name]){
+    S.compendium.entries[n.name]={name:n.name,type:n.type||'w',app:n.app||null,pal:n.pal||null,color:n.color||null,dialogueHeard:[]};
+  }
+  const e=S.compendium.entries[n.name];
+  if(!e.dialogueHeard.includes(lineText))e.dialogueHeard.push(lineText);
+}
+
 // Initialize
 initCanvas();
 setupInput();
 setupPanel();
+setupCompendium();
 
 // Set initial zoom slider
 const zSl=document.getElementById('zoom-sl'),zLb=document.getElementById('zoom-lbl');
@@ -78,9 +89,9 @@ function update(){
 
   S.incomeTk++;if(S.incomeTk>=120){S.incomeTk=0;let cg=5+S.crRate;S.res.credits+=cg;floatText(`+${cg} 💰`,cg>5?'#00ff88':'#ffd700');S.panelDirty=true}
   S.decayTk++;if(S.decayTk>=180){S.decayTk=0;const nLit=S.litFloors.size;const decay=0.3+nLit*0.15;S.sat=Math.max(0,S.sat-decay);S.panelDirty=true;if(S.sat<20&&S.frame%600<2){floatText('⚠ Morale critical','#ff6b35');sndWarn()}}
-  if(S.jp['KeyF']){const spEl=document.getElementById('sp');if(p.suit){p.suit=false;spEl.style.display='none'}else{const s=nearSuit();if(s){s.taken=true;p.suit=true;p.suitC=pk(HC);spEl.style.display='block'}}}
+  if(S.jp['KeyF']){const spEl=document.getElementById('sp');if(p.suit){p.suit=false;spEl.style.display='none'}else{const s=nearSuit();if(s){s.taken=true;p.suit=true;p.suitC=pk(CASUAL_TOPS_M);spEl.style.display='block'}}}
   S.saveTk++;if(S.saveTk>=3600){S.saveTk=0;autoSave()}
-  if(!S.elevOpen&&S.elevAnim==='idle'){
+  if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()){
   const jk=k['ArrowUp']||k['KeyW'],dk=k['ArrowDown']||k['KeyS'];
   const stUp=inter&&inter.t==='up',stDn=inter&&inter.t==='dn';
   if(p.st!=='climb'){
@@ -96,7 +107,7 @@ function update(){
     else if(dk&&stDn){p.st='climb';p.clT=inter.v;p.clP=1;p.x=inter.v.tx;p.vx=0;p.isDrp=false;p.drpT=0;setTZoom(p.baseZoom||tZoom)}
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
     if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'){openElev()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
-      else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];showMsg(n.name,line(n.name));sndTalk();if(n.ci<n.convo.length-1)n.ci++}
+      else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
       }S.iLock=true}}else S.iLock=false;
   } else {
     const st=p.clT;if(jk){p.clP+=0.018;p.fr=st.tx>st.bx}else if(dk){p.clP-=0.018;p.fr=st.bx>st.tx}
@@ -120,7 +131,7 @@ function update(){
   }
   S.npcs.forEach(n=>{n.at--;if(n.at<=0){n.at=60+Math.random()*140;const r=Math.random();if(r<0.4){n.st='idle';n.vx=0}else if(r<0.7){n.st='walk';n.vx=n.spd;n.fr=true}else{n.st='walk';n.vx=-n.spd;n.fr=false}}
     if(n.type==='b'){n.jt--;if(n.jt<=0&&n.onF){n.vy=-6;n.onF=false;n.jt=180+Math.floor(Math.random()*180)}if(n.st==='walk')n.lp+=0.18}
-    n.x+=n.vx;n.y+=n.vy;n.vy+=GRAV;if(n.x<TL+30){n.x=TL+30;n.vx=Math.abs(n.vx);n.fr=true}if(n.x>TR-30){n.x=TR-30;n.vx=-Math.abs(n.vx);n.fr=false}
+    n.x+=n.vx;const elevL=ELEV_X-80,elevR=ELEV_X+80;if(n.x>elevL&&n.x<ELEV_X&&n.vx>0){n.x=elevL;n.vx=-n.vx;n.fr=false}if(n.x<elevR&&n.x>ELEV_X&&n.vx<0){n.x=elevR;n.vx=-n.vx;n.fr=true}n.y+=n.vy;n.vy+=GRAV;if(n.x<TL+30){n.x=TL+30;n.vx=Math.abs(n.vx);n.fr=true}if(n.x>TR-30){n.x=TR-30;n.vx=-Math.abs(n.vx);n.fr=false}
     n.onF=false;for(let f of S.floors){if(f.level<0)continue;if(n.vy>=0&&n.y<=f.y&&n.y+n.vy>=f.y){n.y=f.y;n.vy=0;n.onF=true;break}}
     if(n.st==='walk')n.bob+=0.2;else n.bob*=0.9;
   });

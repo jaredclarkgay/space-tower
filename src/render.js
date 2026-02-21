@@ -36,6 +36,8 @@ export function nearSuit(){const p=S.player;for(let s of S.suits){if(!s.taken&&M
 function drawBlob(c,isP,oneEye){
   const bob=Math.abs(Math.sin(c.bob))*4,mov=c.st==='walk'||c.st==='climb';
   X.save();X.translate(c.x,c.y-c.h/2-8-bob);if(!c.fr)X.scale(-1,1);
+  // Antenna (aliens only, not player)
+  if(oneEye&&!isP){X.strokeStyle=c.color;X.lineWidth=2;X.beginPath();X.moveTo(0,-c.h/2);X.lineTo(-3,-c.h/2-10);X.stroke();X.fillStyle=c.color;X.beginPath();X.arc(-3,-c.h/2-12,3,0,Math.PI*2);X.fill()}
   X.fillStyle=c.color;X.beginPath();X.roundRect(-c.w/2,-c.h/2,c.w,c.h,10);X.fill();
   if(oneEye){X.fillStyle='white';X.beginPath();X.arc(4,-10,6,0,Math.PI*2);X.fill();X.fillStyle='black';X.beginPath();X.arc(6,-10,2.5,0,Math.PI*2);X.fill();X.fillStyle='white';X.beginPath();X.arc(7,-12,1,0,Math.PI*2);X.fill()}
   else{X.fillStyle='white';X.beginPath();X.arc(0,-10,4.5,0,Math.PI*2);X.fill();X.beginPath();X.arc(8,-10,4.5,0,Math.PI*2);X.fill();X.fillStyle='black';X.beginPath();X.arc(2,-10,2,0,Math.PI*2);X.fill();X.beginPath();X.arc(10,-10,2,0,Math.PI*2);X.fill()}
@@ -58,6 +60,57 @@ function drawBiz(n){
   X.fillStyle=pl.h;X.beginPath();X.ellipse(0,-28,5.5,6.5,0,0,Math.PI*2);X.fill();
   X.fillStyle=pl.b;X.beginPath();X.ellipse(0,-31.5,5.5,3.5,0,0,Math.PI*2);X.fill();
   X.fillStyle='#1a1a2a';X.beginPath();X.arc(f>0?2:-2,-28,1,0,Math.PI*2);X.fill();X.beginPath();X.arc(f>0?5:-5,-28,1,0,Math.PI*2);X.fill();
+  X.restore();
+}
+
+// ═══ DRAW: CASUAL HUMAN ═══
+function drawCasual(n){
+  const x=n.x,y=n.y,f=n.fr?1:-1,mv=n.st==='walk';
+  const bob=Math.abs(Math.sin(n.bob))*3;
+  const lp=n.bob*1.2,ls=mv?Math.sin(lp)*7:0;
+  const a=n.app;
+  X.save();X.translate(x,y);
+  X.fillStyle='rgba(0,0,0,0.08)';X.beginPath();X.ellipse(0,0,9,2.5,0,0,Math.PI*2);X.fill();
+  X.translate(0,-7-bob);
+  // Legs
+  X.fillStyle=a.bot;
+  X.save();X.translate(-3,-5);X.rotate(ls*0.09);X.fillRect(-2.5,0,5,14);X.restore();
+  X.save();X.translate(3,-5);X.rotate(-ls*0.09);X.fillRect(-2.5,0,5,14);X.restore();
+  // Shoes
+  X.fillStyle=a.sho;
+  const sy1=mv?Math.sin(lp)*3:0,sy2=mv?-Math.sin(lp)*3:0;
+  X.fillRect(-6,8+sy1,5,3);X.fillRect(1,8+sy2,5,3);
+  // Torso
+  X.fillStyle=a.top;
+  const tw2=a.fem?12:14;
+  X.fillRect(-tw2/2,-24,tw2,19);
+  X.strokeStyle=a.fem?'rgba(0,0,0,0.15)':'rgba(0,0,0,0.1)';X.lineWidth=1;
+  X.beginPath();X.moveTo(-3,-24);X.lineTo(0,-21);X.lineTo(3,-24);X.stroke();
+  // Arms
+  const as2=-ls*0.5;
+  X.save();X.translate(-tw2/2-2,-22);X.rotate(as2*0.07);
+  X.fillStyle=a.top;X.fillRect(-2,0,4,11);
+  X.fillStyle=a.skin;X.beginPath();X.arc(0,12,2.5,0,Math.PI*2);X.fill();X.restore();
+  X.save();X.translate(tw2/2+2,-22);X.rotate(-as2*0.07);
+  X.fillStyle=a.top;X.fillRect(-2,0,4,11);
+  X.fillStyle=a.skin;X.beginPath();X.arc(0,12,2.5,0,Math.PI*2);X.fill();X.restore();
+  // Neck + head
+  X.fillStyle=a.skin;X.fillRect(-2,-27,4,4);
+  X.fillStyle=a.skin;X.beginPath();X.ellipse(0,-30,5.5,6,0,0,Math.PI*2);X.fill();
+  // Hair
+  X.fillStyle=a.hair;
+  if(a.hs==='short'){X.beginPath();X.ellipse(0,-34,6,3,0,0,Math.PI);X.fill();X.fillRect(-6,-35,12,3)}
+  else if(a.hs==='buzz'){X.beginPath();X.ellipse(0,-34.5,5.5,2,0,0,Math.PI);X.fill()}
+  else if(a.hs==='messy'){X.beginPath();X.ellipse(0,-34,6.5,3.5,0,0,Math.PI);X.fill();X.fillRect(-7,-36,3,3);X.fillRect(2,-37,3,2);X.fillRect(5,-36,3,3)}
+  else if(a.hs==='long'){X.beginPath();X.ellipse(0,-34,6.5,3.5,0,0,Math.PI);X.fill();X.fillRect(-6.5,-34,13,3);X.fillRect(-7,-32,3,10);X.fillRect(4,-32,3,10)}
+  else if(a.hs==='ponytail'){X.beginPath();X.ellipse(0,-34,6,3,0,0,Math.PI);X.fill();X.fillRect(-6,-35,12,3);
+    X.beginPath();X.moveTo(f>0?-5:5,-33);X.quadraticCurveTo(f>0?-10:10,-30,f>0?-8:8,-24);X.lineTo(f>0?-6:6,-24);X.quadraticCurveTo(f>0?-8:8,-30,f>0?-4:4,-33);X.fill()}
+  else if(a.hs==='bun'){X.beginPath();X.ellipse(0,-34,6,3,0,0,Math.PI);X.fill();X.fillRect(-6,-35,12,3);X.beginPath();X.arc(0,-38,3.5,0,Math.PI*2);X.fill()}
+  else if(a.hs==='bob'){X.beginPath();X.ellipse(0,-34,6.5,3.5,0,0,Math.PI);X.fill();X.fillRect(-6.5,-34,13,3);X.fillRect(-7,-32,3,6);X.fillRect(4,-32,3,6)}
+  // Eyes
+  X.fillStyle='#1a1a2a';
+  X.beginPath();X.arc(f>0?2:-2,-30,1,0,Math.PI*2);X.fill();
+  X.beginPath();X.arc(f>0?5:-5,-30,1,0,Math.PI*2);X.fill();
   X.restore();
 }
 
@@ -335,31 +388,37 @@ export function draw(){
         if(lit){X.fillStyle=th.accent;X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH)}
         if(!lit){X.fillStyle='rgba(0,0,0,0.12)';X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH)}
         // Shaft interior (extends past slab for cross-floor continuity)
-        X.fillStyle='#1a1a22';X.fillRect(elevX,fy-FH-4,elevW,FH+8);
+        X.fillStyle='#0a0a12';X.fillRect(elevX,fy-FH-4,elevW,FH+8);
         // Guide rails (full shaft height)
-        X.strokeStyle='#505058';X.lineWidth=3;
+        X.strokeStyle='#686870';X.lineWidth=3;
         X.beginPath();X.moveTo(elevX+10,fy-FH-4);X.lineTo(elevX+10,fy+4);X.stroke();
         X.beginPath();X.moveTo(elevX+elevW-10,fy-FH-4);X.lineTo(elevX+elevW-10,fy+4);X.stroke();
         // Center cable
-        X.strokeStyle='#404048';X.lineWidth=1.5;
+        X.strokeStyle='#606068';X.lineWidth=2;
         X.beginPath();X.moveTo(elevX+elevW/2,fy-FH-4);X.lineTo(elevX+elevW/2,fy+4);X.stroke();
         // Door frame (around door-height opening)
-        X.strokeStyle='#606068';X.lineWidth=4;X.strokeRect(elevX+2,doorY-4,elevW-4,doorH+4);
+        X.strokeStyle='#808088';X.lineWidth=5;X.strokeRect(elevX+2,doorY-4,elevW-4,doorH+4);
+        // Per-floor door state — only open on player's floor or animation floors
+        const isPlayerFloor=(i===S.player.cf);
+        const isAnimFloor=(S.elevAnim!=='idle')&&(i===S.elevFrom||i===S.elevTo);
+        const doorOpenAmount=(isPlayerFloor||isAnimFloor)?S.elevDoors:0;
         // Sliding doors (clipped to shaft)
         X.save();X.beginPath();X.rect(elevX,doorY,elevW,doorH);X.clip();
-        const doorSlide=S.elevDoors*(elevW/2-2);
+        const doorSlide=doorOpenAmount*(elevW/2-2);
         const doorCol=lit?'#909098':'#606068';
         X.fillStyle=doorCol;X.fillRect(elevX-doorSlide,doorY,elevW/2,doorH);
         X.fillStyle='#808088';X.fillRect(elevX-doorSlide+elevW/2-1,doorY,2,doorH);
         X.fillStyle=doorCol;X.fillRect(elevX+elevW/2+doorSlide,doorY,elevW/2,doorH);
         X.restore();
+        // Interior detail when doors are open
+        if(doorOpenAmount>0.3){X.fillStyle='#14141e';X.fillRect(elevX+4,doorY+2,elevW-8,doorH-4);X.strokeStyle='#505058';X.lineWidth=2;X.beginPath();X.moveTo(elevX+8,doorY+doorH*0.55);X.lineTo(elevX+elevW-8,doorY+doorH*0.55);X.stroke()}
         // Floor indicator above doors
         X.fillStyle=lit?'rgba(60,50,20,0.8)':'rgba(20,20,25,0.8)';
         X.beginPath();X.roundRect(elevX+elevW/2-18,fy-FH+4,36,14,2);X.fill();
         if(lit){X.fillStyle='rgba(255,200,80,0.7)';X.font='bold 9px monospace';X.textAlign='center';X.fillText(`F${i+1}`,elevX+elevW/2,fy-FH+14)}
         else{X.fillStyle='rgba(80,80,90,0.5)';X.font='bold 9px monospace';X.textAlign='center';X.fillText(`F${i+1}`,elevX+elevW/2,fy-FH+14)}
         // Call button on right wall of shaft
-        if(lit){X.fillStyle='#404048';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,5,0,Math.PI*2);X.fill();X.fillStyle=S.elevDoors>0.5?'#ffd700':'#606068';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,3.5,0,Math.PI*2);X.fill()}
+        if(lit){X.fillStyle='#404048';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,5,0,Math.PI*2);X.fill();if(doorOpenAmount>0.5){const glw=X.createRadialGradient(elevX+elevW+12,fy-FH*0.45,0,elevX+elevW+12,fy-FH*0.45,10);glw.addColorStop(0,'rgba(255,215,0,0.4)');glw.addColorStop(1,'rgba(255,215,0,0)');X.fillStyle=glw;X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,10,0,Math.PI*2);X.fill()}X.fillStyle=doorOpenAmount>0.5?'#ffd700':'#606068';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,3.5,0,Math.PI*2);X.fill()}
       } else if(isWin){
         X.fillStyle=lit?'rgba(160,205,235,0.1)':'rgba(60,80,100,0.06)';X.fillRect(bx,fy-FH,PG,FH);
         X.strokeStyle=lit?'rgba(80,120,150,0.4)':'rgba(60,80,100,0.15)';X.lineWidth=3;
@@ -412,8 +471,18 @@ export function draw(){
   S.suits.forEach(s=>{if(s.taken||!S.litFloors.has(s.floor))return;const bob=Math.sin(Date.now()*0.002+s.x)*2;X.fillStyle='rgba(80,70,100,0.45)';X.beginPath();X.roundRect(s.x-10,s.y-44+bob,20,32,6);X.fill()});
 
   // NPCs
-  const al=[],hu=[],bz=[];S.npcs.forEach(n=>{if(!S.litFloors.has(n.floor))return;if(n.type==='a')al.push(n);else if(n.type==='h')hu.push(n);else bz.push(n)});
-  al.forEach(n=>drawBlob(n,false,true));hu.forEach(n=>drawBlob(n,false,false));bz.forEach(n=>drawBiz(n));
+  const al=[],ca=[],bz=[],cw=[];
+  S.npcs.forEach(n=>{
+    if(!S.litFloors.has(n.floor))return;
+    if(n.type==='a')al.push(n);
+    else if(n.type==='c')ca.push(n);
+    else if(n.type==='w')cw.push(n);
+    else bz.push(n);
+  });
+  al.forEach(n=>drawBlob(n,false,true));
+  ca.forEach(n=>drawCasual(n));
+  bz.forEach(n=>drawBiz(n));
+  cw.forEach(n=>drawWorker(n));
   S.workers.forEach(w=>drawWorker(w));
 
   // Player (fade during elevator door animation)

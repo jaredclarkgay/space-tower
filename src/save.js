@@ -10,6 +10,7 @@ export function saveGame(){
     litFloors:[...S.litFloors],
     credits:S.res.credits,sat:S.sat,
     panelFloor:S.panelFloor,
+    compendium:S.compendium.entries,
     ts:Date.now()
   };localStorage.setItem(SAVE_KEY,JSON.stringify(d));return true}catch(e){return false}
 }
@@ -25,6 +26,7 @@ export function loadGame(){
     if(d.credits!=null)S.res.credits=d.credits;
     if(d.sat!=null)S.sat=d.sat;
     if(d.panelFloor!=null)S.panelFloor=d.panelFloor;
+    if(d.compendium)S.compendium.entries=d.compendium;
     recalc();return true}catch(e){return false}
 }
 export function autoSave(){saveGame()}
