@@ -16,6 +16,7 @@ export function initCanvas(){
   if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){if(typeof r==='number')r={tl:r,tr:r,br:r,bl:r};this.beginPath();this.moveTo(x+r.tl,y);this.lineTo(x+w-r.tr,y);this.quadraticCurveTo(x+w,y,x+w,y+r.tr);this.lineTo(x+w,y+h-r.br);this.quadraticCurveTo(x+w,y+h,x+w-r.br,y+h);this.lineTo(x+r.bl,y+h);this.quadraticCurveTo(x,y+h,x,y+h-r.bl);this.lineTo(x,y+r.tl);this.quadraticCurveTo(x,y,x+r.tl,y);this.closePath();return this}}
   function resize(){C.width=innerWidth;C.height=Math.ceil(innerHeight*(1-PH))}
   addEventListener('resize',resize);resize();
+  genCity();
 }
 
 // ═══ MESSAGING ═══
@@ -251,6 +252,30 @@ function drawScaffold(sx,sy,sw,sh){
   }
 }
 
+// ═══ CITY GENERATION ═══
+function genCity(){
+  const ir=(mn,mx)=>Math.floor(mn+Math.random()*(mx-mn+1));
+  const WGX=14,WGY=16,WMG=9;
+  const blds=[];
+  let cx=-3000;
+  while(cx<3000&&blds.length<100){
+    const w=ir(40,140);
+    const tall=Math.random()<0.08;
+    const h=tall?ir(250,450):ir(60,260);
+    const rv=ir(72,135),gv=ir(70,125),bv=ir(76,140);
+    const col=`rgb(${rv},${gv},${bv})`;
+    const cols=Math.max(1,Math.floor((w-WMG*2)/WGX));
+    const rows=Math.max(1,Math.floor((h-18)/WGY));
+    const wins=[];
+    for(let wr=0;wr<rows;wr++)
+      for(let wc=0;wc<cols;wc++)
+        wins.push({wx:WMG+wc*WGX,wy:10+wr*WGY,lit:Math.random()<0.45,warm:Math.random()<0.6});
+    blds.push({x:cx,w,h,col,wins,tall});
+    cx+=w+ir(4,28);
+  }
+  S.cityBuildings=blds;
+}
+
 // ═══ DRAW: CARS ═══
 function drawCar(cx,cy,col){
   X.fillStyle=col;X.beginPath();X.roundRect(cx-20,cy-16,40,12,3);X.fill();
@@ -330,6 +355,41 @@ export function draw(){
   // Ground
   const gg=X.createLinearGradient(0,TB,0,TB+100);gg.addColorStop(0,'#8AB880');gg.addColorStop(0.4,'#6AA070');gg.addColorStop(1,'#4A7858');
   X.fillStyle=gg;X.fillRect(TL-UW,TB,TW+UW*2,800);
+
+  // City layer — parallax 0.35×
+  X.restore();
+  X.save();
+  X.translate(W/2-S.cam.x*cZoom*0.35,H/2-S.cam.y*cZoom);X.scale(cZoom,cZoom);
+  // Atmospheric haze at base
+  const chz=X.createLinearGradient(0,TB-180,0,TB);chz.addColorStop(0,'rgba(170,135,95,0)');chz.addColorStop(1,'rgba(170,135,95,0.22)');
+  X.fillStyle=chz;X.fillRect(-3200,TB-180,6400,180);
+  // Road strip
+  X.fillStyle='#3a3a42';X.fillRect(-3200,TB,6400,22);X.fillStyle='#2e2e36';X.fillRect(-3200,TB,6400,3);
+  // Buildings
+  if(S.cityBuildings)S.cityBuildings.forEach(b=>{
+    const bx=b.x,by=TB-b.h;
+    X.fillStyle=b.col;X.fillRect(bx,by,b.w,b.h);
+    // Top shadow + highlight
+    X.fillStyle='rgba(0,0,0,0.2)';X.fillRect(bx,by,b.w,4);
+    X.fillStyle='rgba(255,255,255,0.04)';X.fillRect(bx,by,b.w,1);
+    // Windows
+    b.wins.forEach(wn=>{
+      X.fillStyle=wn.lit?(wn.warm?'rgba(255,215,120,0.72)':'rgba(150,195,255,0.58)'):'rgba(28,32,42,0.7)';
+      X.fillRect(bx+wn.wx,by+wn.wy,6,8);
+    });
+    // Rooftop details on tall buildings
+    if(b.tall){
+      X.fillStyle='rgba(68,70,80,0.9)';X.fillRect(bx+b.w*0.12,by-15,b.w*0.32,15);X.fillRect(bx+b.w*0.52,by-9,b.w*0.22,9);
+      X.strokeStyle='rgba(110,112,122,0.72)';X.lineWidth=1.5;
+      X.beginPath();X.moveTo(bx+b.w*0.74,by);X.lineTo(bx+b.w*0.74,by-24);X.stroke();
+      const blink=Math.floor(Date.now()/900+b.x*0.013)%2===0;
+      X.fillStyle=blink?'rgba(255,50,50,0.9)':'rgba(255,50,50,0.15)';
+      X.beginPath();X.arc(bx+b.w*0.74,by-26,2.5,0,Math.PI*2);X.fill();
+    }
+  });
+  X.restore();
+  // Re-enter main camera so treeline's X.restore() exits correctly
+  X.save();X.translate(W/2-S.cam.x*cZoom,H/2-S.cam.y*cZoom);X.scale(cZoom,cZoom);
 
   // Parallax treeline
   X.restore();
