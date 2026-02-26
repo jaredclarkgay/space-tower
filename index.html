@@ -7,7 +7,8 @@
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{overflow:hidden;background:#0a0e27;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;touch-action:none}
-  #gameCanvas{display:block}
+  #titleCanvas{position:fixed;inset:0;z-index:50;display:block;width:100%;height:100%}
+  #gameCanvas{display:none}
   #build-panel{position:fixed;bottom:0;left:0;right:0;height:42vh;min-height:240px;background:linear-gradient(to bottom,#0f1419,#0a0e1a);border-top:2px solid #1a2030;display:flex;z-index:20;color:#fff;font-family:'Courier New',monospace}
   #bp-res{width:185px;padding:8px;border-right:1px solid #1a2030;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
   .rb{background:#1a1f3a;padding:9px 11px;border-radius:4px;border:2px solid #2a3050}
@@ -87,6 +88,8 @@
   .comp-dline{font-size:10px;opacity:0.65;margin-bottom:8px;line-height:1.5;font-style:italic}
   #comp-btn{position:fixed;bottom:calc(42vh + 12px);right:68px;z-index:25;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.15);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);transition:opacity 0.2s}
   #comp-btn:hover{opacity:0.9;color:rgba(255,255,255,0.9)}
+  #menu-btn{position:fixed;bottom:calc(42vh + 12px);right:118px;z-index:25;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.15);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);transition:opacity 0.2s}
+  #menu-btn:hover{opacity:0.9;color:rgba(255,255,255,0.9)}
   @media(pointer:coarse),(max-width:768px){
     #touch-ctrls{display:block;inset:0}#instr{display:none}
     #zoom-wrap{bottom:calc(42vh + 12px);left:50%;transform:translateX(-50%)}
@@ -103,7 +106,10 @@
 </style>
 </head>
 <body>
+<canvas id="titleCanvas"></canvas>
+<div id="title-overlay"></div>
 <canvas id="gameCanvas"></canvas>
+<div id="game-ui" style="display:none">
 <div id="hud-top"><div class="hp" id="fp">FLOOR 1 · LOBBY</div><div class="hp" id="sp" style="display:none;background:rgba(255,180,50,0.6);color:#2a2010">🧑 SUIT — F</div></div>
 <div id="instr">WASD / Arrows — move, climb<br>Hold ↑ — charge jump (1-3 floors)<br>Hold ↓ — charge drop (1-4 floors)<br>E — interact · F — suit · TAB — compendium</div>
 <div id="zoom-wrap"><div id="zoom-lbl">70%</div><input type="range" id="zoom-sl" min="0.25" max="1.0" step="0.01" value="0.7"></div>
@@ -144,6 +150,8 @@
   </div>
 </div>
 <button id="comp-btn" title="Compendium [TAB]">📋</button>
+<button id="menu-btn" title="Back to Title">⌂</button>
+</div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

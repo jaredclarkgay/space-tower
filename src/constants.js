@@ -17,9 +17,12 @@ export const PH=0.42;
 
 // ═══ SEEDED RANDOM ═══
 let _s=42;
+let _saved=42;
 export function sr(){_s=(_s*16807)%2147483647;return(_s-1)/2147483646}
 export function ri(a,b){return Math.floor(sr()*(b-a+1))+a}
 export function pk(a){return a[Math.floor(sr()*a.length)]}
+export function saveSeed(){_saved=_s}
+export function restoreSeed(){_s=_saved}
 
 // Color interpolation for altitude sky
 export function lerpColor(a,b,t){

@@ -4,6 +4,9 @@ import { FD } from './floors.js';
 
 // ═══ SAVE / LOAD ═══
 const SAVE_KEY='spacetower_v9c';
+export function peekSave(){
+  try{const raw=localStorage.getItem(SAVE_KEY);if(!raw)return null;return JSON.parse(raw)}catch(e){return null}
+}
 export function saveGame(){
   try{const d={
     modules:S.modules.map(row=>row.map(m=>m?m.id:null)),
