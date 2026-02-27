@@ -1,6 +1,6 @@
 'use strict';
 import { initTitle, disposeTitle, skipToExterior } from './title/title-main.js';
-import { initGame, startGameLoop, stopGameLoop } from './game-init.js';
+import { initGame, startGameLoop } from './game-init.js';
 import { peekSave } from './save.js';
 
 const saveData = peekSave();

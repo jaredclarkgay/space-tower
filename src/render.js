@@ -6,8 +6,13 @@ import { updateAmbient } from './sound.js';
 
 let C,X;
 const msgEl=()=>document.getElementById('msg');
-const fpEl=()=>document.getElementById('fp');
 const spEl=()=>document.getElementById('sp');
+
+// ── Cached gradients (recomputed only when altitude band changes) ──
+let _cachedSkyGrad=null,_cachedSkyAlt=-1;
+let _cachedGroundGrad=null,_cachedHazeGrad=null,_gradsCached=false;
+// ── Frame timestamp (set once per draw(), used by all animation code) ──
+let _now=0;
 
 export function initCanvas(){
   C=document.getElementById('gameCanvas');
@@ -177,7 +182,7 @@ function drawMod(id,bx,by,bw,bh){
     X.fillStyle='#3a3028';X.fillRect(mx,my+mh*0.3,mw,mh*0.7);
     X.fillStyle='#2a2018';X.fillRect(mx+4,my+mh*0.35,mw-8,mh*0.2);
     X.fillStyle='#555';X.fillRect(mx+mw*0.7,my,mw*0.12,mh*0.5);X.fillRect(mx+mw*0.72,my-4,mw*0.08,6);
-    const st=Date.now()*0.002;
+    const st=_now*0.002;
     X.fillStyle='rgba(100,100,100,0.3)';X.beginPath();X.arc(mx+mw*0.76,my-12+Math.sin(st)*3,5+Math.sin(st*1.3)*2,0,Math.PI*2);X.fill();
     X.beginPath();X.arc(mx+mw*0.72,my-22+Math.sin(st+1)*4,4,0,Math.PI*2);X.fill();
     X.fillStyle='#555';X.fillRect(mx+2,my+mh*0.85,mw-4,6);
@@ -208,16 +213,16 @@ function drawMod(id,bx,by,bw,bh){
   } else if(id==='hydro'){
     X.fillStyle='#2a3a28';X.fillRect(mx,my+mh*0.4,mw,mh*0.6);
     for(let ti=0;ti<3;ti++){const ty=my+mh*0.45+ti*mh*0.18;X.fillStyle='#3a5a38';X.fillRect(mx+4,ty,mw-8,mh*0.12);
-      for(let si=0;si<5;si++){const sx=mx+8+si*(mw-16)/5;const sh2=8+Math.sin(Date.now()*0.0015+si+ti*2)*3;X.fillStyle='#5aaa40';X.fillRect(sx,ty-sh2,3,sh2);X.fillStyle='#70cc50';X.beginPath();X.ellipse(sx+1.5,ty-sh2-2,4,3,0,0,Math.PI*2);X.fill()}}
+      for(let si=0;si<5;si++){const sx=mx+8+si*(mw-16)/5;const sh2=8+Math.sin(_now*0.0015+si+ti*2)*3;X.fillStyle='#5aaa40';X.fillRect(sx,ty-sh2,3,sh2);X.fillStyle='#70cc50';X.beginPath();X.ellipse(sx+1.5,ty-sh2-2,4,3,0,0,Math.PI*2);X.fill()}}
     X.fillStyle='rgba(80,200,60,0.08)';X.fillRect(mx,my,mw,mh);
   } else if(id==='kitch'){
     X.fillStyle='#8a7a68';X.fillRect(mx,my+mh*0.35,mw,mh*0.65);
     X.fillStyle='#606058';X.fillRect(mx+4,my+mh*0.1,mw-8,mh*0.2);X.fillStyle='#505048';X.fillRect(mx+mw*0.2,my,mw*0.6,mh*0.12);
-    const glow=0.3+Math.sin(Date.now()*0.003)*0.15;
+    const glow=0.3+Math.sin(_now*0.003)*0.15;
     for(let bi2=0;bi2<2;bi2++){const bx2=mx+mw*0.25+bi2*mw*0.35;const by2=my+mh*0.5;
       X.strokeStyle=`rgba(255,100,30,${glow})`;X.lineWidth=2;X.beginPath();X.arc(bx2,by2,8,0,Math.PI*2);X.stroke();
       X.strokeStyle=`rgba(255,60,10,${glow*0.6})`;X.beginPath();X.arc(bx2,by2,5,0,Math.PI*2);X.stroke()}
-    const st2=Date.now()*0.002;X.fillStyle='rgba(200,200,200,0.15)';
+    const st2=_now*0.002;X.fillStyle='rgba(200,200,200,0.15)';
     X.beginPath();X.arc(mx+mw*0.3,my+mh*0.25+Math.sin(st2)*3,4,0,Math.PI*2);X.fill();
     X.beginPath();X.arc(mx+mw*0.65,my+mh*0.2+Math.sin(st2+1)*4,3,0,Math.PI*2);X.fill();
   } else if(id==='tele'){
@@ -225,13 +230,13 @@ function drawMod(id,bx,by,bw,bh){
     X.fillStyle='#8090a0';X.beginPath();X.ellipse(mx+mw*0.5,my+mh*0.25,mw*0.38,mh*0.2,0,0,Math.PI*2);X.fill();
     X.fillStyle='#90a0b0';X.beginPath();X.ellipse(mx+mw*0.5,my+mh*0.25,mw*0.28,mh*0.12,0,0,Math.PI*2);X.fill();
     X.fillStyle='#606870';X.fillRect(mx+mw*0.47,my+mh*0.05,mw*0.06,mh*0.15);
-    const pulse=(Date.now()*0.001)%3;
+    const pulse=(_now*0.001)%3;
     if(pulse<1.5){X.strokeStyle=`rgba(100,200,255,${0.4-pulse*0.25})`;X.lineWidth=1;X.beginPath();X.arc(mx+mw*0.5,my+mh*0.08,pulse*12,0,Math.PI*2);X.stroke()}
   } else if(id==='med'){
     X.fillStyle='#b0b4b8';X.fillRect(mx,my+mh*0.4,mw,mh*0.6);
     X.fillStyle='#e0e4e8';X.fillRect(mx+6,my+mh*0.5,mw-12,mh*0.25);X.fillStyle='#c8ccd0';X.fillRect(mx+6,my+mh*0.5,mw*0.2,mh*0.25);
     X.fillStyle='rgba(220,60,60,0.7)';X.fillRect(mx+mw*0.42,my+mh*0.08,mw*0.16,mh*0.3);X.fillRect(mx+mw*0.32,my+mh*0.15,mw*0.36,mh*0.12);
-    const hb=Date.now()*0.004;X.strokeStyle='rgba(60,200,100,0.5)';X.lineWidth=1.5;X.beginPath();
+    const hb=_now*0.004;X.strokeStyle='rgba(60,200,100,0.5)';X.lineWidth=1.5;X.beginPath();
     for(let hx=0;hx<mw-12;hx+=2){const hy=my+mh*0.88+Math.sin(hb+hx*0.15)*((hx%20<6)?8:1);X.lineTo(mx+6+hx,hy)}X.stroke();
   } else if(id==='apts'){
     X.fillStyle='#c4a880';X.fillRect(mx,my,mw,mh);
@@ -252,7 +257,7 @@ function drawMod(id,bx,by,bw,bh){
     X.fillStyle='#3a8a30';X.beginPath();X.ellipse(mx+mw*0.5,my+mh*0.3,mw*0.42,mh*0.28,0,0,Math.PI*2);X.fill();
     X.fillStyle='#4aaa40';X.beginPath();X.ellipse(mx+mw*0.4,my+mh*0.2,mw*0.25,mh*0.18,0,0,Math.PI*2);X.fill();
     X.fillStyle='#50bb48';X.beginPath();X.ellipse(mx+mw*0.6,my+mh*0.22,mw*0.2,mh*0.15,0,0,Math.PI*2);X.fill();
-    const lsh=Math.sin(Date.now()*0.001)*0.04+0.04;
+    const lsh=Math.sin(_now*0.001)*0.04+0.04;
     X.fillStyle=`rgba(150,255,100,${lsh})`;X.beginPath();X.ellipse(mx+mw*0.45,my+mh*0.18,mw*0.15,mh*0.1,0,0,Math.PI*2);X.fill();
   } else {
     const mod=S.modules?.[Math.floor((by-TT)/FH)]?.[Math.floor((bx-TL)/PG)];
@@ -309,37 +314,47 @@ function drawCar(cx,cy,col){
 // ═══ DRAW ═══
 export function draw(){
   const W=C.width,H=C.height;
+  _now=performance.now();
   const altFrac=Math.max(0,Math.min(1,(TB-S.cam.y)/(TB-TT)));
   updateAmbient(altFrac);
 
-  const sg=X.createLinearGradient(0,0,0,H);
-  if(altFrac<0.5){
-    const t=altFrac*2;
-    sg.addColorStop(0,lerpColor('#A7C7E7','#6080B0',t));
-    sg.addColorStop(0.3,lerpColor('#BDD4F0','#8090C0',t));
-    sg.addColorStop(0.5,lerpColor('#DDD0EC','#9088B0',t));
-    sg.addColorStop(0.7,lerpColor('#F0D2CE','#A090A8',t));
-    sg.addColorStop(1,lerpColor('#FDF0D5','#C0B0A0',t));
-  } else {
-    const t=(altFrac-0.5)*2;
-    sg.addColorStop(0,lerpColor('#6080B0','#1a1a3a',t));
-    sg.addColorStop(0.2,lerpColor('#8090C0','#2a2050',t));
-    sg.addColorStop(0.4,lerpColor('#9088B0','#3a2858',t));
-    sg.addColorStop(0.6,lerpColor('#A090A8','#483060',t));
-    sg.addColorStop(1,lerpColor('#C0B0A0','#201838',t));
+  // Sky gradient — recompute only when altitude changes meaningfully
+  const altBand=Math.round(altFrac*100);
+  if(!_cachedSkyGrad||altBand!==_cachedSkyAlt){
+    _cachedSkyAlt=altBand;
+    const sg=X.createLinearGradient(0,0,0,H);
+    if(altFrac<0.5){
+      const t=altFrac*2;
+      sg.addColorStop(0,lerpColor('#A7C7E7','#6080B0',t));
+      sg.addColorStop(0.3,lerpColor('#BDD4F0','#8090C0',t));
+      sg.addColorStop(0.5,lerpColor('#DDD0EC','#9088B0',t));
+      sg.addColorStop(0.7,lerpColor('#F0D2CE','#A090A8',t));
+      sg.addColorStop(1,lerpColor('#FDF0D5','#C0B0A0',t));
+    } else {
+      const t=(altFrac-0.5)*2;
+      sg.addColorStop(0,lerpColor('#6080B0','#1a1a3a',t));
+      sg.addColorStop(0.2,lerpColor('#8090C0','#2a2050',t));
+      sg.addColorStop(0.4,lerpColor('#9088B0','#3a2858',t));
+      sg.addColorStop(0.6,lerpColor('#A090A8','#483060',t));
+      sg.addColorStop(1,lerpColor('#C0B0A0','#201838',t));
+    }
+    _cachedSkyGrad=sg;
   }
-  X.fillStyle=sg;X.fillRect(0,0,W,H);
+  X.fillStyle=_cachedSkyGrad;X.fillRect(0,0,W,H);
 
-  // Stars
+  // Stars — batched into a single path
   if(altFrac>0.35){
     const starAlpha=Math.min(1,(altFrac-0.35)/0.4);
     X.fillStyle=`rgba(255,255,255,${starAlpha*0.7})`;
+    X.beginPath();
     for(let si=0;si<80;si++){
       const sx2=(Math.sin(si*127.1+si*si*0.3)*0.5+0.5)*W;
       const sy2=(Math.cos(si*311.7+si*0.7)*0.5+0.5)*H*0.7;
-      const sz=0.5+Math.sin(si*73.3)*1.2+Math.sin(Date.now()*0.001+si)*0.3;
-      X.beginPath();X.arc(sx2,sy2,Math.max(0.3,sz),0,Math.PI*2);X.fill();
+      const sz=0.5+Math.sin(si*73.3)*1.2+Math.sin(_now*0.001+si)*0.3;
+      X.moveTo(sx2+Math.max(0.3,sz),sy2);
+      X.arc(sx2,sy2,Math.max(0.3,sz),0,Math.PI*2);
     }
+    X.fill();
   }
   // Moon
   if(altFrac>0.3){
@@ -360,7 +375,7 @@ export function draw(){
   if(altFrac>0.15&&altFrac<0.8){
     const cloudA=Math.min(0.35,(altFrac<0.5?altFrac-0.15:0.8-altFrac)*1.2);
     X.globalAlpha=cloudA;X.fillStyle='#fff';
-    const cdrift=Date.now()*0.003;
+    const cdrift=_now*0.003;
     for(let ci2=0;ci2<5;ci2++){
       const cx2=((ci2*W*0.28+cdrift*20+ci2*137)%((W+400)))-200;
       const cy2=H*0.15+ci2*H*0.08+Math.sin(ci2*2.3)*20;
@@ -373,17 +388,17 @@ export function draw(){
 
   X.save();X.translate(W/2-S.cam.x*cZoom,H/2-S.cam.y*cZoom);X.scale(cZoom,cZoom);
 
-  // Ground
-  const gg=X.createLinearGradient(0,TB,0,TB+100);gg.addColorStop(0,'#8AB880');gg.addColorStop(0.4,'#6AA070');gg.addColorStop(1,'#4A7858');
-  X.fillStyle=gg;X.fillRect(TL-UW,TB,TW+UW*2,800);
+  // Ground (cached — never changes)
+  if(!_cachedGroundGrad){_cachedGroundGrad=X.createLinearGradient(0,TB,0,TB+100);_cachedGroundGrad.addColorStop(0,'#8AB880');_cachedGroundGrad.addColorStop(0.4,'#6AA070');_cachedGroundGrad.addColorStop(1,'#4A7858')}
+  X.fillStyle=_cachedGroundGrad;X.fillRect(TL-UW,TB,TW+UW*2,800);
 
   // City layer — parallax 0.35×
   X.restore();
   X.save();
   X.translate(W/2-S.cam.x*cZoom*0.35,H/2-S.cam.y*cZoom);X.scale(cZoom,cZoom);
-  // Atmospheric haze at base
-  const chz=X.createLinearGradient(0,TB-180,0,TB);chz.addColorStop(0,'rgba(170,135,95,0)');chz.addColorStop(1,'rgba(170,135,95,0.22)');
-  X.fillStyle=chz;X.fillRect(-3200,TB-180,6400,180);
+  // Atmospheric haze at base (cached — never changes)
+  if(!_cachedHazeGrad){_cachedHazeGrad=X.createLinearGradient(0,TB-180,0,TB);_cachedHazeGrad.addColorStop(0,'rgba(170,135,95,0)');_cachedHazeGrad.addColorStop(1,'rgba(170,135,95,0.22)')}
+  X.fillStyle=_cachedHazeGrad;X.fillRect(-3200,TB-180,6400,180);
   // Road strip
   X.fillStyle='#3a3a42';X.fillRect(-3200,TB,6400,22);X.fillStyle='#2e2e36';X.fillRect(-3200,TB,6400,3);
   // Buildings
@@ -403,7 +418,7 @@ export function draw(){
       X.fillStyle='rgba(68,70,80,0.9)';X.fillRect(bx+b.w*0.12,by-15,b.w*0.32,15);X.fillRect(bx+b.w*0.52,by-9,b.w*0.22,9);
       X.strokeStyle='rgba(110,112,122,0.72)';X.lineWidth=1.5;
       X.beginPath();X.moveTo(bx+b.w*0.74,by);X.lineTo(bx+b.w*0.74,by-24);X.stroke();
-      const blink=Math.floor(Date.now()/900+b.x*0.013)%2===0;
+      const blink=Math.floor(_now/900+b.x*0.013)%2===0;
       X.fillStyle=blink?'rgba(255,50,50,0.9)':'rgba(255,50,50,0.15)';
       X.beginPath();X.arc(bx+b.w*0.74,by-26,2.5,0,Math.PI*2);X.fill();
     }
@@ -459,7 +474,7 @@ export function draw(){
     const i=f.level,lit=S.litFloors.has(i),fy=f.y;
     X.strokeStyle='rgba(120,100,80,0.3)';X.lineWidth=4;X.beginPath();X.moveTo(TL-UW,fy);X.lineTo(TL,fy);X.stroke();X.beginPath();X.moveTo(TR,fy);X.lineTo(TR+UW,fy);X.stroke();
     for(let bi=0;bi<BPF;bi++){
-      const bx=TL+bi*PG,isWin=(bi+1)%4===0,isElev=bi===6;
+      const bx=TL+bi*PG,isWin=isWinBlock(bi),isElev=isElevBlock(bi);
       if(isElev){
         const elevW=PG*0.5,elevX=bx+PG*0.25;  // 150px shaft centered in 300px block
         const doorH=FH*0.65,doorY=fy-doorH;    // doors sit on the floor line
@@ -539,7 +554,7 @@ export function draw(){
   X.fillStyle='#2c2e33';X.fillRect(TL-FT,TT-FT,TW+FT*2,FT);
 
   // Boundary
-  const bOp=0.2+Math.sin(Date.now()*0.003)*0.12;X.strokeStyle=`rgba(180,160,80,${bOp})`;X.lineWidth=4;X.setLineDash([24,16]);
+  const bOp=0.2+Math.sin(_now*0.003)*0.12;X.strokeStyle=`rgba(180,160,80,${bOp})`;X.lineWidth=4;X.setLineDash([24,16]);
   X.beginPath();X.moveTo(TL-UW,TT-400);X.lineTo(TL-UW,TB+100);X.moveTo(TR+UW,TT-400);X.lineTo(TR+UW,TB+100);X.stroke();X.setLineDash([]);
 
   // Stairs
@@ -549,7 +564,7 @@ export function draw(){
 
   // Objects
   S.objs.forEach(o=>{if(!S.litFloors.has(o.floor))return;X.fillStyle='rgba(0,0,0,0.04)';X.beginPath();X.ellipse(o.x+o.width/2,o.y,o.width/2+3,3,0,0,Math.PI*2);X.fill();X.fillStyle=o.c;X.beginPath();X.roundRect(o.x,o.y-o.height,o.width,o.height,4);X.fill();X.fillStyle='rgba(255,255,255,0.12)';X.fillRect(o.x+1,o.y-o.height+1,o.width-2,3)});
-  S.suits.forEach(s=>{if(s.taken||!S.litFloors.has(s.floor))return;const bob=Math.sin(Date.now()*0.002+s.x)*2;X.fillStyle='rgba(80,70,100,0.45)';X.beginPath();X.roundRect(s.x-10,s.y-44+bob,20,32,6);X.fill()});
+  S.suits.forEach(s=>{if(s.taken||!S.litFloors.has(s.floor))return;const bob=Math.sin(_now*0.002+s.x)*2;X.fillStyle='rgba(80,70,100,0.45)';X.beginPath();X.roundRect(s.x-10,s.y-44+bob,20,32,6);X.fill()});
 
   // NPCs
   const al=[],ca=[],bz=[],cw=[];

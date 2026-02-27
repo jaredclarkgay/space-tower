@@ -15,7 +15,7 @@ export const S={
   enProd:0,enDraw:0,crRate:0,
   litFloors:new Set([0,1]),
   modules:Array.from({length:NF},()=>Array(BPF).fill(null)),
-  selMod:null,panelFloor:0,panelDirty:true,frame:0,incomeTk:0,decayTk:0,saveTk:0,
+  selMod:null,panelFloor:0,panelDirty:true,frame:0,
   elevOpen:false,elevDoors:0,elevDoorTarget:0,elevAnim:'idle',elevAnimT:0,elevFrom:-1,elevTo:-1,elevSelected:0,
   compendium:{entries:{}},
 };

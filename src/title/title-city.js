@@ -13,8 +13,13 @@ let seed = 42;
 function sr() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
 
 // ── Config ──
+// Shared tower geometry constants (imported by title-exterior.js for collision)
+export const TOWER_WIDTH = 6;
+export const TOWER_DEPTH = 6;
+export const TOWER_FLOOR_H = 1.2;
+
 const TC = {
-  width: 6, depth: 6, floorH: 1.2, maxFloors: 65,
+  width: TOWER_WIDTH, depth: TOWER_DEPTH, floorH: TOWER_FLOOR_H, maxFloors: 65,
   litFloors: [], group: null, floorMeshes: [], playerFloor: 0
 };
 export const DIMS = { groundRadius: 300, buildingRingR: 180, treeRingR: 100, cameraOrbitR: 260, cameraHeight: 55 };
@@ -49,6 +54,22 @@ const _v3 = new THREE.Vector3();
 const _c = new THREE.Color();
 
 export function buildCityScene(scene, litFloors) {
+  // Reset module-level arrays to prevent double-population on re-entry
+  extColumns.length = 0;
+  structColumns.length = 0;
+  craneParts.length = 0;
+  cableMesh = null;
+  elevMesh = null; elevTrack = null;
+  sats.length = 0;
+  starPoints = null;
+  starData.length = 0;
+  towerWinMesh = null;
+  towerWinData.length = 0;
+  towerFlickerList.length = 0;
+  bldgHoverMesh = null;
+  bldgWinData.length = 0;
+  TC.litFloors = []; TC.group = null; TC.floorMeshes = [];
+
   buildGround(scene);
   buildTower(scene);
   buildEntrance(scene);
@@ -111,7 +132,7 @@ function buildGround(scene) {
 }
 
 // ═══ TOWER (perimeter scaffold beams, open center elevator shaft, instanced windows) ═══
-const BEAM_DEPTH = 0.4; // depth of perimeter beams (walkable width)
+export const BEAM_DEPTH = 0.4; // depth of perimeter beams (walkable width)
 
 function buildTower(scene) {
   const tw = TC.width, td = TC.depth, fh = TC.floorH, nf = TC.maxFloors;
@@ -557,7 +578,7 @@ function updateSats(scene, dt) {
   if (sats.length < 2 && Math.random() < 0.005) spawnSat(scene);
   for (let i = sats.length - 1; i >= 0; i--) {
     const s = sats[i]; s.progress += s.speed * dt;
-    if (s.progress >= 1) { scene.remove(s.mesh); sats.splice(i, 1); continue; }
+    if (s.progress >= 1) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose(); sats.splice(i, 1); continue; }
     const a = s.fromAngle + (s.toAngle - s.fromAngle) * s.progress;
     s.mesh.position.set(Math.cos(a) * s.radius, s.height, Math.sin(a) * s.radius);
   }

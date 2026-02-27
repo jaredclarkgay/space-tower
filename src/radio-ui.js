@@ -3,6 +3,8 @@ import { play, pause, togglePlayPause, nextTrack, prevTrack, setVolume, getVolum
 
 let updateInterval = null;
 let trackListEl = null;
+let _onMouseMove = null;
+let _onMouseUp = null;
 
 export function setupRadio(containerSelector) {
   const radio = containerSelector
@@ -67,17 +69,21 @@ export function setupRadio(containerSelector) {
     seek(frac * meta.duration);
   });
 
-  // Scrub drag
+  // Scrub drag — store refs so disposeRadio() can remove them
   let dragging = false;
   if (scrubDot) scrubDot.addEventListener('mousedown', (e) => { dragging = true; e.preventDefault(); });
-  document.addEventListener('mousemove', (e) => {
+  if (_onMouseMove) document.removeEventListener('mousemove', _onMouseMove);
+  if (_onMouseUp) document.removeEventListener('mouseup', _onMouseUp);
+  _onMouseMove = (e) => {
     if (!dragging || !scrubBg) return;
     const rect = scrubBg.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const meta = getMeta();
     seek(frac * meta.duration);
-  });
-  document.addEventListener('mouseup', () => { dragging = false; });
+  };
+  _onMouseUp = () => { dragging = false; };
+  document.addEventListener('mousemove', _onMouseMove);
+  document.addEventListener('mouseup', _onMouseUp);
 
   // Update display on interval
   if (updateInterval) clearInterval(updateInterval);
@@ -187,4 +193,6 @@ export function disposeRadio() {
   if (updateInterval) clearInterval(updateInterval);
   updateInterval = null;
   if (trackListEl) { trackListEl.remove(); trackListEl = null; }
+  if (_onMouseMove) { document.removeEventListener('mousemove', _onMouseMove); _onMouseMove = null; }
+  if (_onMouseUp) { document.removeEventListener('mouseup', _onMouseUp); _onMouseUp = null; }
 }

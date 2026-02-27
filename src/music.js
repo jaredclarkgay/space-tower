@@ -548,14 +548,6 @@ export function seek(seconds) {
 export function isPlaying() { return playing; }
 export function isInitialized() { return initialized; }
 
-export function fadeOut() {
-  if (musicGain) musicGain.gain.rampTo(0, 2);
-}
-
-export function fadeIn() {
-  if (musicGain && playing && !_musicMuted) musicGain.gain.rampTo(volume * 0.25, 1);
-}
-
 export function setMuted(muted) {
   _musicMuted = muted;
   if (!musicGain) return;

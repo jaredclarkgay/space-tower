@@ -1,6 +1,6 @@
 'use strict';
 import { S, recalc, cZoom, tZoom, setCZoom, setTZoom } from './state.js';
-import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk } from './constants.js';
+import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF } from './constants.js';
 import { FD } from './floors.js';
 import { CASUAL_TOPS_M } from './npcs.js';
 import { initCanvas, draw, showMsg, floatText, getInter, nearSuit } from './render.js';
@@ -12,10 +12,18 @@ import { setupCompendium, isCompendiumOpen } from './compendium.js';
 import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, soundOn, toggleSound, getAudioCtx } from './sound.js';
 import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js';
 import { setupRadio } from './radio-ui.js';
-import { ELEV_X, NF } from './constants.js';
+
+// ═══ REAL-TIME ACCUMULATORS (frame-rate independent) ═══
+let _lastFrameTime = 0;
+let _incomeAcc = 0;   // income every 2s
+let _decayAcc = 0;    // decay every 3s
+let _saveAcc = 0;     // auto-save every 60s
+const INCOME_INTERVAL = 2000;
+const DECAY_INTERVAL = 3000;
+const SAVE_INTERVAL = 60000;
 
 // ═══ ELEVATOR PANEL ═══
-let elevPanel, elevFloors;
+let elevPanel, elevFloors, fpElRef;
 
 function openElev(){
   ensureAudio();
@@ -69,10 +77,11 @@ function update(){
   else if(S.elevAnim==='traveling'){S.elevAnimT--;if(S.elevAnimT<=0){p.x=ELEV_X;p.y=TB-(S.elevTo*FH);p.vy=0;p.vx=0;p.onF=true;p.st='idle';p.cf=S.elevTo;S.cam.x=p.x;S.cam.y=p.y-60;S.elevAnim='opening';S.elevDoorTarget=1;sndElev()}}
   else if(S.elevAnim==='opening'){if(S.elevDoors>0.95)S.elevAnim='idle'}
 
-  S.incomeTk++;if(S.incomeTk>=120){S.incomeTk=0;let cg=5+S.crRate;S.res.credits+=cg;floatText(`+${cg} 💰`,cg>5?'#00ff88':'#ffd700');S.panelDirty=true}
-  S.decayTk++;if(S.decayTk>=180){S.decayTk=0;const nLit=S.litFloors.size;const decay=0.3+nLit*0.15;S.sat=Math.max(0,S.sat-decay);S.panelDirty=true;if(S.sat<20&&S.frame%600<2){floatText('⚠ Morale critical','#ff6b35');sndWarn()}}
+  const frameNow=performance.now(),frameDt=_lastFrameTime?frameNow-_lastFrameTime:16;_lastFrameTime=frameNow;
+  _incomeAcc+=frameDt;if(_incomeAcc>=INCOME_INTERVAL){_incomeAcc-=INCOME_INTERVAL;let cg=5+S.crRate;S.res.credits+=cg;floatText(`+${cg} 💰`,cg>5?'#00ff88':'#ffd700');S.panelDirty=true}
+  _decayAcc+=frameDt;if(_decayAcc>=DECAY_INTERVAL){_decayAcc-=DECAY_INTERVAL;const nLit=S.litFloors.size;const decay=0.3+nLit*0.15;S.sat=Math.max(0,S.sat-decay);S.panelDirty=true;if(S.sat<20&&_incomeAcc<100){floatText('⚠ Morale critical','#ff6b35');sndWarn()}}
   if(S.jp['KeyF']){const spEl=document.getElementById('sp');if(p.suit){p.suit=false;spEl.style.display='none'}else{const s=nearSuit();if(s){s.taken=true;p.suit=true;p.suitC=pk(CASUAL_TOPS_M);spEl.style.display='block'}}}
-  S.saveTk++;if(S.saveTk>=3600){S.saveTk=0;autoSave()}
+  _saveAcc+=frameDt;if(_saveAcc>=SAVE_INTERVAL){_saveAcc-=SAVE_INTERVAL;autoSave()}
   if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()){
   const jk=k['ArrowUp']||k['KeyW'],dk=k['ArrowDown']||k['KeyS'];
   const stUp=inter&&inter.t==='up',stDn=inter&&inter.t==='dn';
@@ -123,8 +132,7 @@ function update(){
   });
   if(p.st==='walk'||p.st==='climb')p.bob+=0.2;else p.bob*=0.9;
   if(p.st==='walk'&&S.frame%12===0)sndStep();
-  const fpEl=document.getElementById('fp');
-  fpEl.textContent=p.cf<0?'ROOFTOP · UNDER CONSTRUCTION':`FLOOR ${p.cf+1} · ${FD[p.cf]?.name||''}`;
+  fpElRef.textContent=p.cf<0?'ROOFTOP · UNDER CONSTRUCTION':`FLOOR ${p.cf+1} · ${FD[p.cf]?.name||''}`;
   S.cam.tx=p.x;S.cam.ty=p.y-60;S.cam.x+=(S.cam.tx-S.cam.x)*0.08;S.cam.y+=(S.cam.ty-S.cam.y)*0.08;
   S.jp={};
 }
@@ -162,6 +170,7 @@ export function initGame(saveData){
   // Elevator panel refs
   elevPanel=document.getElementById('elev-panel');
   elevFloors=document.getElementById('elev-floors');
+  fpElRef=document.getElementById('fp');
   addEventListener('keydown',e=>{if(e.code==='Escape'&&S.elevOpen)closeElev()});
 
   // Init subsystems

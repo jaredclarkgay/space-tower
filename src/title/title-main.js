@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import './title-styles.css';
 import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlend } from './title-city.js';
-import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, fadeOutUI } from './title-ui.js';
+import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY } from './title-transition.js';
 import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior } from './title-exterior.js';
@@ -383,8 +383,8 @@ export function disposeTitle() {
     scene.traverse(obj => {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-        else obj.material.dispose();
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
       }
     });
   }

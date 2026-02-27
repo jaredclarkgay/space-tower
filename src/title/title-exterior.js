@@ -27,12 +27,12 @@ const CHARGE_MAX = 40;
 const GRAVITY = 0.006;
 const CLIMB_SPEED = 0.04;
 
-// Tower geometry (must match title-city.js)
-const TOWER_HALF = 3;
-const FLOOR_H = 1.2;
+// Tower geometry — must match TC/BEAM_DEPTH in title-city.js
+const TOWER_HALF = 3;              // TC.width / 2
+const FLOOR_H = 1.2;              // TC.floorH
 const BASE_H = FLOOR_H * 3;       // 3.6
 const MAX_EXT_FLOOR = 9;
-const BEAM_DEPTH = 0.4;
+const BEAM_DEPTH = 0.4;           // BEAM_DEPTH in title-city.js
 const BEAM_HALF = BEAM_DEPTH / 2;  // 0.2
 const OUTER_EDGE = TOWER_HALF + BEAM_HALF; // 3.2
 const INNER_EDGE = TOWER_HALF - BEAM_HALF; // 2.8
