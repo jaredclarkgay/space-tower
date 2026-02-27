@@ -44,6 +44,33 @@
   #zoom-sl::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:rgba(255,255,255,0.75);border-radius:50%;cursor:pointer}
   #snd-btn{position:fixed;bottom:calc(42vh + 12px);right:14px;z-index:25;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.15);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);transition:opacity 0.2s}
   #snd-btn:hover{opacity:0.9;color:rgba(255,255,255,0.9)}
+  .radio-wrap{position:fixed;bottom:calc(42vh + 40px);right:14px;z-index:25;width:220px;font-family:'Courier New',monospace;color:rgba(255,255,255,0.7);user-select:none}
+  .radio-widget{background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px 10px;backdrop-filter:blur(6px)}
+  .radio-song{font-size:11px;font-weight:bold;color:rgba(255,255,255,0.85);overflow:hidden;position:relative}
+  .radio-marquee{display:inline-block;white-space:nowrap;animation:marquee-scroll 20s linear infinite;padding-right:3em}
+  @keyframes marquee-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  .radio-artist{font-size:8px;letter-spacing:1px;opacity:0.4;margin-bottom:4px}
+  .radio-controls{display:flex;align-items:center;gap:4px;font-size:10px;margin-bottom:4px}
+  .radio-controls button{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.55);cursor:pointer;font-size:11px;padding:3px 8px;border-radius:4px;font-family:monospace;transition:all 0.15s}
+  .radio-controls button:hover{color:rgba(255,255,255,0.95);background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.3)}
+  .radio-controls .radio-play{font-size:13px;padding:3px 10px}
+  .radio-controls .radio-list{margin-left:auto;font-size:9px;letter-spacing:0.5px}
+  .radio-scrub{position:relative;height:10px;cursor:pointer;margin-bottom:4px}
+  .radio-scrub-bg{position:absolute;top:4px;left:0;right:40px;height:2px;background:rgba(255,255,255,0.12);border-radius:1px}
+  .radio-scrub-fill{height:100%;background:rgba(255,215,0,0.5);border-radius:1px;width:0%}
+  .radio-scrub-dot{position:absolute;top:1px;width:8px;height:8px;background:rgba(255,215,0,0.8);border-radius:50%;transform:translateX(-50%);cursor:grab;left:0%}
+  .radio-time{position:absolute;right:0;top:0;font-size:8px;opacity:0.35}
+  .radio-vol{display:flex;align-items:center;gap:6px;font-size:9px}
+  .radio-vol-slider{-webkit-appearance:none;appearance:none;width:70px;height:3px;background:rgba(255,255,255,0.12);border-radius:2px;outline:none;cursor:pointer}
+  .radio-vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;background:rgba(255,255,255,0.6);border-radius:50%;cursor:pointer}
+  .radio-tracklist{position:absolute;bottom:100%;left:0;right:0;margin-bottom:4px;background:rgba(8,12,24,0.95);border:1px solid rgba(255,255,255,0.15);border-radius:8px;overflow:hidden;backdrop-filter:blur(8px)}
+  .radio-tracklist-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;font-size:9px;letter-spacing:1px;opacity:0.5;border-bottom:1px solid rgba(255,255,255,0.08)}
+  .radio-tracklist-close{background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:12px;padding:0 2px}
+  .radio-tracklist-close:hover{color:rgba(255,255,255,0.9)}
+  .radio-tracklist-list{max-height:280px;overflow-y:auto;padding:4px 0}
+  .radio-tracklist-row{padding:5px 10px;font-size:10px;cursor:pointer;transition:background 0.1s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .radio-tracklist-row:hover{background:rgba(255,255,255,0.08)}
+  .radio-tracklist-row.active{color:rgba(255,215,0,0.9);background:rgba(255,215,0,0.06)}
   #elev-panel{position:fixed;top:50%;left:calc(50% + 160px);transform:translate(0,-50%);background:rgba(10,14,30,0.95);border:2px solid rgba(255,255,255,0.15);border-radius:8px;padding:16px;z-index:30;color:#fff;font-family:'Courier New',monospace;min-width:200px;display:none;backdrop-filter:blur(8px)}
   #elev-panel.open{display:block}
   .elev-title{font-size:10px;letter-spacing:3px;opacity:0.4;text-align:center;margin-bottom:10px}
@@ -86,9 +113,16 @@
   .comp-dtype{font-size:9px;opacity:0.4;letter-spacing:2px;text-transform:uppercase;margin-bottom:14px}
   .comp-dlabel{font-size:8px;opacity:0.3;letter-spacing:2px;margin-bottom:7px}
   .comp-dline{font-size:10px;opacity:0.65;margin-bottom:8px;line-height:1.5;font-style:italic}
-  #comp-btn{position:fixed;bottom:calc(42vh + 12px);right:68px;z-index:25;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.15);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);transition:opacity 0.2s}
+  #comp-btn{position:fixed;bottom:calc(42vh + 12px);right:40px;z-index:25;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.15);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);transition:opacity 0.2s}
   #comp-btn:hover{opacity:0.9;color:rgba(255,255,255,0.9)}
-  #menu-btn{position:fixed;bottom:calc(42vh + 12px);right:118px;z-index:25;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.15);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);transition:opacity 0.2s}
+  #location-toggle{position:fixed;bottom:calc(42vh + 12px);right:118px;z-index:25;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.15);border-radius:14px;padding:3px 10px;backdrop-filter:blur(4px);cursor:pointer;font-family:monospace;font-size:9px;letter-spacing:0.5px;color:rgba(255,255,255,0.45);user-select:none;transition:all 0.2s}
+  #location-toggle:hover{border-color:rgba(255,255,255,0.3);color:rgba(255,255,255,0.7)}
+  .toggle-label{transition:color 0.2s}
+  .toggle-label.on{color:rgba(255,215,0,0.9)}
+  .toggle-track{width:28px;height:14px;background:rgba(255,255,255,0.1);border-radius:7px;position:relative;transition:background 0.3s}
+  .toggle-knob{position:absolute;top:2px;left:2px;width:10px;height:10px;background:rgba(255,215,0,0.85);border-radius:50%;transition:left 0.3s ease}
+  .toggle-track.out .toggle-knob{left:16px}
+  #menu-btn{position:fixed;bottom:calc(42vh + 12px);right:68px;z-index:25;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.15);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);transition:opacity 0.2s}
   #menu-btn:hover{opacity:0.9;color:rgba(255,255,255,0.9)}
   @media(pointer:coarse),(max-width:768px){
     #touch-ctrls{display:block;inset:0}#instr{display:none}
@@ -111,8 +145,29 @@
 <canvas id="gameCanvas"></canvas>
 <div id="game-ui" style="display:none">
 <div id="hud-top"><div class="hp" id="fp">FLOOR 1 · LOBBY</div><div class="hp" id="sp" style="display:none;background:rgba(255,180,50,0.6);color:#2a2010">🧑 SUIT — F</div></div>
-<div id="instr">WASD / Arrows — move, climb<br>Hold ↑ — charge jump (1-3 floors)<br>Hold ↓ — charge drop (1-4 floors)<br>E — interact · F — suit · TAB — compendium</div>
+<div id="instr">WASD / Arrows — move, climb<br>Hold ↑ or Space — charge jump (1-3 floors)<br>Hold ↓ — charge drop (1-4 floors)<br>E — interact · F — suit · TAB — compendium</div>
 <div id="zoom-wrap"><div id="zoom-lbl">70%</div><input type="range" id="zoom-sl" min="0.25" max="1.0" step="0.01" value="0.7"></div>
+<div id="radio" class="radio-wrap">
+  <div class="radio-widget">
+    <div class="radio-song" id="radio-song">Tower Radio</div>
+    <div class="radio-artist">TOWER RADIO</div>
+    <div class="radio-controls">
+      <button class="radio-prev" id="radio-prev" title="Previous">&laquo; Prev</button>
+      <button class="radio-play" id="radio-play" title="Play/Pause">&#9654;</button>
+      <button class="radio-next" id="radio-next" title="Next">Next &raquo;</button>
+      <button class="radio-list" id="radio-list" title="Track List">LIST</button>
+    </div>
+    <div class="radio-scrub" id="radio-scrub">
+      <div class="radio-scrub-bg" id="radio-scrub-bg"><div class="radio-scrub-fill" id="radio-scrub-fill"></div></div>
+      <div class="radio-scrub-dot" id="radio-scrub-dot"></div>
+      <div class="radio-time" id="radio-time">0:00</div>
+    </div>
+    <div class="radio-vol">
+      <span style="opacity:0.4">VOL</span>
+      <input type="range" class="radio-vol-slider" id="radio-vol-slider" min="0" max="100" value="40">
+    </div>
+  </div>
+</div>
 <button id="snd-btn">🔊</button>
 <div id="msg"><div class="ml"></div><div class="mt2"></div></div>
 <div id="elev-panel"><div class="elev-title">ELEVATOR</div><div id="elev-floors"></div><div class="elev-hint">ESC TO CLOSE</div></div>
@@ -150,6 +205,11 @@
   </div>
 </div>
 <button id="comp-btn" title="Compendium [TAB]">📋</button>
+<div id="location-toggle" title="Switch Inside/Outside">
+  <span class="toggle-label on">IN</span>
+  <div class="toggle-track"><div class="toggle-knob"></div></div>
+  <span class="toggle-label">OUT</span>
+</div>
 <button id="menu-btn" title="Back to Title">⌂</button>
 </div>
 <script type="module" src="/src/main.js"></script>

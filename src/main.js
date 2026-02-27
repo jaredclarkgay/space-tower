@@ -1,12 +1,20 @@
 'use strict';
-import { initTitle, disposeTitle } from './title/title-main.js';
-import { initGame, startGameLoop } from './game-init.js';
+import { initTitle, disposeTitle, skipToExterior } from './title/title-main.js';
+import { initGame, startGameLoop, stopGameLoop } from './game-init.js';
 import { peekSave } from './save.js';
 
 const saveData = peekSave();
 
 // Launch title screen
 initTitle(document.getElementById('titleCanvas'), saveData);
+
+// Check if returning to exterior from the sim
+const gotoExterior = localStorage.getItem('spacetower_gotoExterior');
+if (gotoExterior) {
+  localStorage.removeItem('spacetower_gotoExterior');
+  // Skip to exterior after a brief frame for the scene to initialize
+  requestAnimationFrame(() => { skipToExterior(); });
+}
 
 // When title screen signals game start
 document.addEventListener('enter-game', (e) => {

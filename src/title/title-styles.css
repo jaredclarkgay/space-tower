@@ -147,16 +147,20 @@
   color: rgba(40,35,25,0.4); text-transform: uppercase;
 }
 .title-enter {
-  margin-top: clamp(20px, 4vh, 40px); pointer-events: auto; cursor: pointer;
-  padding: 12px 28px; border: 1px solid rgba(40,35,25,0.15); border-radius: 4px;
-  background: rgba(180,140,80,0.08);
-  font-family: inherit; font-size: clamp(11px, 1.3vw, 14px); letter-spacing: 0.2em;
-  color: rgba(40,35,25,0.6); text-transform: uppercase;
+  position: fixed; bottom: 28px; right: 28px; z-index: 70;
+  pointer-events: auto; cursor: pointer;
+  padding: 14px 32px; border: 1px solid rgba(255,255,255,0.4); border-radius: 4px;
+  background: rgba(255,255,255,0.92);
+  font-family: 'Century Gothic', 'Futura', 'Avenir', 'Gill Sans', sans-serif;
+  font-size: clamp(11px, 1.3vw, 14px); font-weight: 600; letter-spacing: 0.2em;
+  color: #1a1e28; text-transform: uppercase;
   transition: all 0.3s ease; backdrop-filter: blur(4px);
+  opacity: 0; animation: fadeIn 1.5s ease-out 0.5s forwards;
 }
 .title-enter:hover {
-  background: rgba(180,140,80,0.18); border-color: rgba(40,35,25,0.3);
-  color: rgba(40,35,25,0.85);
+  background: #fff; border-color: rgba(255,255,255,0.7);
+  box-shadow: 0 0 24px rgba(255,255,255,0.2);
+  color: #0a0c14;
 }
 
 /* ── Keyframes ── */

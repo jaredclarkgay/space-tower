@@ -8,7 +8,7 @@ export function setMobTab(t){mobTab=t}
 
 // ═══ INPUT ═══
 export function setupInput(){
-  addEventListener('keydown',e=>{ensureAudio();if(!S.keys[e.code])S.jp[e.code]=true;S.keys[e.code]=true});
+  addEventListener('keydown',e=>{ensureAudio();if(e.code==='Space')e.preventDefault();if(!S.keys[e.code])S.jp[e.code]=true;S.keys[e.code]=true});
   addEventListener('keyup',e=>{S.keys[e.code]=false});
 
   const tcMap={tl:'ArrowLeft',tr:'ArrowRight',tu:'ArrowUp',td:'ArrowDown',te:'KeyE',tf:'KeyF'};

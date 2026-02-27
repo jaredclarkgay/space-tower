@@ -7,7 +7,7 @@ export const S={
   cam:{x:0,y:0,tx:0,ty:0},
   floors:[],stairs:[],objs:[],npcs:[],suits:[],cranes:[],workers:[],
   player:{x:0,y:TB-FH,w:24,h:48,vx:0,vy:0,spd:5,color:'#FF5722',
-    fr:true,cf:0,st:'idle',onF:true,clT:null,clP:0,bob:0,alien:true,suit:false,suitC:'#506070',
+    fr:true,cf:0,st:'idle',onF:true,clT:null,clP:0,bob:0,alien:false,suit:false,suitC:'#506070',
     chgT:0,isChg:false,drpT:0,isDrp:false,drpPhase:0,baseZoom:0,
   },
   keys:{},jp:{},iLock:false,msgTmr:null,

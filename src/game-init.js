@@ -9,7 +9,9 @@ import { setupPanel, renderPanel } from './panel.js';
 import { genWorld } from './world.js';
 import { loadGame, autoSave } from './save.js';
 import { setupCompendium, isCompendiumOpen } from './compendium.js';
-import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, soundOn, toggleSound } from './sound.js';
+import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, soundOn, toggleSound, getAudioCtx } from './sound.js';
+import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js';
+import { setupRadio } from './radio-ui.js';
 import { ELEV_X, NF } from './constants.js';
 
 // ═══ ELEVATOR PANEL ═══
@@ -79,10 +81,10 @@ function update(){
     if(k['ArrowLeft']||k['KeyA']){p.vx=-p.spd;p.fr=false;if(p.onF)p.st='walk'}
     if(k['ArrowRight']||k['KeyD']){p.vx=p.spd;p.fr=true;if(p.onF)p.st='walk'}
     if(p.vx===0&&p.onF&&!p.isChg&&!p.isDrp)p.st='idle';
-    if(jk){
-      if(stUp){p.st='climb';p.clT=inter.v;p.clP=0;p.x=inter.v.bx;p.vx=0;p.isChg=false;p.chgT=0;setTZoom(p.baseZoom||tZoom)}
-      else if(p.onF){if(!p.isChg)p.baseZoom=tZoom;p.isChg=true;p.chgT=Math.min(p.chgT+1,CHG_MX);setTZoom(p.baseZoom-p.chgT/CHG_MX*0.2)}
-    } else {if(p.isChg&&p.onF){const t=p.chgT/CHG_MX;p.vy=JUMP_F+(JUMP_MX-JUMP_F)*t;p.onF=false;p.st='jump'}if(p.isChg)setTZoom(p.baseZoom);p.isChg=false;p.chgT=0}
+    if(jk&&stUp){p.st='climb';p.clT=inter.v;p.clP=0;p.x=inter.v.bx;p.vx=0;p.isChg=false;p.chgT=0;setTZoom(p.baseZoom||tZoom)}
+    else if(jk||k['Space']){
+      if(p.onF){if(!p.isChg)p.baseZoom=tZoom;p.isChg=true;p.chgT=Math.min(p.chgT+1,CHG_MX);setTZoom(p.baseZoom-p.chgT/CHG_MX*0.2)}
+    } else {if(p.isChg&&p.onF){const t=p.chgT/CHG_MX;p.vy=JUMP_F+(JUMP_MX-JUMP_F)*t;p.onF=false;p.st='jump';p.flipInitVel=p.vy;p.flipCommitted=t>=0.35}if(p.isChg)setTZoom(p.baseZoom);p.isChg=false;p.chgT=0}
     if(dk&&p.onF&&!stDn){if(!p.isDrp)p.baseZoom=p.baseZoom||tZoom;p.isDrp=true;p.drpT=Math.min(p.drpT+1,DROP_MX);setTZoom(p.baseZoom-p.drpT/DROP_MX*0.25)}
     else if(dk&&stDn){p.st='climb';p.clT=inter.v;p.clP=1;p.x=inter.v.tx;p.vx=0;p.isDrp=false;p.drpT=0;setTZoom(p.baseZoom||tZoom)}
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
@@ -100,8 +102,8 @@ function update(){
     const xMin=TL-UW+p.w/2,xMax=TR+UW-p.w/2;
     if(p.x<xMin)p.x=xMin;if(p.x>xMax)p.x=xMax;
     p.onF=false;
-    for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump')p.st=p.vx===0?'idle':'walk';break}}
-    if(p.y>TB){p.y=TB;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=0}
+    for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false}break}}
+    if(p.y>TB){p.y=TB;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=0;p.flipCommitted=false}
   }
   } // end movement guard
   if(S.elevOpen){
@@ -128,15 +130,34 @@ function update(){
 }
 
 // ═══ GAME LOOP ═══
-function loop(){update();draw();renderPanel();requestAnimationFrame(loop)}
+function loop(){update();draw();renderPanel();gameAnimId=requestAnimationFrame(loop)}
 
 export function initGame(saveData){
   // Wire up sound button
   document.getElementById('snd-btn').addEventListener('click',()=>toggleSound());
   document.getElementById('snd-btn').textContent=soundOn?'🔊':'🔇';
 
+  // Wire up radio
+  setupRadio();
+
+  // Init music on first interaction (shares AudioContext with SFX)
+  const _initMusicOnce = async () => {
+    ensureAudio();
+    const ctx = getAudioCtx();
+    if (ctx) await initMusic(ctx);
+    if (!soundOn) setMusicMuted(true);
+    document.removeEventListener('click', _initMusicOnce);
+    document.removeEventListener('keydown', _initMusicOnce);
+  };
+  document.addEventListener('click', _initMusicOnce);
+  document.addEventListener('keydown', _initMusicOnce);
+
+  // Wire up inside/outside toggle (go to exterior)
+  const locToggle = document.getElementById('location-toggle');
+  if (locToggle) locToggle.addEventListener('click', () => { saveMusicState(); autoSave(); localStorage.setItem('spacetower_gotoExterior','1'); location.reload(); });
+
   // Wire up menu button (back to title)
-  document.getElementById('menu-btn').addEventListener('click',()=>{autoSave();location.reload()});
+  document.getElementById('menu-btn').addEventListener('click',()=>{saveMusicState(); autoSave();location.reload()});
 
   // Elevator panel refs
   elevPanel=document.getElementById('elev-panel');
@@ -163,6 +184,11 @@ export function initGame(saveData){
   renderPanel();
 }
 
+let gameAnimId = null;
 export function startGameLoop(){
-  requestAnimationFrame(loop);
+  gameAnimId = requestAnimationFrame(loop);
+}
+export function stopGameLoop(){
+  if (gameAnimId) cancelAnimationFrame(gameAnimId);
+  gameAnimId = null;
 }

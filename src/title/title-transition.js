@@ -1,7 +1,9 @@
 'use strict';
 import * as THREE from 'three';
 import { setSkyBlend } from './title-city.js';
-import { showArrivalText, hideArrivalText, showHomeBtn, hideHomeBtn, fadeOutUI, fadeInUI } from './title-ui.js';
+import { showArrivalText, hideArrivalText, showHomeBtn, hideHomeBtn, fadeOutUI, fadeInUI, hideExteriorRadio, hideMovementHints } from './title-ui.js';
+import { activateExterior, deactivateExterior } from './title-exterior.js';
+import { setupRadio, disposeRadio } from '../radio-ui.js';
 
 /**
  * Forward and reverse cinematic transitions between title menu and game entry.
@@ -122,6 +124,10 @@ export function updateTransition(dt, orbitAngle) {
       _cityData.applyPlayerLighting();
       showArrivalText(_onEnterGame);
       showHomeBtn(() => { playReverseTransition(); });
+      setupRadio('#ext-radio');
+
+      // Activate exterior gameplay after a brief delay
+      setTimeout(() => { activateExterior(); }, 500);
     }
   }
 
@@ -134,6 +140,7 @@ const REVERSE = { active: false, elapsed: 0, dur: 5, startR: 80, startH: 12, tar
 
 export function playReverseTransition() {
   if (REVERSE.active || !TRANSITION.phase) return;
+  deactivateExterior();
   REVERSE.active = true;
   REVERSE.elapsed = 0;
   REVERSE.startR = _cityData.DIMS.cameraOrbitR;
@@ -141,6 +148,9 @@ export function playReverseTransition() {
 
   hideHomeBtn();
   hideArrivalText();
+  hideExteriorRadio();
+  hideMovementHints();
+  disposeRadio();
   SKY.transitionTo('night');
 }
 

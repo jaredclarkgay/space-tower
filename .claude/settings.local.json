@@ -3,7 +3,17 @@
     "allow": [
       "Bash(git init:*)",
       "Bash(git branch:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(git rm:*)",
+      "Bash(wc:*)",
+      "Bash(npx vite:*)",
+      "Bash(python3:*)",
+      "Bash(do:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

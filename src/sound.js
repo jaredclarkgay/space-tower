@@ -1,4 +1,5 @@
 'use strict';
+import { setMuted as setMusicMuted } from './music.js';
 
 // ═══ SOUND ENGINE ═══
 let audioCtx=null,masterGain=null;
@@ -15,6 +16,7 @@ export function toggleSound(){
   soundOn=!soundOn;
   try{localStorage.setItem(SOUND_KEY,soundOn?'on':'off')}catch(e){}
   if(masterGain)masterGain.gain.setTargetAtTime(soundOn?0.35:0,audioCtx.currentTime,0.05);
+  setMusicMuted(!soundOn);
   document.getElementById('snd-btn').textContent=soundOn?'🔊':'🔇';
 }
 // Playable tones
@@ -71,3 +73,4 @@ export function updateAmbient(altFrac2){
 }
 // First interaction triggers AudioContext (browser policy)
 export function ensureAudio(){if(!audioCtx){initAudio();startAmbient()}}
+export function getAudioCtx(){return audioCtx}

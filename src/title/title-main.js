@@ -1,10 +1,13 @@
 'use strict';
 import * as THREE from 'three';
 import './title-styles.css';
-import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover } from './title-city.js';
-import { createTitleUI, removeTitleUI } from './title-ui.js';
+import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlend } from './title-city.js';
+import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, fadeOutUI } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
-import { playTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION } from './title-transition.js';
+import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY } from './title-transition.js';
+import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior } from './title-exterior.js';
+import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
+import { setupRadio, disposeRadio } from '../radio-ui.js';
 
 let renderer, scene, camera;
 let titleAnimId = null;
@@ -21,6 +24,12 @@ let zoomClose = false, zoomTarget = 260;
 
 // ── Mouse tracking ──
 let mouseScreenX = -9999, mouseScreenY = -9999;
+
+// ── Exterior camera ──
+let cameraLookTarget = new THREE.Vector3(0, 2, 0);
+let camBehindAngle = 0;       // angle-based trailing (orbits behind player velocity)
+let wasExteriorActive = false; // detect activation edge
+const _camDir = new THREE.Vector3(); // reusable for camera direction
 
 // ── Listeners (stored for cleanup) ──
 let resizeHandler, mouseDownHandler, mouseMoveHandler, mouseUpHandler;
@@ -58,6 +67,23 @@ export function initTitle(canvas, saveData) {
     () => enterGame(true)
   );
 
+  // Exterior input
+  setupExteriorInput();
+
+  // Music — init on first interaction, then auto-play
+  const _initTitleMusic = async () => {
+    if (isMusicInitialized()) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      await initMusic(ctx);
+      play();
+    } catch (e) { /* music init failed, non-critical */ }
+    document.removeEventListener('click', _initTitleMusic);
+    document.removeEventListener('touchstart', _initTitleMusic);
+  };
+  document.addEventListener('click', _initTitleMusic);
+  document.addEventListener('touchstart', _initTitleMusic);
+
   // ── Zoom toggle ──
   const zoomBtn = document.getElementById('zoom-toggle');
   if (zoomBtn) {
@@ -94,8 +120,13 @@ export function initTitle(canvas, saveData) {
     if (!isDragging) return;
     const dx = e.clientX - lastMouseX;
     if (Math.abs(e.clientX - dragStartX) > 5) dragMoved = true;
-    const sensitivity = 0.004 * (DIMS.cameraOrbitR / 260);
-    orbitAngle += dx * sensitivity;
+    if (isExteriorActive()) {
+      // Drag rotates camera around player
+      camBehindAngle += dx * 0.005;
+    } else {
+      const sensitivity = 0.004 * (DIMS.cameraOrbitR / 260);
+      orbitAngle += dx * sensitivity;
+    }
     lastMouseX = e.clientX;
   };
   mouseUpHandler = (e) => {
@@ -117,8 +148,12 @@ export function initTitle(canvas, saveData) {
     if (!isDragging) return;
     const dx = e.touches[0].clientX - lastMouseX;
     if (Math.abs(e.touches[0].clientX - dragStartX) > 10) dragMoved = true;
-    const sensitivity = 0.004 * (DIMS.cameraOrbitR / 260);
-    orbitAngle += dx * sensitivity;
+    if (isExteriorActive()) {
+      camBehindAngle += dx * 0.005;
+    } else {
+      const sensitivity = 0.004 * (DIMS.cameraOrbitR / 260);
+      orbitAngle += dx * sensitivity;
+    }
     lastMouseX = e.touches[0].clientX;
   };
   touchEndHandler = (e) => {
@@ -169,14 +204,65 @@ export function initTitle(canvas, saveData) {
     updateReverseTransition(dt, (r) => { zoomTarget = r; zoomClose = false; });
 
     // Update camera
-    camera.position.x = Math.cos(orbitAngle) * DIMS.cameraOrbitR;
-    camera.position.z = Math.sin(orbitAngle) * DIMS.cameraOrbitR;
-    camera.position.y = DIMS.cameraHeight;
-    const visFloors = getVisibleFloors();
-    const visH = visFloors * 1.2 + 1.2 * 3; // floorH * floors + baseH
-    const targetY = visH * 0.5;
-    cameraLookY += (targetY - cameraLookY) * 0.05;
-    camera.lookAt(0, cameraLookY, 0);
+    const extActive = isExteriorActive();
+
+    // Detect exterior activation edge — initialize camera angle
+    if (extActive && !wasExteriorActive) {
+      const pp = getPlayerPos();
+      camBehindAngle = Math.atan2(camera.position.x - pp.x, camera.position.z - pp.z);
+      cameraLookTarget.set(pp.x, pp.y + 0.5, pp.z);
+    }
+    wasExteriorActive = extActive;
+
+    if (extActive) {
+      // Get camera forward direction for camera-relative controls
+      camera.getWorldDirection(_camDir);
+      updateExterior(dt, _camDir.x, _camDir.z);
+
+      const pp = getPlayerPos();
+      const pv = getPlayerVel();
+      const camDist = 6;
+      const camHeight = 1.2;
+
+      // Angle-based trailing: camera orbits behind player's velocity direction
+      // Only updates when player is moving — stays put when idle
+      const speed = Math.sqrt(pv.x * pv.x + pv.z * pv.z);
+      if (speed > 0.01) {
+        const targetAngle = Math.atan2(-pv.x, -pv.z); // behind velocity
+        // Shortest-path angle interpolation (never swings through player)
+        let delta = targetAngle - camBehindAngle;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        camBehindAngle += delta * 0.04;
+      }
+
+      // Camera position: behind player at camBehindAngle
+      const targetX = pp.x + Math.sin(camBehindAngle) * camDist;
+      const targetY = pp.y + camHeight;
+      const targetZ = pp.z + Math.cos(camBehindAngle) * camDist;
+
+      // Smooth position follow
+      camera.position.x += (targetX - camera.position.x) * 0.06;
+      camera.position.y += (targetY - camera.position.y) * 0.06;
+      camera.position.z += (targetZ - camera.position.z) * 0.06;
+
+      // Look above player — upward-facing angle to see the tower
+      cameraLookTarget.x += (pp.x - cameraLookTarget.x) * 0.08;
+      cameraLookTarget.y += ((pp.y + 2.0) - cameraLookTarget.y) * 0.08;
+      cameraLookTarget.z += (pp.z - cameraLookTarget.z) * 0.08;
+
+      camera.lookAt(cameraLookTarget);
+    } else {
+      // Original orbit camera — only runs when NOT in exterior mode
+      camera.position.x = Math.cos(orbitAngle) * DIMS.cameraOrbitR;
+      camera.position.z = Math.sin(orbitAngle) * DIMS.cameraOrbitR;
+      camera.position.y = DIMS.cameraHeight;
+      const visFloors = getVisibleFloors();
+      const visH = visFloors * 1.2 + 1.2 * 3; // floorH * floors + baseH
+      const targetY = visH * 0.5;
+      cameraLookY += (targetY - cameraLookY) * 0.05;
+      camera.lookAt(0, cameraLookY, 0);
+    }
 
     // City update
     if (cityData) cityData.updateCity(t);
@@ -208,11 +294,89 @@ function _startTransition(isNew) {
   playTransition(scene, camera, renderer, cityData, () => orbitAngle, setOrbitAngle, onEnterGame);
 }
 
+/**
+ * Skip directly to exterior mode (used when returning from the sim).
+ * Sets up the scene as if the forward transition had just completed.
+ */
+export function skipToExterior() {
+  if (!cityData || !scene) return;
+  const TC = cityData.TC;
+
+  // Hide title UI immediately
+  const overlay = document.getElementById('title-overlay');
+  if (overlay) { overlay.style.opacity = '0'; overlay.style.pointerEvents = 'none'; }
+  ['version', 'hint', 'constellations', 'zoom-toggle', 'view-tabs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.opacity = '0'; el.style.pointerEvents = 'none'; }
+  });
+
+  // Camera to close-up position
+  DIMS.cameraOrbitR = 80;
+  DIMS.cameraHeight = 12;
+  zoomTarget = 80;
+  zoomClose = false;
+  autoRotate = false;
+
+  // Sky to day instantly
+  SKY.blend = 1;
+  SKY.state = 'day';
+  scene.background.copy(SKY.day.bg);
+  scene.fog.color.copy(SKY.day.fog);
+  scene.fog.density = SKY.day.fogDensity;
+  setSkyBlend(1);
+
+  // Hide crane, elevator, extensions
+  cityData.craneParts.forEach(p => { p.visible = false; });
+  if (cityData.elevMesh) cityData.elevMesh.visible = false;
+  if (cityData.elevTrack) cityData.elevTrack.visible = false;
+  cityData.extColumns.forEach(e => { e.visible = false; });
+
+  // Dissolve floors above 9
+  for (let fi = TC.maxFloors - 1; fi > 9; fi--) {
+    const fr = TC.floorMeshes[fi];
+    if (fr && fr.beam) fr.beam.visible = false;
+    cityData.dissolveTowerFloor(fi);
+  }
+
+  // Scale structural columns to visible height
+  const fh = TC.floorH;
+  const baseH = fh * 3;
+  const fullH = baseH + TC.maxFloors * fh;
+  const visH = baseH + 10 * fh;
+  cityData.structColumns.forEach(c => {
+    c.scale.y = visH / fullH;
+    c.position.y = visH / 2;
+  });
+
+  // Set transition state so isTransitionActive() returns true at phase 4
+  TRANSITION.active = true;
+  TRANSITION.phase = 4;
+  TRANSITION.dissolveFloor = 9;
+
+  // Apply player lighting
+  cityData.applyPlayerLighting();
+
+  // Wire up onEnterGame for the "Enter Tower" button
+  const onEnterGame = () => {
+    document.dispatchEvent(new CustomEvent('enter-game', { detail: { isNew: false } }));
+  };
+
+  // Show arrival text, home button, and activate exterior
+  showArrivalText(onEnterGame);
+  showHomeBtn(() => { playReverseTransition(); });
+  activateExterior();
+
+  // Setup exterior radio (DOM was just created by showArrivalText)
+  setupRadio('#ext-radio');
+}
+
 export function disposeTitle() {
   if (titleAnimId) cancelAnimationFrame(titleAnimId);
   titleAnimId = null;
 
   disposeConstellation();
+  disposeExteriorInput();
+  disposeRadio();
 
   // Dispose all scene objects
   if (scene) {

@@ -137,6 +137,27 @@ function drawWorker(w){
   X.fillStyle='#1a1a2a';X.beginPath();X.arc(w.fr?2:-2,-8,1.2,0,Math.PI*2);X.fill();X.beginPath();X.arc(w.fr?5:-5,-8,1.2,0,Math.PI*2);X.fill();
   X.restore();
 }
+// ═══ DRAW: PLAYER (1.25x construction worker, yellow hat, neon green vest) ═══
+function drawPlayerWorker(p){
+  const bob=Math.abs(Math.sin(p.bob))*3,mv=p.st==='walk'||p.st==='climb';
+  X.save();X.translate(p.x,p.y);X.scale(1.25,1.25);X.translate(0,-26-bob);if(!p.fr)X.scale(-1,1);
+  if(p.flipCommitted&&p.st==='jump'){const ft=(p.flipInitVel-p.vy)/(2*p.flipInitVel),fc=Math.max(0,Math.min(1,ft)),fe=fc<0.5?4*fc*fc*fc:1-Math.pow(-2*fc+2,3)/2;X.translate(0,5);X.rotate(fe*Math.PI*2);X.translate(0,-5)}
+  X.fillStyle='#3a5070';X.fillRect(-5,12,4,12);X.fillRect(2,12,4,12);
+  X.fillStyle='#5a4030';X.fillRect(-6,22,6,4);X.fillRect(1,22,6,4);
+  X.fillStyle='#606060';X.fillRect(-7,-2,14,16);
+  X.fillStyle='#CCFF00';X.fillRect(-7,-2,14,14);
+  X.fillStyle='rgba(255,255,255,0.5)';X.fillRect(-7,4,14,2);X.fillRect(-7,8,14,2);
+  X.fillStyle='#CCFF00';
+  if(mv){X.fillRect(-10,-1+Math.sin(p.bob)*4,4,10);X.fillRect(7,-1-Math.sin(p.bob)*4,4,10)}
+  else{X.fillRect(-10,0,4,10);X.fillRect(7,0,4,10)}
+  X.fillStyle='#d4a878';X.beginPath();X.arc(-8,mv?10+Math.sin(p.bob)*4:10,2.5,0,Math.PI*2);X.fill();
+  X.beginPath();X.arc(9,mv?10-Math.sin(p.bob)*4:10,2.5,0,Math.PI*2);X.fill();
+  X.fillStyle='#d4a878';X.beginPath();X.ellipse(0,-8,6,7,0,0,Math.PI*2);X.fill();
+  X.fillStyle='#FFD700';X.beginPath();X.ellipse(0,-16,8,4,0,0,Math.PI*2);X.fill();
+  X.fillRect(-7,-16,14,5);
+  X.fillStyle='#E8C020';X.fillRect(-8,-12,16,2);
+  X.restore();
+}
 function drawCrane(cx,cy){
   X.fillStyle='#8a8580';X.fillRect(cx-16,cy-20,32,20);X.fillStyle='#9a9590';X.fillRect(cx-14,cy-18,28,4);
   const mh=180;X.fillStyle='#e8a020';X.fillRect(cx-4,cy-20-mh,8,mh);
@@ -547,7 +568,7 @@ export function draw(){
 
   // Player (fade during elevator door animation)
   const p=S.player;if(S.elevAnim!=='idle')X.globalAlpha=Math.max(0,S.elevDoors);
-  if(p.suit)drawBlob({...p,color:p.suitC},true,true);else drawBlob(p,true,true);
+  if(p.suit)drawBlob({...p,color:p.suitC},true,true);else drawPlayerWorker(p);
   X.globalAlpha=1;
 
   // Charge bars

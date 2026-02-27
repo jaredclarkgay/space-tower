@@ -1,6 +1,7 @@
 'use strict';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildPlayer, buildConstructionSite } from './title-exterior.js';
 
 /**
  * 3D city scene for the title screen.
@@ -58,6 +59,10 @@ export function buildCityScene(scene, litFloors) {
   buildElevator(scene);
   buildTowerGlow(scene);
 
+  // Exterior: player character + construction site
+  const exteriorPlayer = buildPlayer(scene);
+  const exteriorSite = buildConstructionSite(scene);
+
   function updateCity(t) {
     const dt = 1 / 60;
     updateStars(t);
@@ -89,7 +94,9 @@ export function buildCityScene(scene, litFloors) {
     restoreTowerFloor,
     restoreAllTowerFloors,
     applyPlayerLighting,
-    getStarPoints() { return starPoints; }
+    getStarPoints() { return starPoints; },
+    exteriorPlayer,
+    exteriorSite,
   };
 }
 
@@ -103,7 +110,9 @@ function buildGround(scene) {
   road.rotation.x = -Math.PI / 2; road.position.y = 0.05; scene.add(road);
 }
 
-// ═══ TOWER (beams individual, windows InstancedMesh) ═══
+// ═══ TOWER (perimeter scaffold beams, open center elevator shaft, instanced windows) ═══
+const BEAM_DEPTH = 0.4; // depth of perimeter beams (walkable width)
+
 function buildTower(scene) {
   const tw = TC.width, td = TC.depth, fh = TC.floorH, nf = TC.maxFloors;
   const totalH = nf * fh, baseH = fh * 3;
@@ -131,17 +140,36 @@ function buildTower(scene) {
     TC.group.add(c); structColumns.push(c);
   });
 
-  // Floor beams (individual for dissolve visibility)
-  const beamGeo = new THREE.BoxGeometry(tw + 0.1, 0.08, td + 0.1);
+  // Floor beams — 4 perimeter edge beams per floor (center is open elevator shaft)
+  // Shared geometry: N/S beams run in X, E/W beams run in Z
+  const beamH = 0.12;
+  const nsBeamGeo = new THREE.BoxGeometry(tw + BEAM_DEPTH, beamH, BEAM_DEPTH);
+  const ewBeamGeo = new THREE.BoxGeometry(BEAM_DEPTH, beamH, td + BEAM_DEPTH);
   const beamMat = new THREE.MeshBasicMaterial({ color: 0x2a3048 });
+
   for (let fi = 0; fi < nf; fi++) {
     const fy = baseH + fi * fh;
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.position.y = fy; TC.group.add(beam);
-    TC.floorMeshes.push({ beam });
+    const beamGroup = new THREE.Group();
+
+    const n = new THREE.Mesh(nsBeamGeo, beamMat);
+    n.position.set(0, fy, -hd); beamGroup.add(n);
+
+    const s = new THREE.Mesh(nsBeamGeo, beamMat);
+    s.position.set(0, fy, hd); beamGroup.add(s);
+
+    const e = new THREE.Mesh(ewBeamGeo, beamMat);
+    e.position.set(hw, fy, 0); beamGroup.add(e);
+
+    const w = new THREE.Mesh(ewBeamGeo, beamMat);
+    w.position.set(-hw, fy, 0); beamGroup.add(w);
+
+    TC.group.add(beamGroup);
+    TC.floorMeshes.push({ beam: beamGroup });
   }
 
   // Tower windows → InstancedMesh + MeshBasicMaterial + instanceColor
+  // Windows placed on outer face of beam frame (offset outward by BEAM_DEPTH/2)
+  const halfBeam = BEAM_DEPTH / 2;
   const winCount = nf * 4 * 10; // 65 floors × 4 faces × 10 windows = 2600
   const segW = tw / 10;
   const winGeo = new THREE.PlaneGeometry(segW * 0.85, fh * 0.8);
@@ -180,14 +208,14 @@ function buildTower(scene) {
         _c.setRGB(r, g, b);
         towerWinMesh.setColorAt(winIdx, _c);
 
-        // Compute position + rotation
+        // Compute position + rotation (outer face of beam frame)
         const off = -face.w / 2 + fSegW * (wi + 0.5);
         const yp = fy + fh * 0.5;
         if (face.axis === 'z') {
-          _obj.position.set(off, yp, face.dir * (td / 2 + 0.01));
+          _obj.position.set(off, yp, face.dir * (td / 2 + halfBeam + 0.01));
           _obj.rotation.set(0, face.dir < 0 ? Math.PI : 0, 0);
         } else {
-          _obj.position.set(face.dir * (tw / 2 + 0.01), yp, off);
+          _obj.position.set(face.dir * (tw / 2 + halfBeam + 0.01), yp, off);
           _obj.rotation.set(0, face.dir > 0 ? Math.PI / 2 : -Math.PI / 2, 0);
         }
         _obj.updateMatrix();
@@ -582,7 +610,7 @@ function applyPlayerLighting() {
 export function updateBuildingHover(camera, mouseX, mouseY, skip) {
   if (skip || !bldgHoverMesh || !bldgHoverMesh.instanceColor) return;
   const hw = innerWidth / 2, hh = innerHeight / 2;
-  const radius = 60;
+  const radius = 120;
   const arr = bldgHoverMesh.instanceColor.array;
   for (const wd of bldgWinData) {
     _v3.copy(wd.worldPos).project(camera);
