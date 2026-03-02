@@ -255,7 +255,7 @@ export function showMovementHints() {
     slider.id = 'ext-cam-slider';
     slider.style.cssText = 'position:fixed;bottom:80px;left:14px;z-index:60;color:rgba(255,255,255,0.4);font-family:monospace;font-size:9px;line-height:1.4;background:rgba(0,0,0,0.3);padding:6px 10px;border-radius:5px;backdrop-filter:blur(4px)';
     const range = document.createElement('input');
-    range.type = 'range'; range.min = '3'; range.max = '12'; range.step = '0.5';
+    range.type = 'range'; range.min = '3'; range.max = '30'; range.step = '0.5';
     range.value = String(_camDistGetter());
     range.style.cssText = 'width:110px;accent-color:#888;cursor:pointer;margin:0';
     range.addEventListener('input', () => _camDistSetter(parseFloat(range.value)));
@@ -268,7 +268,7 @@ export function showMovementHints() {
   const el = document.createElement('div');
   el.id = 'ext-hints';
   el.style.cssText = 'position:fixed;bottom:14px;left:14px;z-index:60;color:rgba(255,255,255,0.4);font-family:monospace;font-size:9px;line-height:1.6;pointer-events:none;user-select:none;background:rgba(0,0,0,0.3);padding:6px 10px;border-radius:5px;backdrop-filter:blur(4px)';
-  el.innerHTML = 'WASD \u2014 move<br>SPACE \u2014 jump (hold to charge)<br>CLIMB \u2014 walk into columns<br>E \u2014 interact';
+  el.innerHTML = 'WASD \u2014 move<br>SHIFT \u2014 run<br>SPACE \u2014 jump (hold to charge, works mid-air)<br>LADDERS \u2014 walk in to climb (W up, S down, SPACE jump off)<br>E \u2014 interact<br>TAB \u2014 enter tower';
   document.body.appendChild(el);
 }
 

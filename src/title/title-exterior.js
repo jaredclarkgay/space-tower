@@ -1,5 +1,20 @@
 'use strict';
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+// ── Vertex color helper (for merged geometry) ──
+function _colorGeo(geo, color) {
+  const count = geo.attributes.position.count;
+  const colors = new Float32Array(count * 3);
+  const r = ((color >> 16) & 0xff) / 255;
+  const g = ((color >> 8) & 0xff) / 255;
+  const b = (color & 0xff) / 255;
+  for (let i = 0; i < count; i++) {
+    colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
 
 /**
  * Exterior gameplay: player character, construction site, WASD movement.
@@ -9,10 +24,10 @@ import * as THREE from 'three';
 
 // ── Player state ──
 const PLAYER = {
-  pos: new THREE.Vector3(8, 0, 5),
+  pos: new THREE.Vector3(50, 0, 45),
   vel: new THREE.Vector3(0, 0, 0),
   onGround: true,
-  isClimbing: false,
+  onLadder: null,   // reference to current ladder object, or null
   carrying: false,
   walkCycle: 0,
   active: false,
@@ -20,23 +35,23 @@ const PLAYER = {
   chargeT: 0,
 };
 
-const MOVE_SPEED = 0.06;
-const JUMP_BASE = 0.11;
+const MOVE_SPEED = 0.075;
+const SPRINT_MULT = 2.5;
+const JUMP_BASE = 0.18;
 const JUMP_MAX = 0.46;
 const CHARGE_MAX = 80;
 const GRAVITY = 0.0035;
-const CLIMB_SPEED = 0.04;
 
 // Tower geometry — must match TC/BEAM_DEPTH in title-city.js
-const TOWER_HALF = 3;              // TC.width / 2
-const FLOOR_H = 1.2;              // TC.floorH
-const BASE_H = FLOOR_H * 3;       // 3.6
+const TOWER_HALF = 37.5;            // TC.width / 2
+const FLOOR_H = 3.333;              // TC.floorH
+const BASE_H = FLOOR_H * 3;         // 10
 const MAX_EXT_FLOOR = 9;
-const BEAM_DEPTH = 0.4;           // BEAM_DEPTH in title-city.js
-const BEAM_HALF = BEAM_DEPTH / 2;  // 0.2
-const OUTER_EDGE = TOWER_HALF + BEAM_HALF; // 3.2
-const INNER_EDGE = TOWER_HALF - BEAM_HALF; // 2.8
-const FOUNDATION_HALF = 4.5;
+const BEAM_DEPTH = 0.5;             // BEAM_DEPTH in title-city.js
+const BEAM_HALF = BEAM_DEPTH / 2;    // 0.25
+const OUTER_EDGE = TOWER_HALF + BEAM_HALF; // 37.75
+const INNER_EDGE = TOWER_HALF - BEAM_HALF; // 37.25
+const FOUNDATION_HALF = TOWER_HALF; // flush with tower footprint (no pedestal)
 
 // Column positions (the 4 corners)
 const COLUMNS = [
@@ -45,7 +60,18 @@ const COLUMNS = [
   [TOWER_HALF, -TOWER_HALF],
   [TOWER_HALF, TOWER_HALF],
 ];
-const COL_GRAB_RADIUS = 0.5;
+
+// Ladder positions (4 ladders on tower faces)
+// tanDir: which world direction "A" (left) maps to on this ladder face
+const LADDERS = [
+  { axis: 'z', pos: OUTER_EDGE, tanAxis: 'x', tanPos: 12, tanDir: -1 },   // front
+  { axis: 'z', pos: -OUTER_EDGE, tanAxis: 'x', tanPos: 0, tanDir: 1 },    // back
+  { axis: 'x', pos: OUTER_EDGE, tanAxis: 'z', tanPos: 0, tanDir: 1 },     // right
+  { axis: 'x', pos: -OUTER_EDGE, tanAxis: 'z', tanPos: 0, tanDir: -1 },   // left
+];
+const LADDER_HALF_W = 2.0;       // how wide the climbable zone is (lateral)
+const LADDER_ENTRY_DEPTH = 0.6;  // how close to the wall to trigger grab
+const LADDER_CLIMB_SPEED = 0.065; // climb speed (slightly slower than walk)
 
 // Roof height — full tower constant (used as default/max)
 const ROOF_Y = BASE_H + (MAX_EXT_FLOOR + 1) * FLOOR_H;
@@ -58,16 +84,21 @@ let playerGroup = null;
 let carryBox = null;
 let siteGroup = null;
 let keys = {};
-let climbCooldown = 0;
-
-// ── Climbing orbit state ──
-let climbCol = -1;         // index into COLUMNS (-1 = not on a column)
-let climbAngle = 0;        // radial angle around the column
-const CLIMB_DIST = 0.3;    // offset from column center
-const CLIMB_ORBIT_SPEED = 0.05;
 
 // ── Interaction prompt ──
 let promptEl = null;
+
+// ── Door enter callback ──
+let _enterDoorCallback = null;
+export function setEnterDoorCallback(fn) { _enterDoorCallback = fn; }
+
+// ── Ground-level NPC list (semi workers, etc.) ──
+let _groundNPCs = [];
+export function setGroundNPCs(npcs) { _groundNPCs = npcs; }
+
+// ── Business people (dynamic positions — checked via group.position) ──
+let _bizPeople = [];
+export function setBizPeople(list) { _bizPeople = list; }
 
 // ── Backward walk flag ──
 let walkingBackward = false;
@@ -78,19 +109,24 @@ const PLAYER_R = 0.2;
 
 // ── Site object colliders [cx, cz, halfW, halfD] ──
 const SITE_COLLIDERS = [
-  [8, -4, 0.45, 0.45],       // porta-potty
-  [12, -1.5, 0.5, 0.4],      // generator
-  [1.5, 4.5, 0.35, 0.3],     // toolbox
+  [100, -50, 5.6, 5.6],       // porta-potty (× S proportional)
+  [150, -18.75, 6.25, 5],     // generator
+  [18.75, 56.25, 4.4, 3.75],  // toolbox
 ];
+
+// ── Vehicle colliders ──
+// Semi trucks (static AABB) [cx, cz, halfX, halfZ, roofY]
+const SEMI_COLLIDERS = [
+  [-63, -142.5, 9, 2.5, 4.0],   // semi 1 (cab+trailer combined)
+  [37, -142.5, 9, 2.5, 4.0],    // semi 2
+];
+const CAR_R = 3.5;        // bounding radius for rotated 3×6 car body
+const CAR_ROOF_Y = 2.0;   // approx car body roof (0.3 + 1.65)
 
 // ── Jump flip state ──
 let flipCommitted = false;
-let flipDouble = false;
-let flipInitVel = 0;      // initial upward velocity at jump launch
-let jumpStartY = 0;
-// Max jump height: v₀²/(2g) where v₀=JUMP_MAX, g=GRAVITY → 0.30²/(2*0.006) = 7.5
-const MAX_JUMP_HEIGHT = (JUMP_MAX * JUMP_MAX) / (2 * GRAVITY);
-const FLIP_THRESHOLD = MAX_JUMP_HEIGHT * 0.5;
+let flipSpins = 0;        // 1, 2, or 3 full rotations
+let flipInitVel = 0;
 
 function easeInOutSine(t) {
   return -(Math.cos(Math.PI * t) - 1) / 2;
@@ -102,37 +138,38 @@ export function buildPlayer(scene) {
 
   const skin = new THREE.MeshBasicMaterial({ color: 0xd4a574 });
   const vest = new THREE.MeshBasicMaterial({ color: 0xCCFF00 });
-  const stripe = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const pants = new THREE.MeshBasicMaterial({ color: 0x3a4a5a });
   const boots = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
-  const hardhat = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
 
+  // Merge static head/hat/eyes/stripes/muscle lines → 1 vertex-colored mesh
+  const staticParts = [
+    [new THREE.BoxGeometry(0.29, 0.025, 0.19), 0xffffff, 0, 0.46, 0],      // stripe lower
+    [new THREE.BoxGeometry(0.29, 0.025, 0.19), 0xffffff, 0, 0.58, 0],      // stripe upper
+    [new THREE.BoxGeometry(0.18, 0.18, 0.18), 0xd4a574, 0, 0.80, 0],       // head
+    [new THREE.BoxGeometry(0.03, 0.025, 0.01), 0x000000, -0.04, 0.82, 0.09], // left eye
+    [new THREE.BoxGeometry(0.03, 0.025, 0.01), 0x000000, 0.04, 0.82, 0.09],  // right eye
+    [new THREE.BoxGeometry(0.23, 0.08, 0.23), 0xFFD700, 0, 0.92, 0],       // hat
+    [new THREE.BoxGeometry(0.26, 0.02, 0.26), 0xFFD700, 0, 0.89, 0],       // brim
+    [new THREE.BoxGeometry(0.092, 0.012, 0.092), 0x8a6a4a, -0.19, 0.56, 0], // L bicep
+    [new THREE.BoxGeometry(0.092, 0.012, 0.092), 0x8a6a4a, -0.19, 0.48, 0], // L mid
+    [new THREE.BoxGeometry(0.092, 0.012, 0.092), 0x8a6a4a, 0.19, 0.56, 0],  // R bicep
+    [new THREE.BoxGeometry(0.092, 0.012, 0.092), 0x8a6a4a, 0.19, 0.48, 0],  // R mid
+  ];
+  const sGeos = staticParts.map(([geo, col, x, y, z]) => { _colorGeo(geo, col); geo.translate(x, y, z); return geo; });
+  const staticMesh = new THREE.Mesh(mergeGeometries(sGeos, false), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  playerGroup.add(staticMesh);
+  sGeos.forEach(g => g.dispose());
+
+  // Animated parts (kept separate)
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.30, 0.18), vest);
   torso.position.y = 0.52;
   playerGroup.add(torso);
-
-  [0.46, 0.58].forEach(sy => {
-    const s = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.025, 0.19), stripe);
-    s.position.y = sy;
-    playerGroup.add(s);
-  });
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), skin);
-  head.position.y = 0.80;
-  playerGroup.add(head);
-
-  const hat = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.08, 0.23), hardhat);
-  hat.position.y = 0.92;
-  playerGroup.add(hat);
-  const brim = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.02, 0.26), hardhat);
-  brim.position.y = 0.89;
-  playerGroup.add(brim);
 
   const armGeo = new THREE.BoxGeometry(0.09, 0.25, 0.09);
   const leftArm = new THREE.Mesh(armGeo, skin);
   leftArm.position.set(-0.19, 0.50, 0);
   playerGroup.add(leftArm);
-  const rightArm = new THREE.Mesh(armGeo, skin);
+  const rightArm = new THREE.Mesh(armGeo.clone(), skin);
   rightArm.position.set(0.19, 0.50, 0);
   playerGroup.add(rightArm);
 
@@ -140,7 +177,7 @@ export function buildPlayer(scene) {
   const leftLeg = new THREE.Mesh(legGeo, pants);
   leftLeg.position.set(-0.08, 0.22, 0);
   playerGroup.add(leftLeg);
-  const rightLeg = new THREE.Mesh(legGeo, pants);
+  const rightLeg = new THREE.Mesh(legGeo.clone(), pants);
   rightLeg.position.set(0.08, 0.22, 0);
   playerGroup.add(rightLeg);
 
@@ -148,7 +185,7 @@ export function buildPlayer(scene) {
   const leftBoot = new THREE.Mesh(bootGeo, boots);
   leftBoot.position.set(-0.08, 0.05, 0.01);
   playerGroup.add(leftBoot);
-  const rightBoot = new THREE.Mesh(bootGeo, boots);
+  const rightBoot = new THREE.Mesh(bootGeo.clone(), boots);
   rightBoot.position.set(0.08, 0.05, 0.01);
   playerGroup.add(rightBoot);
 
@@ -156,7 +193,7 @@ export function buildPlayer(scene) {
     new THREE.BoxGeometry(0.25, 0.15, 0.20),
     new THREE.MeshBasicMaterial({ color: 0x6a7580 })
   );
-  carryBox.position.set(0, 0.80, 0.18);
+  carryBox.position.set(0.22, 0.42, 0.05);
   carryBox.visible = false;
   playerGroup.add(carryBox);
 
@@ -170,61 +207,66 @@ export function buildPlayer(scene) {
 export function buildConstructionSite(scene) {
   siteGroup = new THREE.Group();
 
-  const steel = new THREE.MeshBasicMaterial({ color: 0x5a6570 });
-  const wood = new THREE.MeshBasicMaterial({ color: 0x6a5030 });
-  const concrete = new THREE.MeshBasicMaterial({ color: 0x5a5550 });
+  // ── Ground statics → 1 merged mesh ──
+  // Seed random so positions are deterministic
+  const _sr = () => Math.random(); // site uses Math.random, same as before
+  const groundGeos = [];
 
   for (let i = 0; i < 6; i++) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 1.0 + Math.random() * 0.5), steel);
-    beam.position.set(10 + (Math.random() - 0.5) * 1.5, 0.04 + i * 0.09, (Math.random() - 0.5) * 1);
-    beam.rotation.y = Math.random() * 0.2;
-    siteGroup.add(beam);
+    const g = _colorGeo(new THREE.BoxGeometry(0.08, 0.08, 1.0 + _sr() * 0.5), 0x5a6570);
+    const px = 125 + (_sr() - 0.5) * 18.75, py = 0.04 + i * 0.09, pz = (_sr() - 0.5) * 12.5;
+    const ry = _sr() * 0.2;
+    const m = new THREE.Matrix4().makeTranslation(px, py, pz).multiply(new THREE.Matrix4().makeRotationY(ry));
+    g.applyMatrix4(m); groundGeos.push(g);
   }
   for (let i = 0; i < 4; i++) {
-    const block = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.25, 0.3), concrete);
-    block.position.set(10.8 + (Math.random() - 0.5) * 1, 0.13 + i * 0.08, 0.5 + Math.random());
-    siteGroup.add(block);
+    const g = _colorGeo(new THREE.BoxGeometry(0.4, 0.25, 0.3), 0x5a5550);
+    g.translate(135 + (_sr() - 0.5) * 12.5, 0.13 + i * 0.08, 6.25 + _sr() * 12.5);
+    groundGeos.push(g);
   }
   for (let i = 0; i < 5; i++) {
-    const plank = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 1.2), wood);
-    plank.position.set(9.5 + (Math.random() - 0.5) * 0.5, 0.02 + i * 0.035, -0.5 + Math.random() * 0.5);
-    plank.rotation.y = (Math.random() - 0.5) * 0.15;
-    siteGroup.add(plank);
+    const g = _colorGeo(new THREE.BoxGeometry(0.06, 0.03, 1.2), 0x6a5030);
+    const px = 118.75 + (_sr() - 0.5) * 6.25, py = 0.02 + i * 0.035, pz = -6.25 + _sr() * 6.25;
+    const ry = (_sr() - 0.5) * 0.15;
+    const m = new THREE.Matrix4().makeTranslation(px, py, pz).multiply(new THREE.Matrix4().makeRotationY(ry));
+    g.applyMatrix4(m); groundGeos.push(g);
+  }
+  [[-37.5, 25], [62.5, -25], [112.5, 31.25]].forEach(([cx, cz]) => {
+    const g = _colorGeo(new THREE.ConeGeometry(0.12, 0.35, 8), 0xe85020);
+    g.translate(cx, 0.18, cz); groundGeos.push(g);
+  });
+  // Toolbox
+  const tbGeo = _colorGeo(new THREE.BoxGeometry(0.4, 0.2, 0.25), 0x8a2020);
+  tbGeo.translate(18.75, 0.1, 56.25); groundGeos.push(tbGeo);
+  // Generator
+  const genGeo = _colorGeo(new THREE.BoxGeometry(0.75, 0.5, 0.5), 0x3a4a2a);
+  genGeo.translate(150, 0.25, -18.75); groundGeos.push(genGeo);
+  // Porta-potty
+  const portaGeo = _colorGeo(new THREE.BoxGeometry(0.6, 1.1, 0.6), 0x2a4a6a);
+  portaGeo.translate(100, 0.55, -50); groundGeos.push(portaGeo);
+  // Posts
+  [[-75, -62.5, 75], [175, -50, 50]].forEach(([x, z1, z2]) => {
+    [z1, (z1 + z2) / 2, z2].forEach(z => {
+      const g = _colorGeo(new THREE.CylinderGeometry(0.025, 0.025, 0.6, 6), 0x4a4a44);
+      g.translate(x, 0.3, z); groundGeos.push(g);
+    });
+  });
+  if (groundGeos.length) {
+    const merged = mergeGeometries(groundGeos, false);
+    siteGroup.add(new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ vertexColors: true })));
+    groundGeos.forEach(g => g.dispose());
   }
 
-  const coneMat = new THREE.MeshBasicMaterial({ color: 0xe85020 });
-  [[-3, 2], [5, -2], [9, 2.5]].forEach(([cx, cz]) => {
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.35, 8), coneMat);
-    cone.position.set(cx, 0.18, cz);
-    siteGroup.add(cone);
-  });
-
-  const toolbox = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.25), new THREE.MeshBasicMaterial({ color: 0x8a2020 }));
-  toolbox.position.set(1.5, 0.1, 4.5);
-  siteGroup.add(toolbox);
-
-  const gen = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.5, 0.5), new THREE.MeshBasicMaterial({ color: 0x3a4a2a }));
-  gen.position.set(12, 0.25, -1.5);
-  siteGroup.add(gen);
-
-  const porta = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.1, 0.6), new THREE.MeshBasicMaterial({ color: 0x2a4a6a }));
-  porta.position.set(8, 0.55, -4);
-  siteGroup.add(porta);
-
-  const postMat = new THREE.MeshBasicMaterial({ color: 0x4a4a44 });
+  // Tape lines (Lines can't merge with triangle meshes — keep separate)
   const tapeMat = new THREE.LineBasicMaterial({ color: 0xdcbe60 });
-  [[-6, -5, 6], [14, -4, 4]].forEach(([x, z1, z2]) => {
-    [z1, (z1 + z2) / 2, z2].forEach(z => {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.6, 6), postMat);
-      post.position.set(x, 0.3, z);
-      siteGroup.add(post);
-    });
+  [[-75, -62.5, 75], [175, -50, 50]].forEach(([x, z1, z2]) => {
     const tapeGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(x, 0.45, z1), new THREE.Vector3(x, 0.45, z2)
     ]);
     siteGroup.add(new THREE.Line(tapeGeo, tapeMat));
   });
 
+  // Drop ring (transparent + DoubleSide — keep separate)
   const dropRing = new THREE.Mesh(
     new THREE.RingGeometry(0.6, 0.8, 32),
     new THREE.MeshBasicMaterial({ color: 0xdcbe60, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
@@ -232,7 +274,8 @@ export function buildConstructionSite(scene) {
   dropRing.rotation.x = -Math.PI / 2;
   dropRing.position.y = 0.4;
   siteGroup.add(dropRing);
-  // Steel roof plate at the top of the tower
+
+  // Roof plate (animated via setBuiltHeight — keep separate)
   const roofPlate = new THREE.Mesh(
     new THREE.BoxGeometry(OUTER_EDGE * 2, 0.15, OUTER_EDGE * 2),
     new THREE.MeshBasicMaterial({ color: 0x5a6570 })
@@ -240,7 +283,240 @@ export function buildConstructionSite(scene) {
   roofPlate.position.y = ROOF_Y;
   siteGroup.add(roofPlate);
 
-  siteGroup.userData = { dropRing, roofPlate };
+  // ── Ladders (4 on tower faces, merged into 1 vertex-colored mesh) ──
+  // Built from y=0 to y=ROOF_Y; scaled down via setBuiltHeight()
+  const ladderGeos = [];
+  const railColor = 0x6a7080;
+  const rungColor = 0x8a9098;
+  const rungSpacing = 1.0;
+  const ladderH = ROOF_Y;
+  for (const lad of LADDERS) {
+    const cx = lad.tanAxis === 'x' ? lad.tanPos : (lad.axis === 'x' ? lad.pos : 0);
+    const cz = lad.tanAxis === 'z' ? lad.tanPos : (lad.axis === 'z' ? lad.pos : 0);
+    const railOffset = 0.4;
+    for (const side of [-1, 1]) {
+      const rGeo = _colorGeo(new THREE.BoxGeometry(0.08, ladderH, 0.08), railColor);
+      const rx = cx + (lad.tanAxis === 'x' ? side * railOffset : 0);
+      const rz = cz + (lad.tanAxis === 'z' ? side * railOffset : 0);
+      rGeo.translate(rx, ladderH / 2, rz);
+      ladderGeos.push(rGeo);
+    }
+    const nRungs = Math.floor(ladderH / rungSpacing);
+    for (let ri = 0; ri < nRungs; ri++) {
+      const ry = ri * rungSpacing + 0.5;
+      const rungGeo = _colorGeo(new THREE.BoxGeometry(
+        lad.tanAxis === 'x' ? railOffset * 2 : 0.06,
+        0.06,
+        lad.tanAxis === 'z' ? railOffset * 2 : 0.06
+      ), rungColor);
+      rungGeo.translate(cx, ry, cz);
+      ladderGeos.push(rungGeo);
+    }
+  }
+  let ladderMesh = null;
+  if (ladderGeos.length) {
+    const ladderMerged = mergeGeometries(ladderGeos, false);
+    ladderMesh = new THREE.Mesh(ladderMerged, new THREE.MeshBasicMaterial({ vertexColors: true }));
+    siteGroup.add(ladderMesh);
+    ladderGeos.forEach(g => g.dispose());
+  }
+
+  // ── Entrance arrow: merge shaft+cone → 1, keep glow ring separate ──
+  const arrowGroup = new THREE.Group();
+  const arrowGeos = [];
+  const shaftGeo = _colorGeo(new THREE.BoxGeometry(0.8, 4, 0.8), 0xdcbe60);
+  shaftGeo.translate(0, 2, 0); arrowGeos.push(shaftGeo);
+  const headGeo = _colorGeo(new THREE.ConeGeometry(1.8, 3, 4), 0xdcbe60);
+  // Flip cone to point down: rotate geometry by PI around X
+  headGeo.rotateX(Math.PI);
+  headGeo.translate(0, -0.5, 0); arrowGeos.push(headGeo);
+  const arrowMerged = mergeGeometries(arrowGeos, false);
+  const arrowMesh = new THREE.Mesh(arrowMerged, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7 }));
+  arrowGroup.add(arrowMesh);
+  arrowGeos.forEach(g => g.dispose());
+  // Glow ring (transparent + DoubleSide — keep separate)
+  const glowRing = new THREE.Mesh(
+    new THREE.RingGeometry(2.2, 3, 32),
+    new THREE.MeshBasicMaterial({ color: 0xdcbe60, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
+  );
+  glowRing.rotation.x = Math.PI / 2;
+  glowRing.position.y = -1.5;
+  arrowGroup.add(glowRing);
+  arrowGroup.position.set(0, BASE_H + 8, OUTER_EDGE + 2);
+  siteGroup.add(arrowGroup);
+
+  // ── Rooftop crane: merge opaque parts → 1, keep cab window + lines separate ──
+  const craneGroup = new THREE.Group();
+  const mastH = 12, mastW = 0.4;
+  const boomLen = TOWER_HALF * 1.6;
+  const cbLen = boomLen * 0.35;
+  const hookX = TOWER_HALF * 0.3 + boomLen * 0.7;
+  const mastX = TOWER_HALF * 0.3;
+  const craneGeos = [];
+  // Mast
+  const mastGeo = _colorGeo(new THREE.BoxGeometry(mastW, mastH, mastW), 0xe8a020);
+  mastGeo.translate(mastX, mastH / 2, 0); craneGeos.push(mastGeo);
+  // Lattice braces
+  for (let my = 0; my < mastH; my += 1.5) {
+    const g = _colorGeo(new THREE.BoxGeometry(mastW + 0.05, 0.06, mastW + 0.05), 0xc08010);
+    g.translate(mastX, my, 0); craneGeos.push(g);
+  }
+  // Boom
+  const boomGeo = _colorGeo(new THREE.BoxGeometry(boomLen, 0.3, 0.3), 0xe8a020);
+  boomGeo.translate(mastX + boomLen * 0.2, mastH, 0); craneGeos.push(boomGeo);
+  // Counter-boom
+  const cbGeo = _colorGeo(new THREE.BoxGeometry(cbLen, 0.3, 0.3), 0xe8a020);
+  cbGeo.translate(mastX - cbLen * 0.4, mastH, 0); craneGeos.push(cbGeo);
+  // Counterweight
+  const cwGeo = _colorGeo(new THREE.BoxGeometry(1.2, 0.8, 0.6), 0x606060);
+  cwGeo.translate(mastX - cbLen * 0.6, mastH - 0.3, 0); craneGeos.push(cwGeo);
+  // Cab
+  const cabGeo = _colorGeo(new THREE.BoxGeometry(1.0, 0.8, 0.8), 0x506880);
+  cabGeo.translate(mastX - 0.2, mastH - 0.5, 0); craneGeos.push(cabGeo);
+  // Hook
+  const hookGeo = _colorGeo(new THREE.SphereGeometry(0.15, 8, 6), 0x606060);
+  hookGeo.translate(hookX, mastH - 6.2, 0); craneGeos.push(hookGeo);
+  // Red warning light
+  const lightGeo = _colorGeo(new THREE.SphereGeometry(0.12, 8, 6), 0xff3030);
+  lightGeo.translate(mastX, mastH + 0.2, 0); craneGeos.push(lightGeo);
+
+  const craneMerged = mergeGeometries(craneGeos, false);
+  craneGroup.add(new THREE.Mesh(craneMerged, new THREE.MeshBasicMaterial({ vertexColors: true })));
+  craneGeos.forEach(g => g.dispose());
+
+  // Cab window (transparent — keep separate)
+  const cabWin = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.6, 0.4),
+    new THREE.MeshBasicMaterial({ color: 0x8cc8e6, transparent: true, opacity: 0.5 })
+  );
+  cabWin.position.set(mastX - 0.2, mastH - 0.4, 0.41);
+  craneGroup.add(cabWin);
+  // Cable line
+  const cableGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(hookX, mastH, 0), new THREE.Vector3(hookX, mastH - 6, 0)
+  ]);
+  craneGroup.add(new THREE.Line(cableGeo, new THREE.LineBasicMaterial({ color: 0x404040 })));
+  // Support cables
+  const topY = mastH + 0.5;
+  [[mastX + boomLen * 0.7, mastH], [mastX - cbLen * 0.5, mastH]].forEach(([tx, ty]) => {
+    const sg = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(mastX, topY, 0), new THREE.Vector3(tx, ty, 0)
+    ]);
+    craneGroup.add(new THREE.Line(sg, new THREE.LineBasicMaterial({ color: 0xc08010, transparent: true, opacity: 0.5 })));
+  });
+  craneGroup.position.y = ROOF_Y;
+  siteGroup.add(craneGroup);
+
+  // ── Rooftop workers (4 construction workers matching interior appearance) ──
+  const workerNames = ['Rodriguez', 'Kim', 'Murphy', 'Okafor'];
+  // Height-aware dialogue: [workerIdx][floorLevel][3 lines]
+  // Rodriguez: family legacy — grandpa built bridges, he builds to space
+  // Kim: physics/measurement nerd — counts seconds, measures distances
+  // Murphy: pragmatist — gear, weather, problems, just get it done
+  // Okafor: big picture thinker — the name, the mission, looking down less
+  const workerDialogue = [
+    [ // Rodriguez — floor 0 (ground/base)
+      ['First day on this job. My grandpa would\'ve loved it.', 'He built bridges. Real ones. Steel and river crossings.', 'Me? I\'m building straight up. He\'d call me crazy.'],
+      ['Foundation\'s solid. Grandpa always said start with the base.', 'Three floors of concrete under us. That\'s a good feeling.', 'My old man poured foundations too. Runs in the blood.'],
+      ['Two floors up and it already feels different.', 'Grandpa said every structure has a heartbeat. I\'m starting to hear it.', 'The beams sing when the wind hits right. He told me that would happen.'],
+      ['Getting some real height now. Grandpa never built past four stories.', 'He\'d stand here and just look. That\'s what he did. Looked and understood.', 'I sent my mom a photo. She said I look like him up here.'],
+      ['Halfway there. Grandpa never imagined something like this.', 'He built to connect two sides of a river. I\'m connecting earth to sky.', 'Five floors. His longest bridge was a quarter mile. We\'re going further.'],
+      ['The wind changed up here. You can taste the altitude.', 'Grandpa had a saying: past six stories, the building builds you.', 'I used to think that was just talk. It isn\'t.'],
+      ['Seven floors. I stopped comparing to bridges.', 'This is something new. Grandpa\'s rules still apply but the scale is different.', 'He\'d be quiet up here. Respectful quiet. That\'s how I know it\'s real.'],
+      ['I can see the river from here. The one grandpa\'s bridge crosses.', 'Eight floors and I can see his work and mine in the same view.', 'Two builders, two generations, one sky.'],
+      ['Almost to the top. Almost to something that doesn\'t have a name yet.', 'Grandpa built bridges. I build... this. A tower to space.', 'He\'d put his hand on the steel and just nod. That\'s all he\'d need to do.'],
+      ['Ten floors. And they want more.', 'Grandpa never finished his last bridge. I\'m going to finish this.', 'Rodriguez family doesn\'t stop building. That\'s the only rule.'],
+    ],
+    [ // Kim — floor 0
+      ['First thing I did was measure the foundation. Exactly right.', 'Ground level. Zero altitude. Baseline established.', 'I brought a stopwatch. For later.'],
+      ['Floor one. Three-point-three meters per floor. Noted.', 'Dropped a bolt from the edge. Point-eight seconds to ground.', 'That\'s 3.2 meters of free fall. The math checks out.'],
+      ['Floor two. Six-point-seven meters. Temperature dropped half a degree.', 'Sound travels differently already. Echo off the beams takes longer.', 'I\'m keeping a log. Every floor. Every measurement.'],
+      ['Ten meters up. A dropped bolt takes one-point-four seconds now.', 'Wind speed at floor three averages twelve percent higher than ground.', 'The crane cable has exactly four hundred and twelve links. I counted.'],
+      ['Thirteen-point-three meters. Barometric pressure measurably lower.', 'I timed the elevator. Forty-seven seconds per floor. Consistent.', 'The building sways 0.3 centimeters at this height. Imperceptible. But real.'],
+      ['Halfway up. Sixteen-point-seven meters.', 'A wrench fell from here. Took one-point-eight seconds to hit ground.', 'One-point-eight seconds. That\'s how high we are.'],
+      ['Floor six. Twenty meters. The horizon moved.', 'I can see two more city blocks than from floor five. Geometry.', 'Temperature is a full degree cooler than ground. My thermometer doesn\'t lie.'],
+      ['Twenty-three meters. Bolt drop: two-point-two seconds.', 'The frequency of the wind has changed. Lower pitch. Longer wavelengths.', 'My log is forty pages now. Every floor tells a different story in numbers.'],
+      ['Floor eight. Twenty-six-point-seven meters. Significant.', 'A wrench from here takes two-point-three seconds. I\'ve timed it nine times.', 'Nine consistent results. The physics up here are honest.'],
+      ['Thirty-three meters. Top of segment one.', 'Final measurement: bolt drop is two-point-six seconds from roof.', 'Two-point-six seconds of pure gravity. Beautiful.'],
+    ],
+    [ // Murphy — floor 0
+      ['Hardhat on. Boots laced. Let\'s get this done.', 'Ground level. Easiest part of the whole job.', 'Tools are sorted. Crane\'s fueled. No excuses.'],
+      ['One floor up. Nothing fancy. Just work.', 'Bolts go in, beams go up. That\'s the deal.', 'Somebody forgot to tighten bay four. Fixed it.'],
+      ['Two floors. Generator\'s running hot already.', 'I replaced three bolts today that should\'ve lasted a year.', 'Cheap hardware. I told them. Nobody listens.'],
+      ['Wind\'s picking up at floor three. Adjust and continue.', 'The crane pulled left on the last lift. Compensated.', 'Every floor has a new problem. Every problem has a wrench.'],
+      ['Crane\'s acting up again. Recalibrated the winch.', 'Four floors of other people\'s mistakes and I fix every one.', 'The job is the job. Complaining doesn\'t tighten bolts.'],
+      ['Floor five. Halfway. Tools are holding up.', 'New safety cable on the east side. Old one was fraying.', 'Wind, bolts, temperature. Everything works different up here.'],
+      ['Six floors. Porta-potty situation is getting dire.', 'I told management we need a second crane. Still waiting.', 'Meanwhile I\'m hauling double loads. Fine. I\'ve done worse.'],
+      ['Rain makes everything heavier at this height.', 'Floor seven. The bolts are tighter up here. Thermal expansion.', 'Figure it out, bolt it down, move up. That\'s the job.'],
+      ['Eight floors. My wrench set is down to six from twelve.', 'Lost three to gravity and three to Rodriguez borrowing them.', 'If this tower falls it won\'t be because of MY work.'],
+      ['Top floor. Everything\'s secured. Double-checked.', 'Ten floors of problems and I solved every single one.', 'They want ten more? Fine. Bring bolts.'],
+    ],
+    [ // Okafor — floor 0
+      ['They want to build a tower to space. And here we are.', 'Ground level. You can still smell the grass.', 'I wonder what this spot looked like before.'],
+      ['One floor up. The city looks the same from here.', 'Why do they build towers? Because the ground runs out.', 'Or maybe because people need to look at something above them.'],
+      ['Second floor. Starting to get perspective.', 'You can see the parking lot from here. All those tiny cars.', 'Funny how things look different when you\'re slightly above them.'],
+      ['Three floors. The trees are below us now.', 'They call this project Goodbye Earth. Heavy name.', 'Are we really saying goodbye? Or just getting a better view?'],
+      ['Four floors up. The city starts to look like a map.', 'I think about the people down there. Do they look up?', 'Probably not. People don\'t look up until someone builds something worth seeing.'],
+      ['Floor five. Halfway to something.', 'Goodbye Earth. Funny name for a construction job.', 'But standing here... I get it. A little.'],
+      ['Six floors. The sounds from below are quieter now.', 'You stop hearing individual cars. It becomes a hum.', 'The higher you go, the more the world simplifies.'],
+      ['Seven floors. I can see where the city ends.', 'There\'s a line where buildings stop and farmland starts.', 'From up here, the boundary looks so thin. So easy to cross.'],
+      ['Eight floors. The sky is closer than the ground.', 'I don\'t look down much anymore. Not out of fear.', 'There\'s just more to see looking up.'],
+      ['Ten floors. And they want ten more.', 'I look down less now. Not because it\'s scary.', 'Because up here, looking up is finally the right direction.'],
+    ],
+  ];
+  const rooftopWorkers = [];
+  const vcMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const wSkinMat = new THREE.MeshBasicMaterial({ color: 0xd4a878 });
+  const wPantsMat = new THREE.MeshBasicMaterial({ color: 0x3a5070 });
+
+  for (let wi = 0; wi < 4; wi++) {
+    const wg = new THREE.Group();
+
+    // Merge static parts: torso, 2 stripes, head, 2 eyes, hat, brim, 2 boots → 1 mesh
+    const staticParts = [
+      [new THREE.BoxGeometry(0.24, 0.26, 0.16), 0xFF6600, 0, 0.45, 0],       // torso
+      [new THREE.BoxGeometry(0.25, 0.02, 0.17), 0x999900, 0, 0.40, 0],       // stripe (opaque approx)
+      [new THREE.BoxGeometry(0.25, 0.02, 0.17), 0x999900, 0, 0.50, 0],       // stripe
+      [new THREE.BoxGeometry(0.16, 0.16, 0.16), 0xd4a878, 0, 0.70, 0],       // head
+      [new THREE.BoxGeometry(0.025, 0.02, 0.01), 0x1a1a2a, -0.035, 0.72, 0.08], // left eye
+      [new THREE.BoxGeometry(0.025, 0.02, 0.01), 0x1a1a2a, 0.035, 0.72, 0.08],  // right eye
+      [new THREE.BoxGeometry(0.20, 0.07, 0.20), 0xFFD700, 0, 0.82, 0],       // hat
+      [new THREE.BoxGeometry(0.23, 0.02, 0.23), 0xFFD700, 0, 0.79, 0],       // brim
+      [new THREE.BoxGeometry(0.10, 0.08, 0.12), 0x5a4030, -0.06, 0.04, 0.01],  // left boot
+      [new THREE.BoxGeometry(0.10, 0.08, 0.12), 0x5a4030, 0.06, 0.04, 0.01],   // right boot
+    ];
+    const sGeos = staticParts.map(([geo, col, x, y, z]) => { _colorGeo(geo, col); geo.translate(x, y, z); return geo; });
+    const staticMesh = new THREE.Mesh(mergeGeometries(sGeos, false), vcMat);
+    wg.add(staticMesh);
+    sGeos.forEach(g => g.dispose());
+
+    // Animated limbs (kept separate for rotation)
+    const wArmGeo = new THREE.BoxGeometry(0.08, 0.20, 0.08);
+    const wLA = new THREE.Mesh(wArmGeo, wSkinMat);
+    wLA.position.set(-0.16, 0.44, 0); wg.add(wLA);
+    const wRA = new THREE.Mesh(wArmGeo.clone(), wSkinMat);
+    wRA.position.set(0.16, 0.44, 0); wg.add(wRA);
+    const wLegGeo = new THREE.BoxGeometry(0.09, 0.20, 0.10);
+    const wLL = new THREE.Mesh(wLegGeo, wPantsMat);
+    wLL.position.set(-0.06, 0.18, 0); wg.add(wLL);
+    const wRL = new THREE.Mesh(wLegGeo.clone(), wPantsMat);
+    wRL.position.set(0.06, 0.18, 0); wg.add(wRL);
+
+    // Position randomly on rooftop
+    const wx = (Math.random() - 0.5) * TOWER_HALF * 1.2;
+    const wz = (Math.random() - 0.5) * TOWER_HALF * 1.2;
+    wg.position.set(wx, ROOF_Y, wz);
+    siteGroup.add(wg);
+    rooftopWorkers.push({
+      group: wg, name: workerNames[wi], dialogue: workerDialogue[wi],
+      ci: 0,
+      vx: (Math.random() - 0.5) * 0.02, vz: (Math.random() - 0.5) * 0.02,
+      walkTimer: Math.random() * 300, idleTimer: 0, state: 'walk',
+      leftArm: wLA, rightArm: wRA, leftLeg: wLL, rightLeg: wRL, walkCycle: Math.random() * 10,
+    });
+  }
+
+  siteGroup.userData = { dropRing, roofPlate, craneGroup, rooftopWorkers, arrowGroup, ladderMesh };
 
   scene.add(siteGroup);
   return siteGroup;
@@ -256,22 +532,20 @@ export function setupExteriorInput() {
     keys[e.code] = true;
     if (e.code === 'Space') e.preventDefault();
     if (e.code === 'KeyE') handleInteract();
+    if (e.code === 'Tab') { e.preventDefault(); if (_enterDoorCallback) _enterDoorCallback(); }
   };
   _keyupHandler = (e) => {
     keys[e.code] = false;
-    if (e.code === 'Space' && PLAYER.active) {
-      if (PLAYER.isCharging && PLAYER.onGround) {
-        const t = PLAYER.chargeT / CHARGE_MAX;
-        PLAYER.vel.y = JUMP_BASE + (JUMP_MAX - JUMP_BASE) * t;
-        PLAYER.onGround = false;
-        PLAYER.isCharging = false;
-        PLAYER.chargeT = 0;
-        // Flip: commit immediately at launch if charge >= 35%
-        jumpStartY = PLAYER.pos.y;
-        flipInitVel = PLAYER.vel.y;
-        flipCommitted = t >= 0.35;
-        flipDouble = t >= 0.9;
-      }
+    if (e.code === 'Space' && PLAYER.active && PLAYER.isCharging && !PLAYER.onLadder) {
+      const t = PLAYER.chargeT / CHARGE_MAX;
+      PLAYER.vel.y = JUMP_BASE + (JUMP_MAX - JUMP_BASE) * t;
+      PLAYER.onGround = false;
+      PLAYER.isCharging = false;
+      PLAYER.chargeT = 0;
+      // Flip: 1 spin default, 2 at 50%+, 3 at 90%+
+      flipInitVel = PLAYER.vel.y;
+      flipCommitted = true;
+      flipSpins = t >= 0.9 ? 3 : t >= 0.5 ? 2 : 1;
     }
   };
   document.addEventListener('keydown', _keydownHandler);
@@ -295,16 +569,35 @@ try {
 
 function handleInteract() {
   const pp = PLAYER.pos;
+  // Talk to nearby rooftop worker
+  const nearWorker = _getNearbyWorker();
+  if (nearWorker) {
+    let lines = nearWorker.dialogue;
+    // Height-aware dialogue: [floorLevel][3 lines] for rooftop workers
+    if (lines.length && Array.isArray(lines[0])) {
+      const level = Math.min(activeMaxFloor, lines.length - 1);
+      lines = lines[level];
+    }
+    const line = lines[nearWorker.ci % lines.length];
+    _showDialogue(nearWorker.name, line);
+    nearWorker.ci = (nearWorker.ci + 1) % lines.length;
+    return;
+  }
+  // Enter the tower through the front door
+  if (_isNearDoor() && _enterDoorCallback) {
+    _enterDoorCallback();
+    return;
+  }
   // Pick up materials from the construction site
-  if (!PLAYER.carrying && Math.abs(pp.x - 10) < 2.5 && Math.abs(pp.z) < 2) {
+  if (!PLAYER.carrying && Math.abs(pp.x - 125) < 31.25 && Math.abs(pp.z) < 25) {
     PLAYER.carrying = true;
     if (carryBox) carryBox.visible = true;
     return;
   }
   // If carrying, try to build at the tower — otherwise just drop it
   if (PLAYER.carrying) {
-    const dropY = floorsBuilt * 1.2 + 0.4;
-    if (Math.abs(pp.x) < 4 && Math.abs(pp.z) < 4 && Math.abs(pp.y - dropY) < 1.5) {
+    const dropY = floorsBuilt * 3.333 + 5;
+    if (Math.abs(pp.x) < 50 && Math.abs(pp.z) < 50 && Math.abs(pp.y - dropY) < 18.75) {
       PLAYER.carrying = false;
       if (carryBox) carryBox.visible = false;
       floorsBuilt++;
@@ -402,10 +695,10 @@ function _checkFoundationWalls() {
 function _checkColumnCollision() {
   const pp = PLAYER.pos;
   const pv = PLAYER.vel;
-  const colHalf = 0.2; // collision half-width for columns
+  const colHalf = 1.5; // collision half-width for columns
 
   for (const [cx, cz] of COLUMNS) {
-    if (Math.abs(pp.x - cx) < colHalf && Math.abs(pp.z - cz) < colHalf && !PLAYER.isClimbing) {
+    if (Math.abs(pp.x - cx) < colHalf && Math.abs(pp.z - cz) < colHalf) {
       const dx = pp.x - cx;
       const dz = pp.z - cz;
       if (Math.abs(dx) > Math.abs(dz)) {
@@ -417,6 +710,47 @@ function _checkColumnCollision() {
       }
     }
   }
+}
+
+// Tower wall collision — solid perimeter with +Z door exception
+function _checkTowerWalls() {
+  const pp = PLAYER.pos;
+  const pv = PLAYER.vel;
+  // Walls apply below the roof surface — on the roof the player walks freely and can fall off edges
+  if (pp.y < 0 || pp.y >= activeRoofY - 0.3) return;
+
+  const doorHalfW = BLOCK_W * 1.5;
+  const edge = OUTER_EDGE;
+  const r = PLAYER_R + 0.15; // wider detection to prevent phase-through on fast falls
+
+  // +X wall
+  if (Math.abs(pp.z) <= edge) {
+    const d = pp.x - edge;
+    if (Math.abs(d) < r) { pp.x = edge + (d >= 0 ? r : -r); pv.x = 0; }
+  }
+  // -X wall
+  if (Math.abs(pp.z) <= edge) {
+    const d = pp.x + edge;
+    if (Math.abs(d) < r) { pp.x = -edge + (d >= 0 ? r : -r); pv.x = 0; }
+  }
+  // +Z wall (door exception)
+  if (Math.abs(pp.x) <= edge && Math.abs(pp.x) >= doorHalfW) {
+    const d = pp.z - edge;
+    if (Math.abs(d) < r) { pp.z = edge + (d >= 0 ? r : -r); pv.z = 0; }
+  }
+  // -Z wall
+  if (Math.abs(pp.x) <= edge) {
+    const d = pp.z + edge;
+    if (Math.abs(d) < r) { pp.z = -edge + (d >= 0 ? r : -r); pv.z = 0; }
+  }
+}
+
+const BLOCK_W = 6.25; // local copy for wall collision
+
+// Is player near the front door? (+Z face, within door opening, at ground level)
+function _isNearDoor() {
+  const pp = PLAYER.pos;
+  return pp.y < 1 && Math.abs(pp.x) < 12 && pp.z > TOWER_HALF - 3 && pp.z < TOWER_HALF + 5;
 }
 
 // Site object collision — push player out of construction site objects
@@ -436,41 +770,238 @@ function _checkSiteCollision() {
   }
 }
 
-// Climb: grab corner columns — walk into column to start climbing
-function _checkTowerClimb() {
-  if (PLAYER.isClimbing || climbCooldown > 0) return;
-
+// Vehicle collision — land on top or push out from sides
+function _checkVehicleCollision() {
   const pp = PLAYER.pos;
-  if (pp.y > activeRoofY) return;
+  const pv = PLAYER.vel;
 
-  for (let ci = 0; ci < COLUMNS.length; ci++) {
-    const [cx, cz] = COLUMNS[ci];
-    if (Math.abs(pp.x - cx) < COL_GRAB_RADIUS && Math.abs(pp.z - cz) < COL_GRAB_RADIUS) {
-      PLAYER.isClimbing = true;
+  // ── Semi trucks (static AABB) ──
+  for (const [cx, cz, hx, hz, roofY] of SEMI_COLLIDERS) {
+    const dx = pp.x - cx;
+    const dz = pp.z - cz;
+    const overX = (hx + PLAYER_R) - Math.abs(dx);
+    const overZ = (hz + PLAYER_R) - Math.abs(dz);
+    if (overX <= 0 || overZ <= 0) continue;
+
+    // Landing on top (falling onto roof)
+    if (pv.y <= 0 && pp.y >= roofY - 0.5 && pp.y <= roofY + 0.5) {
+      pp.y = roofY;
+      pv.y = 0;
+      PLAYER.onGround = true;
+      continue;
+    }
+
+    // Side collision (below roof)
+    if (pp.y < roofY - 0.3) {
+      if (overX < overZ) { pp.x = cx + Math.sign(dx || 1) * (hx + PLAYER_R); pv.x = 0; }
+      else { pp.z = cz + Math.sign(dz || 1) * (hz + PLAYER_R); pv.z = 0; }
+    }
+  }
+
+  // ── Business people cars (dynamic, circular) ──
+  for (const bp of _bizPeople) {
+    if (!bp.car || !bp.car.visible) continue;
+    const cx = bp.car.position.x;
+    const cz = bp.car.position.z;
+    const dx = pp.x - cx;
+    const dz = pp.z - cz;
+    const distSq = dx * dx + dz * dz;
+    const hitR = CAR_R + PLAYER_R;
+    if (distSq > hitR * hitR) continue;
+
+    const dist = Math.sqrt(distSq);
+
+    // Landing on top
+    if (pv.y <= 0 && pp.y >= CAR_ROOF_Y - 0.5 && pp.y <= CAR_ROOF_Y + 0.5) {
+      pp.y = CAR_ROOF_Y;
+      pv.y = 0;
+      PLAYER.onGround = true;
+      continue;
+    }
+
+    // Side collision (below roof)
+    if (pp.y < CAR_ROOF_Y - 0.3 && dist > 0.01) {
+      const push = hitR - dist;
+      pp.x += (dx / dist) * push;
+      pp.z += (dz / dist) * push;
+    }
+  }
+}
+
+// Is player currently standing on a vehicle surface?
+function _isOnVehicle() {
+  const pp = PLAYER.pos;
+  // Semi trucks
+  for (const [cx, cz, hx, hz, roofY] of SEMI_COLLIDERS) {
+    if (Math.abs(pp.y - roofY) < 0.3 && Math.abs(pp.x - cx) <= hx && Math.abs(pp.z - cz) <= hz) return true;
+  }
+  // Biz cars
+  for (const bp of _bizPeople) {
+    if (!bp.car || !bp.car.visible) continue;
+    const dx = pp.x - bp.car.position.x;
+    const dz = pp.z - bp.car.position.z;
+    if (Math.abs(pp.y - CAR_ROOF_Y) < 0.3 && dx * dx + dz * dz <= CAR_R * CAR_R) return true;
+  }
+  return false;
+}
+
+// Ladder entry — walk into a ladder from outside to start climbing
+function _checkLadderEntry(preVelAxis) {
+  if (PLAYER.onLadder) return; // already on one
+  const pp = PLAYER.pos;
+
+  // ── Side entry: walk into ladder from outside ──
+  for (const lad of LADDERS) {
+    const sign = Math.sign(lad.pos);
+    const normalDist = sign * (pp[lad.axis] - lad.pos);
+    if (normalDist < -0.3 || normalDist > LADDER_ENTRY_DEPTH) continue;
+    if (Math.abs(pp[lad.tanAxis] - lad.tanPos) > LADDER_HALF_W) continue;
+
+    // Must have been pressing toward the wall (pre-collision velocity check)
+    if (sign * preVelAxis[lad.axis] >= 0) continue;
+
+    PLAYER.onLadder = lad;
+    PLAYER.onGround = false;
+    PLAYER.vel.set(0, 0, 0);
+    PLAYER.isCharging = false;
+    PLAYER.chargeT = 0;
+    pp[lad.axis] = lad.pos;
+    pp[lad.tanAxis] = lad.tanPos;
+    return;
+  }
+
+  // ── Top entry: on roof, near edge, pressing S/Down → climb down ──
+  if (PLAYER.onGround && Math.abs(pp.y - activeRoofY) < 0.2) {
+    const pressDown = keys['KeyS'] || keys['ArrowDown'];
+    if (!pressDown) return;
+    for (const lad of LADDERS) {
+      if (Math.abs(pp[lad.axis] - lad.pos) > 3) continue; // within 3 units of this edge
+      if (Math.abs(pp[lad.tanAxis] - lad.tanPos) > LADDER_HALF_W) continue;
+
+      PLAYER.onLadder = lad;
       PLAYER.onGround = false;
       PLAYER.vel.set(0, 0, 0);
-      PLAYER.isCharging = false;
-      PLAYER.chargeT = 0;
-      // Record which column and approach angle
-      climbCol = ci;
-      climbAngle = Math.atan2(pp.x - cx, pp.z - cz);
-      // Position at orbit distance from column center
-      pp.x = cx + Math.sin(climbAngle) * CLIMB_DIST;
-      pp.z = cz + Math.cos(climbAngle) * CLIMB_DIST;
+      pp.y = activeRoofY - 0.5; // drop just below roof
+      pp[lad.axis] = lad.pos;
+      pp[lad.tanAxis] = lad.tanPos;
       return;
     }
   }
+}
+
+// ── Rooftop worker AI ──
+let dialogueEl = null;
+let dialogueTimer = 0;
+
+function _getNearbyWorker() {
+  const pp = PLAYER.pos;
+  // Check rooftop workers
+  if (siteGroup && siteGroup.userData.rooftopWorkers) {
+    for (const w of siteGroup.userData.rooftopWorkers) {
+      const wp = w.group.position;
+      const dx = pp.x - wp.x, dz = pp.z - wp.z;
+      const dy = Math.abs(pp.y - wp.y);
+      if (dx * dx + dz * dz < 9 && dy < 2) return w;
+    }
+  }
+  // Check ground-level NPCs (semi workers)
+  for (const w of _groundNPCs) {
+    const dx = pp.x - w.wx, dz = pp.z - w.wz;
+    if (dx * dx + dz * dz < 16 && pp.y < 1.5) return w; // within 4 units, at ground
+  }
+  // Check business people (dynamic positions, only when visible and on foot)
+  for (const bp of _bizPeople) {
+    if (!bp.group.visible) continue;
+    if (bp.phase === 'driving_in' || bp.phase === 'driving_out') continue;
+    const gp = bp.group.position;
+    const dx = pp.x - gp.x, dz = pp.z - gp.z;
+    if (dx * dx + dz * dz < 16 && pp.y < 1.5) return bp;
+  }
+  return null;
+}
+
+function _showDialogue(name, text) {
+  if (!dialogueEl) {
+    dialogueEl = document.createElement('div');
+    dialogueEl.style.cssText = 'position:fixed;top:18%;left:50%;transform:translateX(-50%);z-index:70;color:rgba(255,255,255,0.8);font-family:monospace;font-size:11px;line-height:1.5;pointer-events:none;user-select:none;background:rgba(0,0,0,0.5);padding:10px 16px;border-radius:6px;backdrop-filter:blur(4px);max-width:340px;text-align:center;transition:opacity 0.4s';
+    document.body.appendChild(dialogueEl);
+  }
+  dialogueEl.innerHTML = `<span style="color:#FFD700;font-weight:bold">${name}:</span> "${text}"`;
+  dialogueEl.style.opacity = '1';
+  dialogueTimer = 4; // seconds to display
+}
+
+function _updateDialogue(dt) {
+  if (dialogueTimer > 0) {
+    dialogueTimer -= dt;
+    if (dialogueTimer <= 0 && dialogueEl) {
+      dialogueEl.style.opacity = '0';
+    }
+  }
+}
+
+function _updateRooftopWorkers(dt) {
+  if (!siteGroup) return;
+  // Animate entrance arrow — bob up/down and rotate slowly
+  const arrow = siteGroup.userData.arrowGroup;
+  if (arrow) {
+    const t = performance.now() * 0.001;
+    arrow.position.y = BASE_H + 8 + Math.sin(t * 1.5) * 1.5;
+    arrow.rotation.y = t * 0.4;
+  }
+  if (!siteGroup.userData.rooftopWorkers) return;
+  const workers = siteGroup.userData.rooftopWorkers;
+  const roofBound = TOWER_HALF * 0.8; // keep within tower footprint
+  for (const w of workers) {
+    w.walkCycle += 0.04;
+    if (w.state === 'walk') {
+      w.group.position.x += w.vx;
+      w.group.position.z += w.vz;
+      // Keep on rooftop
+      if (Math.abs(w.group.position.x) > roofBound) { w.vx *= -1; w.group.position.x = Math.sign(w.group.position.x) * roofBound; }
+      if (Math.abs(w.group.position.z) > roofBound) { w.vz *= -1; w.group.position.z = Math.sign(w.group.position.z) * roofBound; }
+      // Face walk direction
+      w.group.rotation.y = Math.atan2(w.vx, w.vz);
+      // Animate limbs
+      const sw = Math.sin(w.walkCycle * 3) * 0.25;
+      w.leftLeg.rotation.x = sw;
+      w.rightLeg.rotation.x = -sw;
+      w.leftArm.rotation.x = -sw * 0.5;
+      w.rightArm.rotation.x = sw * 0.5;
+      w.walkTimer -= 1;
+      if (w.walkTimer <= 0) { w.state = 'idle'; w.idleTimer = 120 + Math.random() * 200; }
+    } else {
+      // Idle — limbs settle
+      w.leftLeg.rotation.x *= 0.9;
+      w.rightLeg.rotation.x *= 0.9;
+      w.leftArm.rotation.x *= 0.9;
+      w.rightArm.rotation.x *= 0.9;
+      w.idleTimer -= 1;
+      if (w.idleTimer <= 0) {
+        w.state = 'walk';
+        w.vx = (Math.random() - 0.5) * 0.02;
+        w.vz = (Math.random() - 0.5) * 0.02;
+        w.walkTimer = 150 + Math.random() * 300;
+      }
+    }
+  }
+  _updateDialogue(dt);
 }
 
 // ── Interaction prompt (lazy-created DOM element) ──
 function _updatePrompt() {
   const pp = PLAYER.pos;
   let text = '';
-  if (!PLAYER.carrying && Math.abs(pp.x - 10) < 3 && Math.abs(pp.z) < 2.5 && pp.y < 1) {
+  const nearWorker = _getNearbyWorker();
+  if (nearWorker) {
+    text = `E \u2014 talk to ${nearWorker.name}`;
+  } else if (_isNearDoor() && _enterDoorCallback) {
+    text = 'E \u2014 enter tower';
+  } else if (!PLAYER.carrying && Math.abs(pp.x - 125) < 37.5 && Math.abs(pp.z) < 31.25 && pp.y < 1) {
     text = 'E \u2014 pick up';
   } else if (PLAYER.carrying) {
-    const dropY = floorsBuilt * 1.2 + 0.4;
-    if (Math.abs(pp.x) < 4 && Math.abs(pp.z) < 4 && Math.abs(pp.y - dropY) < 1.5) {
+    const dropY = floorsBuilt * 3.333 + 5;
+    if (Math.abs(pp.x) < 50 && Math.abs(pp.z) < 50 && Math.abs(pp.y - dropY) < 18.75) {
       text = 'E \u2014 build';
     } else {
       text = 'E \u2014 drop';
@@ -494,9 +1025,76 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   const pp = PLAYER.pos;
   const pv = PLAYER.vel;
 
-  if (climbCooldown > 0) climbCooldown--;
+  // ═══════════════════════════════════════════════════════════════
+  // LADDER CLIMBING — completely separate movement when on a ladder
+  // ═══════════════════════════════════════════════════════════════
+  if (PLAYER.onLadder) {
+    const lad = PLAYER.onLadder;
+    const spd = LADDER_CLIMB_SPEED;
 
-  // ── Input (S/Down = backward from facing, not camera-relative) ──
+    // W/S = up/down
+    pv.y = 0;
+    if (keys['KeyW'] || keys['ArrowUp']) pv.y = spd;
+    if (keys['KeyS'] || keys['ArrowDown']) pv.y = -spd;
+
+    // A/D = side-to-side along the ladder face
+    const tanInput = ((keys['KeyD'] || keys['ArrowRight']) ? 1 : 0)
+                   - ((keys['KeyA'] || keys['ArrowLeft']) ? 1 : 0);
+    pv[lad.tanAxis] = tanInput * spd * lad.tanDir;
+    pv[lad.axis] = 0; // no movement into/away from wall
+
+    // Apply
+    pp.y += pv.y;
+    pp[lad.tanAxis] += pv[lad.tanAxis];
+    pp[lad.axis] = lad.pos; // snap to ladder face
+
+    // Roof step-off
+    if (pp.y >= activeRoofY) {
+      pp.y = activeRoofY;
+      pv.y = 0;
+      PLAYER.onGround = true;
+      PLAYER.onLadder = null;
+      if (lad.axis === 'x') pp.x = Math.sign(lad.pos) * (OUTER_EDGE - 2);
+      else pp.z = Math.sign(lad.pos) * (OUTER_EDGE - 2);
+    }
+
+    // Ground step-off
+    if (pp.y <= 0) {
+      pp.y = 0;
+      PLAYER.onGround = true;
+      PLAYER.onLadder = null;
+    }
+
+    // Fall off if moved past lateral edges — clean drop
+    if (Math.abs(pp[lad.tanAxis] - lad.tanPos) > LADDER_HALF_W) {
+      PLAYER.onLadder = null;
+      PLAYER.onGround = false;
+      pv.y = 0;
+      pv.x = 0;
+      pv.z = 0;
+      // Push clearly outside grab zone so we don't re-grab
+      pp[lad.axis] = lad.pos + Math.sign(lad.pos) * (LADDER_ENTRY_DEPTH + 0.3);
+    }
+
+    // Jump off ladder (space)
+    if (PLAYER.onLadder && keys['Space']) {
+      PLAYER.onLadder = null;
+      PLAYER.onGround = false;
+      pv.y = JUMP_BASE;
+      pv[lad.axis] = Math.sign(lad.pos) * 0.12; // push away from wall
+      pv[lad.tanAxis] = 0;
+    }
+
+    // Walk cycle for climb animation
+    if (Math.abs(pv.y) > 0.001 || Math.abs(pv[lad.tanAxis]) > 0.001) {
+      PLAYER.walkCycle += 0.06;
+    }
+
+  } else {
+  // ═══════════════════════════════════════════════════════════════
+  // NORMAL GROUND/AIR MOVEMENT
+  // ═══════════════════════════════════════════════════════════════
+
   let inputFwd = 0, inputRight = 0;
   if (keys['KeyW'] || keys['ArrowUp']) inputFwd = 1;
   if (keys['KeyA'] || keys['ArrowLeft']) inputRight = -1;
@@ -507,7 +1105,6 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   walkingBackward = false;
 
   if (hasBack && !inputFwd) {
-    // ── Backward walk: camera-relative (reverse + strafe), model stays locked ──
     walkingBackward = true;
     wasBackward = true;
     const bf = -1;
@@ -522,12 +1119,12 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     const rZ = fX;
     const worldX = rX * nr + fX * nf;
     const worldZ = rZ * nr + fZ * nf;
-    const spd = PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED;
+    const sprint = keys['ShiftLeft'] || keys['ShiftRight'] ? SPRINT_MULT : 1;
+    const spd = (PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED) * sprint;
     pv.x = worldX * spd;
     pv.z = worldZ * spd;
-    PLAYER.walkCycle += 0.15;
+    PLAYER.walkCycle += 0.06;
   } else if (inputLen > 0) {
-    // ── Camera-relative movement (W, A, D) ──
     wasBackward = false;
     const nf = inputFwd / inputLen;
     const nr = inputRight / inputLen;
@@ -538,13 +1135,13 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     const rZ = fX;
     const worldX = rX * nr + fX * nf;
     const worldZ = rZ * nr + fZ * nf;
-    const spd2 = PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED;
+    const sprint2 = keys['ShiftLeft'] || keys['ShiftRight'] ? SPRINT_MULT : 1;
+    const spd2 = (PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED) * sprint2;
     pv.x = worldX * spd2;
     pv.z = worldZ * spd2;
-    PLAYER.walkCycle += 0.15;
+    PLAYER.walkCycle += 0.06;
   } else {
     if (wasBackward) {
-      // Kill residual backward velocity so camera doesn't whip
       pv.x = 0;
       pv.z = 0;
       wasBackward = false;
@@ -556,14 +1153,17 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     if (Math.abs(pv.z) < 0.001) pv.z = 0;
   }
 
-  // ── Jump charge ──
-  if (keys['Space'] && PLAYER.onGround) {
+  // ── Jump charge (hold space — works on ground or mid-air) ──
+  if (keys['Space']) {
     PLAYER.isCharging = true;
     PLAYER.chargeT = Math.min(PLAYER.chargeT + 1, CHARGE_MAX);
   }
 
   // ── Gravity ──
   if (!PLAYER.onGround) pv.y -= GRAVITY;
+
+  // Capture pre-collision velocity for ladder entry detection
+  const preVel = { x: pv.x, z: pv.z };
 
   // ── Apply velocity ──
   pp.x += pv.x;
@@ -572,36 +1172,60 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
 
   // ── Collision ──
   _checkTowerCollision();
+  _checkTowerWalls();
   _checkFoundationWalls();
   _checkColumnCollision();
   _checkSiteCollision();
+  _checkVehicleCollision();
+  _checkLadderEntry(preVel);
 
   // ── Walk off edge ──
   if (PLAYER.onGround && pp.y > 0.1) {
     if (Math.abs(pp.y - activeRoofY) < 0.1) {
-      // On roof plate — check still within tower footprint
       if (Math.abs(pp.x) > OUTER_EDGE || Math.abs(pp.z) > OUTER_EDGE) PLAYER.onGround = false;
     } else if (pp.y >= BASE_H + FLOOR_H - 0.1) {
-      // On upper beam — check still on beam perimeter
       if (!_isOnBeam(pp.x, pp.z)) PLAYER.onGround = false;
     } else if (Math.abs(pp.y - BASE_H) < 0.1) {
-      // On foundation
       if (!_isOnFoundation(pp.x, pp.z)) PLAYER.onGround = false;
+    } else if (pp.y > 0.5 && pp.y < BASE_H - 1) {
+      // Vehicle height range — fall if not on a vehicle
+      if (!_isOnVehicle()) PLAYER.onGround = false;
     }
   }
 
   // ── Ground ──
-  if (pp.y <= 0) { pp.y = 0; pv.y = 0; PLAYER.onGround = true; PLAYER.isClimbing = false; }
+  if (pp.y <= 0) { pp.y = 0; pv.y = 0; PLAYER.onGround = true; }
+
+  } // end normal movement
 
   // ── Bounds ──
-  pp.x = Math.max(-30, Math.min(30, pp.x));
-  pp.z = Math.max(-30, Math.min(30, pp.z));
+  pp.x = Math.max(-500, Math.min(500, pp.x));
+  pp.z = Math.max(-500, Math.min(500, pp.z));
 
   // ── Animation ──
   const walking = Math.abs(pv.x) > 0.005 || Math.abs(pv.z) > 0.005;
   const ud = playerGroup.userData;
 
-  if (PLAYER.isCharging) {
+  if (PLAYER.onLadder) {
+    // Climbing animation — alternating arms/legs
+    const climbing = Math.abs(pv.y) > 0.001;
+    if (climbing) PLAYER.walkCycle += 0.08;
+    const sw = climbing ? Math.sin(PLAYER.walkCycle * 3) * 0.5 : 0;
+    ud.torso.position.y = 0.52;
+    ud.leftLeg.rotation.x = sw;
+    ud.rightLeg.rotation.x = -sw;
+    ud.leftArm.rotation.x = -sw;
+    ud.rightArm.rotation.x = sw;
+    ud.leftArm.rotation.z = -0.3; // arms out to sides (gripping rungs)
+    ud.rightArm.rotation.z = 0.3;
+    ud.torso.rotation.z = 0;
+    // Face the wall
+    const lad = PLAYER.onLadder;
+    const faceAngle = Math.atan2(-Math.sign(lad.pos) * (lad.axis === 'x' ? 1 : 0),
+                                  -Math.sign(lad.pos) * (lad.axis === 'z' ? 1 : 0));
+    playerGroup.rotation.y = faceAngle;
+    playerGroup.rotation.x = 0;
+  } else if (PLAYER.isCharging) {
     const squat = PLAYER.chargeT / CHARGE_MAX * 0.15;
     ud.torso.position.y = 0.52 - squat;
     ud.leftLeg.rotation.x = squat * 2;
@@ -635,42 +1259,38 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   // ── Position + rotation ──
   playerGroup.position.copy(pp);
   if (walking) {
-    // Forward: face velocity direction. Backward: face opposite of velocity (= camera forward)
-    const targetRot = walkingBackward
-      ? Math.atan2(-pv.x, -pv.z)
-      : Math.atan2(pv.x, pv.z);
+    // Always face velocity direction — when walking backward, velocity points
+    // toward camera so the character's face is visible
+    const targetRot = Math.atan2(pv.x, pv.z);
     let delta = targetRot - playerGroup.rotation.y;
     while (delta > Math.PI) delta -= 2 * Math.PI;
     while (delta < -Math.PI) delta += 2 * Math.PI;
     playerGroup.rotation.y += delta * 0.15;
   }
 
-  // ── Jump flip (committed at launch if charge >= 35%) — double flip with tuck ──
+  // ── Jump flip (1/2/3 spins with tuck) ──
   if (flipCommitted && !PLAYER.onGround) {
     const t = (flipInitVel - PLAYER.vel.y) / (2 * flipInitVel);
     const clamped = Math.max(0, Math.min(1, t));
     const eased = easeInOutSine(clamped);
-    // 360° single flip, or 720° double if charge >= 90%
-    playerGroup.rotation.x = eased * (flipDouble ? Math.PI * 4 : Math.PI * 2);
-    // Tuck: arms/legs pull in at peak (t≈0.5), spread at start/end
-    const tuck = Math.sin(clamped * Math.PI); // 0→1→0 over the arc
+    playerGroup.rotation.x = eased * Math.PI * 2 * flipSpins;
+    const tuck = Math.sin(clamped * Math.PI);
     ud.leftArm.rotation.x = -2.2 * tuck;
     ud.rightArm.rotation.x = -2.2 * tuck;
     ud.leftArm.rotation.z = -0.4 * tuck;
     ud.rightArm.rotation.z = 0.4 * tuck;
     ud.leftLeg.rotation.x = -1.8 * tuck;
     ud.rightLeg.rotation.x = -1.8 * tuck;
-    // Slight torso compression at peak
     ud.torso.position.y = 0.52 - 0.06 * tuck;
   }
 
   if (PLAYER.onGround && (flipCommitted || playerGroup.rotation.x !== 0)) {
     playerGroup.rotation.x = 0;
     flipCommitted = false;
-    flipDouble = false;
   }
 
   _updatePrompt();
+  _updateRooftopWorkers(dt);
 
   if (PLAYER.carrying && carryBox) {
     carryBox.rotation.z = Math.sin(performance.now() * 0.003) * 0.04;
@@ -680,30 +1300,39 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
 // ── Accessors ──
 export function getPlayerPos() { return PLAYER.pos; }
 export function getPlayerVel() { return PLAYER.vel; }
+export function getActiveRoofY() { return activeRoofY; }
+export function getTowerHalf() { return OUTER_EDGE; }
 
 export function activateExterior() {
   PLAYER.active = true;
-  PLAYER.isClimbing = false;
   PLAYER.isCharging = false;
   PLAYER.chargeT = 0;
-  climbCooldown = 0;
-  climbCol = -1;
+  PLAYER.onLadder = null;
 }
 
 export function deactivateExterior() {
   PLAYER.active = false;
-  PLAYER.isClimbing = false;
-  climbCol = -1;
   keys = {};
   if (promptEl) { promptEl.remove(); promptEl = null; }
+  if (dialogueEl) { dialogueEl.remove(); dialogueEl = null; }
 }
 
 export function setBuiltHeight(topBuilt) {
   activeMaxFloor = Math.max(0, topBuilt - 1);
   activeRoofY = BASE_H + Math.max(1, topBuilt) * FLOOR_H;
+  if (!siteGroup) return;
+  const ud = siteGroup.userData;
   // Reposition roof plate to match built height
-  if (siteGroup && siteGroup.userData.roofPlate) {
-    siteGroup.userData.roofPlate.position.y = activeRoofY;
+  if (ud.roofPlate) ud.roofPlate.position.y = activeRoofY;
+  // Reposition crane to sit on the active rooftop
+  if (ud.craneGroup) ud.craneGroup.position.y = activeRoofY;
+  // Reposition workers to the active rooftop
+  if (ud.rooftopWorkers) {
+    ud.rooftopWorkers.forEach(w => { w.group.position.y = activeRoofY; });
+  }
+  // Scale ladders to match built height
+  if (ud.ladderMesh) {
+    ud.ladderMesh.scale.y = activeRoofY / ROOF_Y;
   }
 }
 

@@ -1077,21 +1077,22 @@ export function draw(){
       const bx=TL+bi*PG,isWin=isWinBlock(bi),isElev=isElevBlock(bi);
       // Build reveal animation — blocks ease in left-to-right, 10 frames apart
       const _rT=S.buildout[i].revealT,_bT=_rT-bi*10;
+      // During stage 2+ upgrades, unswept blocks render at previous stage
+      const _sweeping=_rT<BPF*10+40;
+      const _stg=(stage>=2&&_sweeping&&_bT<0)?stage-1:stage;
       if(stage<=1){
-        if(_bT<0){continue}
-        if(_bT<40){const _t=_bT/40;X.globalAlpha=1-Math.pow(1-_t,3)}
-      } else if(_bT<0){
-        X.globalAlpha=0.65;
+        if(_bT<0){if(!(i===0&&isElev))continue}
+        if(_bT<40&&_bT>=0){const _t=_bT/40;X.globalAlpha=1-Math.pow(1-_t,3)}
       }
       if(isElev){
-        if(stage>=1){
-        // Elevator shaft — only on built floors
+        if(_stg>=1||i===0){
+        // Elevator shaft — always on floor 1 (lobby), elsewhere on built floors
         const elevW=PG*0.5,elevX=bx+PG*0.25;
         const doorH=FH*0.65,doorY=fy-doorH;
         // Flanking walls
-        const wallCol=stage>=2?th.wall:th.dark;
+        const wallCol=_stg>=2?th.wall:th.dark;
         X.fillStyle=wallCol;X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH);
-        if(stage>=2){X.fillStyle=th.accent;X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH)}
+        if(_stg>=2){X.fillStyle=th.accent;X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH)}
         else{X.fillStyle='rgba(0,0,0,0.12)';X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH)}
         // Shaft interior
         X.fillStyle='#0a0a12';X.fillRect(elevX,fy-FH-4,elevW,FH+8);
@@ -1111,7 +1112,7 @@ export function draw(){
         // Sliding doors (clipped to shaft)
         X.save();X.beginPath();X.rect(elevX,doorY,elevW,doorH);X.clip();
         const doorSlide=doorOpenAmount*(elevW/2-2);
-        const doorCol=stage>=2?'#909098':'#606068';
+        const doorCol=_stg>=2?'#909098':'#606068';
         X.fillStyle=doorCol;X.fillRect(elevX-doorSlide,doorY,elevW/2,doorH);
         X.fillStyle='#808088';X.fillRect(elevX-doorSlide+elevW/2-1,doorY,2,doorH);
         X.fillStyle=doorCol;X.fillRect(elevX+elevW/2+doorSlide,doorY,elevW/2,doorH);
@@ -1119,23 +1120,23 @@ export function draw(){
         // Interior detail when doors open
         if(doorOpenAmount>0.3){X.fillStyle='#14141e';X.fillRect(elevX+4,doorY+2,elevW-8,doorH-4);X.strokeStyle='#505058';X.lineWidth=2;X.beginPath();X.moveTo(elevX+8,doorY+doorH*0.55);X.lineTo(elevX+elevW-8,doorY+doorH*0.55);X.stroke()}
         // Floor indicator
-        X.fillStyle=stage>=3?'rgba(60,50,20,0.8)':'rgba(20,20,25,0.8)';
+        X.fillStyle=_stg>=3?'rgba(60,50,20,0.8)':'rgba(20,20,25,0.8)';
         X.beginPath();X.roundRect(elevX+elevW/2-18,fy-FH+4,36,14,2);X.fill();
-        if(stage>=3){X.fillStyle='rgba(255,200,80,0.7)';X.font='bold 9px monospace';X.textAlign='center';X.fillText(`F${i+1}`,elevX+elevW/2,fy-FH+14)}
+        if(_stg>=3){X.fillStyle='rgba(255,200,80,0.7)';X.font='bold 9px monospace';X.textAlign='center';X.fillText(`F${i+1}`,elevX+elevW/2,fy-FH+14)}
         else{X.fillStyle='rgba(80,80,90,0.5)';X.font='bold 9px monospace';X.textAlign='center';X.fillText(`F${i+1}`,elevX+elevW/2,fy-FH+14)}
         // Call button
-        if(stage>=3){X.fillStyle='#404048';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,5,0,Math.PI*2);X.fill();if(doorOpenAmount>0.5){X.fillStyle='rgba(255,215,0,0.15)';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,10,0,Math.PI*2);X.fill()}X.fillStyle=doorOpenAmount>0.5?'#ffd700':'#606068';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,3.5,0,Math.PI*2);X.fill()}
+        if(_stg>=3){X.fillStyle='#404048';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,5,0,Math.PI*2);X.fill();if(doorOpenAmount>0.5){X.fillStyle='rgba(255,215,0,0.15)';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,10,0,Math.PI*2);X.fill()}X.fillStyle=doorOpenAmount>0.5?'#ffd700':'#606068';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,3.5,0,Math.PI*2);X.fill()}
         } // end stage>=1 elevator gate
       } else if(isWin){
         // Windows — progressive visibility
-        if(stage>=2){
+        if(_stg>=2){
           X.fillStyle='rgba(160,205,235,0.1)';X.fillRect(bx,fy-FH,PG,FH);
           X.strokeStyle='rgba(80,120,150,0.4)';X.lineWidth=3;
           X.strokeRect(bx+4,fy-FH+4,PG-8,FH-8);
           X.lineWidth=2.5;X.beginPath();X.moveTo(bx+PG/2,fy-FH+4);X.lineTo(bx+PG/2,fy-4);X.stroke();
           X.beginPath();X.moveTo(bx+4,fy-FH/2);X.lineTo(bx+PG-4,fy-FH/2);X.stroke();
-          if(stage>=3){X.fillStyle='rgba(200,230,255,0.05)';X.fillRect(bx+6,fy-FH+6,PG*0.35,FH*0.4)}
-        } else if(stage===1){
+          if(_stg>=3){X.fillStyle='rgba(200,230,255,0.05)';X.fillRect(bx+6,fy-FH+6,PG*0.35,FH*0.4)}
+        } else if(_stg===1){
           X.globalAlpha=0.3;
           X.fillStyle='rgba(60,80,100,0.06)';X.fillRect(bx,fy-FH,PG,FH);
           X.strokeStyle='rgba(60,80,100,0.15)';X.lineWidth=3;X.strokeRect(bx+4,fy-FH+4,PG-8,FH-8);
@@ -1145,9 +1146,9 @@ export function draw(){
         }
       } else {
         // Solid wall blocks — staged texture
-        drawWallBlock(bx,fy,stage,th,bi,i);
+        drawWallBlock(bx,fy,_stg,th,bi,i);
       }
-      // Upgrade highlight sweep — stage 2+ gets a quick white flash per block
+      // Upgrade highlight sweep — marks the moment each block upgrades
       if(stage>=2 && _bT>=0 && _bT<20){
         const _ht=1-_bT/20;
         X.fillStyle=`rgba(255,255,255,${_ht*0.15})`;
@@ -1161,11 +1162,15 @@ export function draw(){
       if(stage>=3){X.fillStyle='rgba(0,0,0,0.03)';X.fillRect(TL,fy-FH+6,TW,10)}
       X.fillStyle='rgba(0,0,0,0.04)';X.fillRect(TL,fy-12,TW,12);
     }
-    // Window light shafts — stage 2+
+    // Cascade helper: is the sweep active and has it reached this x-position?
+    const _rTL=S.buildout[i].revealT,_swL=_rTL<BPF*10+40;
+    function _swept(lx){if(!_swL)return true;const _bi=Math.max(0,Math.min(BPF-1,Math.floor((lx-TL)/PG)));return _rTL-_bi*10>=0}
+    // Window light shafts — appear at stage 2, cascade only when stage 2 is the new stage
     if(stage>=2){
       const shaftA=stage>=3?0.04:0.025;
       for(let bi2=0;bi2<BPF;bi2++){
         if(!isWinBlock(bi2))continue;
+        if(stage===2&&!_swept(TL+bi2*PG))continue; // cascade on first appearance only
         const wx=TL+bi2*PG+PG/2;
         X.fillStyle=`rgba(220,235,255,${shaftA})`;
         X.beginPath();
@@ -1174,10 +1179,24 @@ export function draw(){
         X.closePath();X.fill();
       }
     }
-    // Wall sconces — stage 3+ (gradient-free: layered alpha circles)
-    if(stage>=3){for(let lx=TL+180;lx<TR;lx+=280){X.fillStyle='#333';X.fillRect(lx,fy-FH,2,38);X.fillStyle='#b08d5c';X.beginPath();X.arc(lx+1,fy-FH+38,7,Math.PI,0);X.fill();X.fillStyle='rgba(255,235,160,0.08)';X.beginPath();X.arc(lx+1,fy-FH+55,50,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,235,160,0.12)';X.beginPath();X.arc(lx+1,fy-FH+50,30,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,235,160,0.2)';X.beginPath();X.arc(lx+1,fy-FH+44,12,0,Math.PI*2);X.fill()}}
-    // Emergency lights — stage 1-2 only (gradient-free)
-    if(stage>=1&&stage<3){for(let lx=TL+300;lx<TR;lx+=400){X.fillStyle='rgba(255,60,30,0.04)';X.beginPath();X.arc(lx,fy-FH+10,25,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,60,30,0.08)';X.beginPath();X.arc(lx,fy-FH+10,12,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,60,30,0.15)';X.beginPath();X.arc(lx,fy-FH+10,4,0,Math.PI*2);X.fill()}}
+    // Wall sconces — fixtures appear dark at stage 2 (Structure), light up at stage 3 (Systems)
+    if(stage>=2){for(let lx=TL+180;lx<TR;lx+=280){
+      const isNew2=stage===2,isNew3=stage===3;
+      if(isNew2&&!_swept(lx))continue; // fixture cascades in at stage 2
+      // Fixture hardware (always drawn once stage 2+)
+      X.fillStyle='#333';X.fillRect(lx,fy-FH,2,38);X.fillStyle=stage>=3?'#b08d5c':'#555';X.beginPath();X.arc(lx+1,fy-FH+38,7,Math.PI,0);X.fill();
+      // Glow — only at stage 3+, cascaded when stage 3 is new
+      if(stage>=3){
+        if(isNew3&&!_swept(lx))continue;
+        X.fillStyle='rgba(255,235,160,0.08)';X.beginPath();X.arc(lx+1,fy-FH+55,50,0,Math.PI*2);X.fill();
+        X.fillStyle='rgba(255,235,160,0.12)';X.beginPath();X.arc(lx+1,fy-FH+50,30,0,Math.PI*2);X.fill();
+        X.fillStyle='rgba(255,235,160,0.2)';X.beginPath();X.arc(lx+1,fy-FH+44,12,0,Math.PI*2);X.fill();
+      }
+    }}
+    // Emergency lights — appear at stage 1, stay through stage 2, cascade only at stage 1
+    if(stage>=1&&stage<3){for(let lx=TL+300;lx<TR;lx+=400){
+      if(stage===1&&!_swept(lx))continue; // cascade on first appearance only
+      X.fillStyle='rgba(255,60,30,0.04)';X.beginPath();X.arc(lx,fy-FH+10,25,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,60,30,0.08)';X.beginPath();X.arc(lx,fy-FH+10,12,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,60,30,0.15)';X.beginPath();X.arc(lx,fy-FH+10,4,0,Math.PI*2);X.fill()}}
     // Floor slab — stage 0 ghostly, stage 1 dim, stage 2+ full
     if(stage>=1){
       const slabA=stage===1?0.6:1;

@@ -18,6 +18,10 @@ let _lastFrameTime = 0;
 let _saveAcc = 0;     // auto-save every 60s
 const SAVE_INTERVAL = 60000;
 
+// ═══ DOOR EXIT ═══
+let _exitDoorCheck = null;
+let _simStartTime = 0;
+
 // ═══ ELEVATOR PANEL ═══
 let elevPanel, elevFloors, fpElRef;
 
@@ -214,6 +218,8 @@ function processArrivals(){
   const npcEntering=S.npcs.some(n=>n.arrState==='entering'&&n.x<TL+80);
   const doorTarget=(playerNearDoor||npcEntering)?1:0;
   S.door.open+=(doorTarget-S.door.open)*0.08;
+  // Walk through the door to go outside (grace period prevents bleed-through from exterior)
+  if (_exitDoorCheck && performance.now() - _simStartTime > 800 && p.x < TL - 20 && p.y >= TB - 100) _exitDoorCheck();
 }
 
 // ═══ UPDATE ═══
@@ -250,8 +256,9 @@ function update(){
   const stUp=inter&&inter.t==='up',stDn=inter&&inter.t==='dn';
   if(p.st!=='climb'){
     p.vx=0;
-    if(k['ArrowLeft']||k['KeyA']){p.vx=-p.spd;p.fr=false;if(p.onF)p.st='walk'}
-    if(k['ArrowRight']||k['KeyD']){p.vx=p.spd;p.fr=true;if(p.onF)p.st='walk'}
+    const _spr=k['ShiftLeft']||k['ShiftRight']?2:1;
+    if(k['ArrowLeft']||k['KeyA']){p.vx=-p.spd*_spr;p.fr=false;if(p.onF)p.st='walk'}
+    if(k['ArrowRight']||k['KeyD']){p.vx=p.spd*_spr;p.fr=true;if(p.onF)p.st='walk'}
     if(p.vx===0&&p.onF&&!p.isChg&&!p.isDrp)p.st='idle';
     if(jk&&stUp){p.st='climb';p.clT=inter.v;p.clP=0;p.x=inter.v.bx;p.vx=0;p.isChg=false;p.chgT=0;setTZoom(p.baseZoom||tZoom)}
     else if(jk||k['Space']){
@@ -325,9 +332,19 @@ export function initGame(saveData){
   document.addEventListener('click', _initMusicOnce);
   document.addEventListener('keydown', _initMusicOnce);
 
+  // Go to exterior (shared by location toggle, Tab key, and walking through door)
+  function goToExterior() { saveMusicState(); autoSave(); localStorage.setItem('spacetower_gotoExterior','1'); location.reload(); }
+
   // Wire up inside/outside toggle (go to exterior)
   const locToggle = document.getElementById('location-toggle');
-  if (locToggle) locToggle.addEventListener('click', () => { saveMusicState(); autoSave(); localStorage.setItem('spacetower_gotoExterior','1'); location.reload(); });
+  if (locToggle) locToggle.addEventListener('click', goToExterior);
+
+  // Tab key toggles to exterior (grace period prevents bleed-through from exterior Tab press)
+  _simStartTime = performance.now();
+  addEventListener('keydown', e => { if (e.code === 'Tab') { e.preventDefault(); if (performance.now() - _simStartTime > 800) goToExterior(); } });
+
+  // Walk through the front door to go outside
+  _exitDoorCheck = goToExterior;
 
   // Wire up menu button (back to title)
   document.getElementById('menu-btn').addEventListener('click',()=>{saveMusicState(); autoSave();location.reload()});
@@ -351,11 +368,10 @@ export function initGame(saveData){
   // Generate world + load save
   genWorld();
   if(saveData&&loadGame()){
-    S.player.x=ELEV_X;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
     showMsg('SAVE LOADED','Welcome back, builder.');
-  } else {
-    S.player.x=TL-100;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
   }
+  // Always enter through the elevator doors
+  S.player.x=ELEV_X;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
   // Finalize arrivals for already-completed floors (post-load)
   S.npcs.forEach(n=>{
     if(S.buildout[n.floor].stage>=5){
@@ -365,6 +381,8 @@ export function initGame(saveData){
   });
   syncLitFloors();
   renderPanel();
+  // Prevent E key bleed-through from exterior (held E that entered the door)
+  S.iLock = true;
 }
 
 let gameAnimId = null;

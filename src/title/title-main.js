@@ -5,7 +5,7 @@ import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlen
 import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistCallbacks } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY } from './title-transition.js';
-import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward } from './title-exterior.js';
+import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setGroundNPCs, setBizPeople } from './title-exterior.js';
 import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
 import { setupRadio, disposeRadio } from '../radio-ui.js';
 
@@ -20,7 +20,7 @@ let autoRotate = true, autoRotateSpeed = 0.04, idleTimer = 0;
 let cameraLookY = 0;
 
 // ── Zoom ──
-let zoomClose = false, zoomTarget = 260;
+let zoomClose = false, zoomTarget = 3250;
 
 // ── Mouse tracking ──
 let mouseScreenX = -9999, mouseScreenY = -9999;
@@ -30,7 +30,7 @@ let cameraLookTarget = new THREE.Vector3(0, 2, 0);
 let camBehindAngle = 0;       // angle-based trailing (orbits behind player velocity)
 let wasExteriorActive = false; // detect activation edge
 const _camDir = new THREE.Vector3(); // reusable for camera direction
-let extCamDist = 6;           // adjustable via slider (default: character at ~2/3 size)
+let extCamDist = 8;            // adjustable via slider (default: close to character)
 
 // ── Listeners (stored for cleanup) ──
 let resizeHandler, mouseDownHandler, mouseMoveHandler, mouseUpHandler;
@@ -45,12 +45,12 @@ export function initTitle(canvas, saveData) {
   // Scene
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x060810);
-  scene.fog = new THREE.FogExp2(0x060810, 0.0018);
+  scene.fog = new THREE.FogExp2(0x060810, 0.000144); // 0.0018 / S
 
   // Camera (FOV 50, near 0.1)
-  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1.0, 25000);
   camera.position.set(DIMS.cameraOrbitR, DIMS.cameraHeight, 0);
-  cameraLookY = 65 * 1.2 * 0.35; // maxFloors * floorH * 0.35
+  cameraLookY = 200; // look at lower portion — tower extends off screen
   camera.lookAt(0, cameraLookY, 0);
 
   // Wire camera distance callbacks for UI slider
@@ -94,7 +94,7 @@ export function initTitle(canvas, saveData) {
     zoomBtn.addEventListener('click', () => {
       if (isTransitionActive()) return;
       zoomClose = !zoomClose;
-      zoomTarget = zoomClose ? 170 : 260;
+      zoomTarget = zoomClose ? 2125 : 3250;
       zoomBtn.textContent = zoomClose ? '\u25c9 closer' : '\u25cb closer';
     });
   }
@@ -128,7 +128,7 @@ export function initTitle(canvas, saveData) {
       // Drag rotates camera around player
       camBehindAngle += dx * 0.005;
     } else {
-      const sensitivity = 0.004 * (DIMS.cameraOrbitR / 260);
+      const sensitivity = 0.004 * (DIMS.cameraOrbitR / 3250);
       orbitAngle += dx * sensitivity;
     }
     lastMouseX = e.clientX;
@@ -155,7 +155,7 @@ export function initTitle(canvas, saveData) {
     if (isExteriorActive()) {
       camBehindAngle += dx * 0.005;
     } else {
-      const sensitivity = 0.004 * (DIMS.cameraOrbitR / 260);
+      const sensitivity = 0.004 * (DIMS.cameraOrbitR / 3250);
       orbitAngle += dx * sensitivity;
     }
     lastMouseX = e.touches[0].clientX;
@@ -183,6 +183,12 @@ export function initTitle(canvas, saveData) {
   let lastTime = performance.now();
   let frameCount = 0;
 
+  // FPS counter (temporary debug)
+  let _fpsFrames = 0, _fpsLast = performance.now();
+  const _fpsEl = document.createElement('div');
+  _fpsEl.style.cssText = 'position:fixed;top:4px;left:4px;z-index:9999;color:lime;font:bold 14px monospace;background:rgba(0,0,0,0.7);padding:2px 6px;pointer-events:none';
+  document.body.appendChild(_fpsEl);
+
   function animate() {
     titleAnimId = requestAnimationFrame(animate);
     const now = performance.now();
@@ -190,6 +196,15 @@ export function initTitle(canvas, saveData) {
     lastTime = now;
     const t = now * 0.001;
     frameCount++;
+
+    // FPS display
+    _fpsFrames++;
+    if (now - _fpsLast >= 500) {
+      const fps = (_fpsFrames / ((now - _fpsLast) / 1000)).toFixed(0);
+      const info = renderer.info.render;
+      _fpsEl.textContent = `${fps} FPS | ${info.calls} draws | ${info.triangles} tris`;
+      _fpsFrames = 0; _fpsLast = now;
+    }
 
     // Auto-rotate with idle timer
     if (!isDragging && !isTransitionActive()) {
@@ -226,7 +241,8 @@ export function initTitle(canvas, saveData) {
       const pp = getPlayerPos();
       const pv = getPlayerVel();
       const camDist = extCamDist;
-      const camHeight = 0.8;
+      const camHeight = camDist * 0.15; // scales with distance — consistent angle
+      const lookAbove = camDist * 0.2;  // how far above player feet to look
 
       // Angle-based trailing: camera orbits behind player's velocity direction
       // Only updates when player is moving — stays put when idle
@@ -241,7 +257,7 @@ export function initTitle(canvas, saveData) {
         while (delta > Math.PI) delta -= 2 * Math.PI;
         while (delta < -Math.PI) delta += 2 * Math.PI;
         // Flip strafe direction when backing up so L/R feel natural
-        camBehindAngle += delta * 0.042 * (bk ? -1 : 1);
+        camBehindAngle += delta * 0.014 * (bk ? -1 : 1);
       }
 
       // Camera position: behind player at camBehindAngle
@@ -254,9 +270,9 @@ export function initTitle(canvas, saveData) {
       camera.position.y += (targetY - camera.position.y) * 0.12;
       camera.position.z += (targetZ - camera.position.z) * 0.12;
 
-      // Look above player — upward-facing angle to see the tower
+      // Look above player — scales with distance so angle stays consistent
       cameraLookTarget.x += (pp.x - cameraLookTarget.x) * 0.15;
-      cameraLookTarget.y += ((pp.y + 1.2) - cameraLookTarget.y) * 0.15;
+      cameraLookTarget.y += ((pp.y + lookAbove) - cameraLookTarget.y) * 0.15;
       cameraLookTarget.z += (pp.z - cameraLookTarget.z) * 0.15;
 
       camera.lookAt(cameraLookTarget);
@@ -266,20 +282,22 @@ export function initTitle(canvas, saveData) {
       camera.position.z = Math.sin(orbitAngle) * DIMS.cameraOrbitR;
       camera.position.y = DIMS.cameraHeight;
       const visFloors = getVisibleFloors();
-      const visH = visFloors * 1.2 + 1.2 * 3; // floorH * floors + baseH
-      const targetY = visH * 0.5;
+      const visH = visFloors * 3.333 + 3.333 * 3; // floorH * floors + baseH
+      const targetY = Math.min(visH * 0.15, 200); // look at base — tower extends off screen
       cameraLookY += (targetY - cameraLookY) * 0.05;
       camera.lookAt(0, cameraLookY, 0);
     }
 
     // City update
-    if (cityData) cityData.updateCity(t);
+    if (cityData) cityData.updateCity(t, camera.position);
 
     // Hover systems
     if (frameCount % 3 === 0) {
-      updateBuildingHover(camera, mouseScreenX, mouseScreenY, isTransitionActive() && TRANSITION.phase < 4, t);
-      // Tower window toggle: only in orbit mode (don't toggle while walking)
-      if (!extActive) updateTowerHover(camera, mouseScreenX, mouseScreenY);
+      if (!extActive) {
+        updateBuildingHover(camera, mouseScreenX, mouseScreenY, isTransitionActive() && TRANSITION.phase < 4, t);
+        // Tower window toggle: only in orbit mode (don't toggle while walking)
+        updateTowerHover(camera, mouseScreenX, mouseScreenY);
+      }
     }
 
     // Constellation lines fade — skip in exterior mode
@@ -295,10 +313,15 @@ function _startTransition(isNew) {
 
   const setOrbitAngle = (fn) => { orbitAngle = fn(orbitAngle); };
 
-  // onEnterGame: fired when user clicks "Enter Tower" after the cinematic
+  // onEnterGame: fired when user clicks "Enter Tower" or walks to the door
   const onEnterGame = () => {
     document.dispatchEvent(new CustomEvent('enter-game', { detail: { isNew } }));
   };
+
+  // Wire door interaction — pressing E at the door enters the tower
+  setEnterDoorCallback(onEnterGame);
+  if (cityData.semiWorkers) setGroundNPCs(cityData.semiWorkers);
+  if (cityData.bizPeople) setBizPeople(cityData.bizPeople);
 
   playTransition(scene, camera, renderer, cityData, () => orbitAngle, setOrbitAngle, onEnterGame);
 }
@@ -320,9 +343,9 @@ export function skipToExterior() {
   });
 
   // Camera to close-up position
-  DIMS.cameraOrbitR = 80;
-  DIMS.cameraHeight = 12;
-  zoomTarget = 80;
+  DIMS.cameraOrbitR = 1000;
+  DIMS.cameraHeight = 150;
+  zoomTarget = 1000;
   zoomClose = false;
   autoRotate = false;
 
@@ -351,10 +374,8 @@ export function skipToExterior() {
   // Set exterior built height — repositions roof plate, limits climbing/collision
   setBuiltHeight(topBuilt);
 
-  // Dissolve ALL floors above the built range (beams + windows)
+  // Dissolve ALL floors above the built range (beams + windows + walls)
   for (let fi = TC.maxFloors - 1; fi >= topBuilt; fi--) {
-    const fr = TC.floorMeshes[fi];
-    if (fr && fr.beam) fr.beam.visible = false;
     cityData.dissolveTowerFloor(fi);
   }
 
@@ -376,10 +397,13 @@ export function skipToExterior() {
   // Apply player lighting (hides windows above TC.playerFloor)
   cityData.applyPlayerLighting();
 
-  // Wire up onEnterGame for the "Enter Tower" button
+  // Wire up onEnterGame for the "Enter Tower" button and door interaction
   const onEnterGame = () => {
     document.dispatchEvent(new CustomEvent('enter-game', { detail: { isNew: false } }));
   };
+  setEnterDoorCallback(onEnterGame);
+  if (cityData.semiWorkers) setGroundNPCs(cityData.semiWorkers);
+  if (cityData.bizPeople) setBizPeople(cityData.bizPeople);
 
   // Show arrival text, home button, and activate exterior
   showArrivalText(onEnterGame);

@@ -12,8 +12,8 @@ import { setupRadio, disposeRadio } from '../radio-ui.js';
 // ── Sky state ──
 export const SKY = {
   state: 'night', blend: 0, targetBlend: 0, speed: 0.15,
-  night: { bg: new THREE.Color(0x060810), fog: new THREE.Color(0x060810), fogDensity: 0.0018 },
-  day: { bg: new THREE.Color(0x6ea8d4), fog: new THREE.Color(0x8cbde0), fogDensity: 0.0012 },
+  night: { bg: new THREE.Color(0x060810), fog: new THREE.Color(0x060810), fogDensity: 0.000144 },
+  day: { bg: new THREE.Color(0x6ea8d4), fog: new THREE.Color(0x8cbde0), fogDensity: 0.000096 },
   transitionTo(t) { this.state = 'transitioning'; this.targetBlend = t === 'day' ? 1 : 0; },
   update(dt, scene) {
     if (this.state !== 'transitioning') return;
@@ -32,7 +32,7 @@ export const SKY = {
 // ── Transition state ──
 export const TRANSITION = {
   active: false, phase: 0, elapsed: 0,
-  startR: 260, targetR: 80, startH: 55, targetH: 12,
+  startR: 3250, targetR: 1000, startH: 687, targetH: 150,
   dissolveFloor: 64, targetFloor: 9, lastDissolveFloor: 64
 };
 
@@ -87,7 +87,7 @@ export function updateTransition(dt, orbitAngle) {
   if (TRANSITION.phase >= 2 && TRANSITION.phase < 4) {
     const TC = _cityData.TC;
     const DIMS = _cityData.DIMS;
-    const dur = 5;
+    const dur = 4;
     const t = Math.min(1, (TRANSITION.elapsed - 1.2) / dur);
     // Cubic ease in-out
     const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -102,8 +102,6 @@ export function updateTransition(dt, orbitAngle) {
     const floorsGone = Math.floor(ease * totalToDissolve);
     const currentVisible = (TC.maxFloors - 1) - floorsGone;
     while (TRANSITION.lastDissolveFloor > currentVisible && TRANSITION.lastDissolveFloor >= TRANSITION.targetFloor) {
-      const fr = TC.floorMeshes[TRANSITION.lastDissolveFloor];
-      if (fr && fr.beam) fr.beam.visible = false;
       _cityData.dissolveTowerFloor(TRANSITION.lastDissolveFloor);
       TRANSITION.lastDissolveFloor--;
     }
@@ -134,11 +132,9 @@ export function updateTransition(dt, orbitAngle) {
       // Set exterior built height — repositions roof plate, limits climbing/collision
       setBuiltHeight(topBuilt);
 
-      // Hide beams + windows for ALL floors above the built range
+      // Hide beams + windows + walls for ALL floors above the built range
       for (let fi = Math.max(topBuilt, TRANSITION.targetFloor); fi >= topBuilt; fi--) {
         if (fi < TC.floorMeshes.length) {
-          const fr = TC.floorMeshes[fi];
-          if (fr && fr.beam) fr.beam.visible = false;
           _cityData.dissolveTowerFloor(fi);
         }
       }
@@ -165,7 +161,7 @@ export function updateTransition(dt, orbitAngle) {
 }
 
 // ── Reverse transition (game entry → back to menu) ──
-const REVERSE = { active: false, elapsed: 0, dur: 5, startR: 80, startH: 12, targetR: 260, targetH: 55 };
+const REVERSE = { active: false, elapsed: 0, dur: 5, startR: 1000, startH: 150, targetR: 3250, targetH: 687 };
 
 export function playReverseTransition() {
   if (REVERSE.active || !TRANSITION.phase) return;
@@ -202,8 +198,6 @@ export function updateReverseTransition(dt, setZoom) {
   const floorsRestored = Math.floor(ease * totalToRestore);
   const showUpTo = TRANSITION.targetFloor + floorsRestored;
   for (let fi = TRANSITION.targetFloor; fi <= showUpTo && fi < TC.floorMeshes.length; fi++) {
-    const fr = TC.floorMeshes[fi];
-    if (fr && fr.beam) fr.beam.visible = true;
     _cityData.restoreTowerFloor(fi);
   }
   TRANSITION.dissolveFloor = showUpTo;
@@ -224,9 +218,6 @@ export function updateReverseTransition(dt, setZoom) {
     TRANSITION.phase = 0;
 
     // Restore all floors
-    for (const fr of TC.floorMeshes) {
-      if (fr && fr.beam) fr.beam.visible = true;
-    }
     _cityData.restoreAllTowerFloors();
     // Restore crane, elevator, extensions
     _cityData.craneParts.forEach(p => { p.visible = true; });
@@ -244,7 +235,7 @@ export function updateReverseTransition(dt, setZoom) {
     setBuiltHeight(10);
 
     // Reset zoom
-    if (setZoom) setZoom(260);
+    if (setZoom) setZoom(3250);
 
     const zt = document.getElementById('zoom-toggle');
     if (zt) { zt.textContent = '\u25cb closer'; }

@@ -13,16 +13,19 @@ let seed = 42;
 function sr() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
 
 // ── Config ──
+// Scale factor: 12.5 (new tower 75 / old tower 6)
+const S = 12.5;
+
 // Shared tower geometry constants (imported by title-exterior.js for collision)
-export const TOWER_WIDTH = 6;
-export const TOWER_DEPTH = 6;
-export const TOWER_FLOOR_H = 1.2;
+export const TOWER_WIDTH = 75;
+export const TOWER_DEPTH = 75;
+export const TOWER_FLOOR_H = 3.333;
 
 const TC = {
-  width: TOWER_WIDTH, depth: TOWER_DEPTH, floorH: TOWER_FLOOR_H, maxFloors: 65,
+  width: TOWER_WIDTH, depth: TOWER_DEPTH, floorH: TOWER_FLOOR_H, maxFloors: 600,
   litFloors: [], group: null, floorMeshes: [], playerFloor: 0
 };
-export const DIMS = { groundRadius: 300, buildingRingR: 180, treeRingR: 100, cameraOrbitR: 260, cameraHeight: 55 };
+export const DIMS = { groundRadius: 3750, buildingRingR: 2250, treeRingR: 1250, cameraOrbitR: 3250, cameraHeight: 687 };
 
 // ── Shared refs ──
 const extColumns = [];
@@ -38,6 +41,10 @@ const sats = [];
 let starPoints = null;
 const starData = [];
 
+// ── Tower beams (InstancedMesh — 1 draw call for all floor beams) ──
+let towerBeamMesh = null;
+const towerBeamData = []; // { idx, floorIdx, hidden, originalMatrix }
+
 // ── Tower windows (InstancedMesh + built-in instanceColor) ──
 let towerWinMesh = null;
 const towerWinData = []; // { idx, floorIdx, toggled, wasHovered, litR, litG, litB, worldPos, hidden, originalMatrix }
@@ -50,6 +57,20 @@ const bldgWinData = []; // { idx, worldPos, baseBright }
 // ── Building blink lights (red aviation LEDs on tall buildings) ──
 let bldgBlinkMesh = null;
 const bldgBlinkData = []; // { idx, phase }
+
+// ── Vertex color helper (for merged geometry) ──
+function _colorGeo(geo, color) {
+  const count = geo.attributes.position.count;
+  const colors = new Float32Array(count * 3);
+  const r = ((color >> 16) & 0xff) / 255;
+  const g = ((color >> 8) & 0xff) / 255;
+  const b = (color & 0xff) / 255;
+  for (let i = 0; i < count; i++) {
+    colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
 
 // ── Temp objects (reused) ──
 const _obj = new THREE.Object3D();
@@ -67,6 +88,8 @@ export function buildCityScene(scene, buildout) {
   sats.length = 0;
   starPoints = null;
   starData.length = 0;
+  towerBeamMesh = null;
+  towerBeamData.length = 0;
   towerWinMesh = null;
   towerWinData.length = 0;
   towerFlickerList.length = 0;
@@ -76,10 +99,13 @@ export function buildCityScene(scene, buildout) {
   bldgBlinkData.length = 0;
   TC.buildout = buildout || [];
   TC.litFloors = []; TC.group = null; TC.floorMeshes = [];
+  vehicleState.semis.length = 0; vehicleState.semiWorkers.length = 0;
+  vehicleState.bizPeople.length = 0; vehicleState.elapsed = 0;
 
   buildGround(scene);
   buildTower(scene);
   buildEntrance(scene);
+  buildVehicles(scene);
   buildBuildings(scene);
   buildTrees(scene);
   buildStars(scene);
@@ -91,14 +117,16 @@ export function buildCityScene(scene, buildout) {
   const exteriorPlayer = buildPlayer(scene);
   const exteriorSite = buildConstructionSite(scene);
 
-  function updateCity(t) {
+  function updateCity(t, cameraPos) {
     const dt = 1 / 60;
     updateStars(t);
     updateTowerWindowFlicker(t);
     updateBuildingBlink(t);
+    updateVehicles(dt);
+    updateTreeBillboards(cameraPos);
     if (cableMesh && cableMesh.visible) {
       const p = cableMesh.geometry.attributes.position.array;
-      const sw = Math.sin(t * 0.35) * 1.5;
+      const sw = Math.sin(t * 0.35) * 18.75; // 1.5 × S
       p[3] = p[0] + sw; p[5] = sw * 0.5;
       cableMesh.geometry.attributes.position.needsUpdate = true;
     }
@@ -126,6 +154,8 @@ export function buildCityScene(scene, buildout) {
     getStarPoints() { return starPoints; },
     exteriorPlayer,
     exteriorSite,
+    semiWorkers: vehicleState.semiWorkers,
+    bizPeople: vehicleState.bizPeople,
   };
 }
 
@@ -133,14 +163,33 @@ export function buildCityScene(scene, buildout) {
 function buildGround(scene) {
   const g = new THREE.Mesh(new THREE.CircleGeometry(DIMS.groundRadius, 96), new THREE.MeshBasicMaterial({ color: 0x0e120a }));
   g.rotation.x = -Math.PI / 2; g.position.y = -0.1; scene.add(g);
-  const g2 = new THREE.Mesh(new THREE.CircleGeometry(60, 64), new THREE.MeshBasicMaterial({ color: 0x12160e }));
+  const g2 = new THREE.Mesh(new THREE.CircleGeometry(750, 64), new THREE.MeshBasicMaterial({ color: 0x12160e }));
   g2.rotation.x = -Math.PI / 2; scene.add(g2);
-  const road = new THREE.Mesh(new THREE.RingGeometry(148, 152, 96), new THREE.MeshBasicMaterial({ color: 0x1a1e24, side: THREE.DoubleSide }));
-  road.rotation.x = -Math.PI / 2; road.position.y = 0.05; scene.add(road);
+  const roadMat = new THREE.MeshBasicMaterial({ color: 0x1a1e24, side: THREE.DoubleSide });
+  const roadW = 50; // road width
+  // Outer ring (building ring) — raised to avoid z-fighting with ground plane
+  const road = new THREE.Mesh(new THREE.RingGeometry(1850, 1900, 96), roadMat);
+  road.rotation.x = -Math.PI / 2; road.position.y = 0.3; scene.add(road);
+  // Inner ring (wraps around the tower)
+  const innerR = TC.width / 2 + 80; // ~117.5 from center
+  const road2 = new THREE.Mesh(new THREE.RingGeometry(innerR, innerR + roadW, 64), roadMat);
+  road2.rotation.x = -Math.PI / 2; road2.position.y = 0.05; scene.add(road2);
+  // Connecting spokes (4 roads from inner ring to outer ring)
+  const spokeLen = 1875 - (innerR + roadW);
+  const spokeMat = new THREE.MeshBasicMaterial({ color: 0x1a1e24 });
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2 + Math.PI / 4; // 45°, 135°, 225°, 315°
+    const midR = innerR + roadW + spokeLen / 2;
+    const spoke = new THREE.Mesh(new THREE.PlaneGeometry(roadW * 0.7, spokeLen), spokeMat);
+    spoke.rotation.x = -Math.PI / 2;
+    spoke.rotation.z = -angle;
+    spoke.position.set(Math.cos(angle) * midR, 0.05, Math.sin(angle) * midR);
+    scene.add(spoke);
+  }
 }
 
-// ═══ TOWER (perimeter scaffold beams, open center elevator shaft, instanced windows) ═══
-export const BEAM_DEPTH = 0.4; // depth of perimeter beams (walkable width)
+// ═══ TOWER (perimeter scaffold beams, open center elevator shaft, instanced windows + walls) ═══
+export const BEAM_DEPTH = 0.5; // depth of perimeter beams (walkable width)
 
 function buildTower(scene) {
   const tw = TC.width, td = TC.depth, fh = TC.floorH, nf = TC.maxFloors;
@@ -159,12 +208,31 @@ function buildTower(scene) {
     }
   }
 
-  // Foundation
-  const base = new THREE.Mesh(new THREE.BoxGeometry(tw * 1.5, baseH, td * 1.5), new THREE.MeshBasicMaterial({ color: 0x1a1e28 }));
+  // Foundation — flush with tower footprint (ground-level first floor, not a pedestal)
+  const base = new THREE.Mesh(new THREE.BoxGeometry(tw, baseH, td), new THREE.MeshBasicMaterial({ color: 0x1a1e28 }));
   base.position.y = baseH / 2; TC.group.add(base);
 
+  // Ground-level entrance doors (+Z face) — double doors with warm glow
+  const doorH = baseH * 0.8, doorW = 8;
+  const doorMat = new THREE.MeshBasicMaterial({ color: 0x2a2e3a });
+  const doorGlowMat = new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.2 });
+  const doorFrameMat = new THREE.MeshBasicMaterial({ color: 0x323846 });
+  for (const side of [-5, 5]) {
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(doorW, doorH), doorMat);
+    door.position.set(side, doorH / 2, td / 2 + 0.2); TC.group.add(door);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 0.85, doorH * 0.9), doorGlowMat);
+    glow.position.set(side, doorH / 2, td / 2 + 0.3); TC.group.add(glow);
+  }
+  // Door frame top
+  const frameTop = new THREE.Mesh(new THREE.BoxGeometry(doorW * 2 + 8, 1.5, 1), doorFrameMat);
+  frameTop.position.set(0, doorH + 0.75, td / 2 + 0.2); TC.group.add(frameTop);
+  // Transom window above doors
+  const transom = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 2 + 4, 4), new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.3 }));
+  transom.position.set(0, doorH + 3.5, td / 2 + 0.3); TC.group.add(transom);
+
   // Corner columns
-  const colGeo = new THREE.BoxGeometry(0.25, totalH + baseH, 0.25);
+  const colThick = 3.125; // 0.25 × S
+  const colGeo = new THREE.BoxGeometry(colThick, totalH + baseH, colThick);
   const colMat = new THREE.MeshBasicMaterial({ color: 0x252a3a });
   const hw = tw / 2, hd = td / 2;
   [[-hw, -hd], [-hw, hd], [hw, -hd], [hw, hd]].forEach(([px, pz]) => {
@@ -173,44 +241,65 @@ function buildTower(scene) {
     TC.group.add(c); structColumns.push(c);
   });
 
-  // Floor beams — 4 perimeter edge beams per floor (center is open elevator shaft)
-  // Shared geometry: N/S beams run in X, E/W beams run in Z
-  const beamH = 0.12;
-  const nsBeamGeo = new THREE.BoxGeometry(tw + BEAM_DEPTH, beamH, BEAM_DEPTH);
-  const ewBeamGeo = new THREE.BoxGeometry(BEAM_DEPTH, beamH, td + BEAM_DEPTH);
+  // Floor beams → InstancedMesh (1 draw call instead of 260 groups)
+  const beamH = 1.5; // 0.12 × S
+  const halfBeam = BEAM_DEPTH / 2;
+  const beamCount = nf * 4; // 65 floors × 4 beams = 260
+  // Use a unit box, scale per-instance
+  const nsBeamGeo = new THREE.BoxGeometry(1, 1, 1);
   const beamMat = new THREE.MeshBasicMaterial({ color: 0x2a3048 });
+  towerBeamMesh = new THREE.InstancedMesh(nsBeamGeo, beamMat, beamCount);
+  towerBeamMesh.frustumCulled = false;
 
+  let beamIdx = 0;
   for (let fi = 0; fi < nf; fi++) {
     const fy = baseH + fi * fh;
-    const beamGroup = new THREE.Group();
+    // N beam (z = -hd)
+    _obj.position.set(0, fy, -hd);
+    _obj.rotation.set(0, 0, 0);
+    _obj.scale.set(tw + BEAM_DEPTH, beamH, BEAM_DEPTH);
+    _obj.updateMatrix();
+    towerBeamMesh.setMatrixAt(beamIdx, _obj.matrix);
+    towerBeamData.push({ idx: beamIdx, floorIdx: fi, hidden: false, originalMatrix: _obj.matrix.clone() });
+    beamIdx++;
+    // S beam (z = +hd)
+    _obj.position.set(0, fy, hd);
+    _obj.rotation.set(0, 0, 0);
+    _obj.scale.set(tw + BEAM_DEPTH, beamH, BEAM_DEPTH);
+    _obj.updateMatrix();
+    towerBeamMesh.setMatrixAt(beamIdx, _obj.matrix);
+    towerBeamData.push({ idx: beamIdx, floorIdx: fi, hidden: false, originalMatrix: _obj.matrix.clone() });
+    beamIdx++;
+    // E beam (x = +hw)
+    _obj.position.set(hw, fy, 0);
+    _obj.rotation.set(0, 0, 0);
+    _obj.scale.set(BEAM_DEPTH, beamH, td + BEAM_DEPTH);
+    _obj.updateMatrix();
+    towerBeamMesh.setMatrixAt(beamIdx, _obj.matrix);
+    towerBeamData.push({ idx: beamIdx, floorIdx: fi, hidden: false, originalMatrix: _obj.matrix.clone() });
+    beamIdx++;
+    // W beam (x = -hw)
+    _obj.position.set(-hw, fy, 0);
+    _obj.rotation.set(0, 0, 0);
+    _obj.scale.set(BEAM_DEPTH, beamH, td + BEAM_DEPTH);
+    _obj.updateMatrix();
+    towerBeamMesh.setMatrixAt(beamIdx, _obj.matrix);
+    towerBeamData.push({ idx: beamIdx, floorIdx: fi, hidden: false, originalMatrix: _obj.matrix.clone() });
+    beamIdx++;
 
-    const n = new THREE.Mesh(nsBeamGeo, beamMat);
-    n.position.set(0, fy, -hd); beamGroup.add(n);
-
-    const s = new THREE.Mesh(nsBeamGeo, beamMat);
-    s.position.set(0, fy, hd); beamGroup.add(s);
-
-    const e = new THREE.Mesh(ewBeamGeo, beamMat);
-    e.position.set(hw, fy, 0); beamGroup.add(e);
-
-    const w = new THREE.Mesh(ewBeamGeo, beamMat);
-    w.position.set(-hw, fy, 0); beamGroup.add(w);
-
-    TC.group.add(beamGroup);
-    TC.floorMeshes.push({ beam: beamGroup });
+    // Track floor index for dissolve (no separate beam group needed)
+    TC.floorMeshes.push({ beamStartIdx: (fi * 4), beamCount: 4 });
   }
+  towerBeamMesh.instanceMatrix.needsUpdate = true;
+  TC.group.add(towerBeamMesh);
 
-  // Tower windows → InstancedMesh + MeshBasicMaterial + instanceColor
-  // Windows placed on outer face of beam frame (offset outward by BEAM_DEPTH/2)
-  const halfBeam = BEAM_DEPTH / 2;
-  const winCount = nf * 4 * 10; // 65 floors × 4 faces × 10 windows = 2600
+  // Tower windows → InstancedMesh (10 per face, original warm-glass style)
+  const winCount = nf * 4 * 10; // 600 floors × 4 faces × 10 windows = 24,000
   const segW = tw / 10;
   const winGeo = new THREE.PlaneGeometry(segW * 0.85, fh * 0.8);
-
   const towerWinMat = new THREE.MeshBasicMaterial({
     transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide
   });
-
   towerWinMesh = new THREE.InstancedMesh(winGeo, towerWinMat, winCount);
   towerWinMesh.frustumCulled = false;
 
@@ -237,11 +326,9 @@ function buildTower(scene) {
           r = 0x14 / 255; g = 0x18 / 255; b = 0x20 / 255;
         }
 
-        // Set instance color (built-in instanceColor API)
         _c.setRGB(r, g, b);
         towerWinMesh.setColorAt(winIdx, _c);
 
-        // Compute position + rotation (outer face of beam frame)
         const off = -face.w / 2 + fSegW * (wi + 0.5);
         const yp = fy + fh * 0.5;
         if (face.axis === 'z') {
@@ -251,21 +338,19 @@ function buildTower(scene) {
           _obj.position.set(face.dir * (tw / 2 + halfBeam + 0.01), yp, off);
           _obj.rotation.set(0, face.dir > 0 ? Math.PI / 2 : -Math.PI / 2, 0);
         }
+        _obj.scale.set(1, 1, 1);
         _obj.updateMatrix();
         towerWinMesh.setMatrixAt(winIdx, _obj.matrix);
 
-        // Store metadata
         const litR = wLit ? r : 0xdc / 255;
         const litG = wLit ? g : 0xbe / 255;
         const litB = wLit ? b : 0x82 / 255;
-
-        const wd = {
+        towerWinData.push({
           idx: winIdx, floorIdx: fi, toggled: wLit, wasHovered: false,
           litR, litG, litB,
           worldPos: _obj.position.clone(),
           hidden: false, originalMatrix: _obj.matrix.clone()
-        };
-        towerWinData.push(wd);
+        });
 
         if (wLit) {
           towerFlickerList.push({
@@ -273,7 +358,6 @@ function buildTower(scene) {
             speed: sr() * 2 + 0.5, phase: sr() * Math.PI * 2, amt: sr() * 0.12
           });
         }
-
         winIdx++;
       }
     }
@@ -284,11 +368,12 @@ function buildTower(scene) {
   TC.group.add(towerWinMesh);
 
   // Extension columns
+  const extH = 500; // 40 × S
   const extMat = new THREE.MeshBasicMaterial({ color: 0x1e2230, transparent: true, opacity: 0.15 });
-  const extGeo = new THREE.BoxGeometry(0.15, 40, 0.15);
+  const extGeo = new THREE.BoxGeometry(1.875, extH, 1.875); // 0.15 × S
   [[-hw, -hd], [-hw, hd], [hw, -hd], [hw, hd]].forEach(([px, pz]) => {
     const e = new THREE.Mesh(extGeo, extMat);
-    e.position.set(px, totalH + baseH + 20, pz);
+    e.position.set(px, totalH + baseH + extH / 2, pz);
     TC.group.add(e); extColumns.push(e);
   });
 
@@ -297,31 +382,333 @@ function buildTower(scene) {
 
 // ═══ ENTRANCE ═══
 function buildEntrance(scene) {
-  const tw = TC.width, td = TC.depth, fh = TC.floorH, baseH = fh * 3;
-  const pathW = 2.5, pathLen = DIMS.buildingRingR - td / 2;
+  const td = TC.depth;
+  // Walkway from building ring to tower doors — flat, ground-level
+  const pathW = 31.25, pathLen = DIMS.buildingRingR - td / 2;
   const path = new THREE.Mesh(new THREE.PlaneGeometry(pathW, pathLen), new THREE.MeshBasicMaterial({ color: 0x1e2228 }));
   path.rotation.x = -Math.PI / 2; path.position.set(0, 0.02, td / 2 + pathLen / 2); scene.add(path);
   const borderMat = new THREE.MeshBasicMaterial({ color: 0x282e38 });
   for (const side of [-1, 1]) {
-    const border = new THREE.Mesh(new THREE.PlaneGeometry(0.15, pathLen), borderMat);
+    const border = new THREE.Mesh(new THREE.PlaneGeometry(1.875, pathLen), borderMat);
     border.rotation.x = -Math.PI / 2; border.position.set(side * pathW / 2, 0.03, td / 2 + pathLen / 2); scene.add(border);
   }
-  const landing = new THREE.Mesh(new THREE.BoxGeometry(pathW + 1, 0.15, 1.5), new THREE.MeshBasicMaterial({ color: 0x1a1e28 }));
-  landing.position.set(0, 0.08, td / 2 + 0.75); scene.add(landing);
-  const doorH = baseH * 0.75, doorW = 0.9;
-  const doorMat = new THREE.MeshBasicMaterial({ color: 0x2a2e3a });
-  const doorGlowMat = new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.15 });
-  for (const side of [-0.6, 0.6]) {
-    const door = new THREE.Mesh(new THREE.PlaneGeometry(doorW, doorH), doorMat);
-    door.position.set(side, doorH / 2, td / 2 + 0.02); scene.add(door);
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 0.8, doorH * 0.85), doorGlowMat);
-    glow.position.set(side, doorH / 2, td / 2 + 0.03); scene.add(glow);
+}
+
+// ═══ VEHICLES & BUSINESS PEOPLE ═══
+const vehicleState = { semis: [], bizPeople: [], semiWorkers: [], elapsed: 0 };
+
+function buildVehicles(scene) {
+  const innerR = TC.width / 2 + 80;
+  const roadMidR = innerR + 25;
+
+  // ── 2 semi trucks + 4 workers + 12 crates → 1 merged mesh ──
+  const semiPositions = [
+    { x: -60, z: -(innerR + 25), angle: Math.PI * 0.5 },
+    { x: 40, z: -(innerR + 25), angle: Math.PI * 0.5 },
+  ];
+  const semiWorkerNames = ['Garcia', 'Tanaka', 'Novak', 'Osei'];
+  const semiWorkerDialogue = [
+    ['Got another shipment of I-beams.', 'You know how many bolts are in one floor? Thousands.', 'This tower eats steel like nothing I\'ve seen.'],
+    ['Hey, careful with those. They\'re load-bearing.', 'We run three trucks a day up here.', 'Back when it was five floors, one truck was enough.'],
+    ['Manifest says forty crates.', 'Half of this is insulation. Other half is hope.', 'My kids think I deliver pizza. Close enough.'],
+    ['Forklift\'s down again.', 'We\'re doing this the old-fashioned way today.', 'At least the weather\'s holding. Rain makes everything heavier.'],
+  ];
+  const mergedSemiGeos = [];
+  let workerIdx = 0;
+
+  semiPositions.forEach((sp) => {
+    // Build a rotation matrix for the semi's orientation
+    const rot = new THREE.Matrix4().makeRotationY(sp.angle);
+    const pos = new THREE.Matrix4().makeTranslation(sp.x, 0, sp.z);
+    const semiWorld = pos.multiply(rot);
+
+    // Cab
+    const cabGeo = _colorGeo(new THREE.BoxGeometry(4, 3.5, 6), 0x4a5568);
+    cabGeo.translate(0, 1.75, 3); cabGeo.applyMatrix4(semiWorld); mergedSemiGeos.push(cabGeo);
+    // Cab window (opaque approximation at distance)
+    const cabWinGeo = _colorGeo(new THREE.BoxGeometry(3.5, 1.8, 0.05), 0x5a8aaa);
+    cabWinGeo.translate(0, 2.8, 6.01); cabWinGeo.applyMatrix4(semiWorld); mergedSemiGeos.push(cabWinGeo);
+    // Trailer
+    const trailerGeo = _colorGeo(new THREE.BoxGeometry(4.5, 4, 14), 0x6a7080);
+    trailerGeo.translate(0, 2, -5); trailerGeo.applyMatrix4(semiWorld); mergedSemiGeos.push(trailerGeo);
+    // Wheels
+    [1, -3, -9, -11].forEach(wz => {
+      const wGeo = _colorGeo(new THREE.BoxGeometry(4.8, 1, 1), 0x1a1a1a);
+      wGeo.translate(0, 0.5, wz); wGeo.applyMatrix4(semiWorld); mergedSemiGeos.push(wGeo);
+    });
+
+    // Workers beside each semi
+    for (let wi = 0; wi < 2; wi++) {
+      const wx = sp.x + (wi === 0 ? -8 : 8);
+      const wz = sp.z - 2;
+      const wRot = wi === 0 ? -Math.PI / 2 : Math.PI / 2;
+      const wMat = new THREE.Matrix4().makeTranslation(wx, 0, wz).multiply(new THREE.Matrix4().makeRotationY(wRot));
+      // Worker figure parts (inline, no _makeWorkerFigure needed)
+      const parts = [
+        [new THREE.BoxGeometry(0.22, 0.24, 0.14), 0xFF6600, 0, 0.45, 0],   // vest torso
+        [new THREE.BoxGeometry(0.14, 0.14, 0.14), 0xd4a878, 0, 0.68, 0],   // head
+        [new THREE.BoxGeometry(0.18, 0.06, 0.18), 0xFFD700, 0, 0.78, 0],   // hat
+        [new THREE.BoxGeometry(0.08, 0.18, 0.08), 0xd4a878, -0.15, 0.42, 0], // left arm
+        [new THREE.BoxGeometry(0.08, 0.18, 0.08), 0xd4a878, 0.15, 0.42, 0],  // right arm
+        [new THREE.BoxGeometry(0.08, 0.18, 0.09), 0x3a5070, -0.06, 0.18, 0], // left leg
+        [new THREE.BoxGeometry(0.08, 0.18, 0.09), 0x3a5070, 0.06, 0.18, 0],  // right leg
+        [new THREE.BoxGeometry(0.09, 0.07, 0.11), 0x5a4030, -0.06, 0.04, 0.01], // left boot
+        [new THREE.BoxGeometry(0.09, 0.07, 0.11), 0x5a4030, 0.06, 0.04, 0.01],  // right boot
+      ];
+      for (const [geo, col, px, py, pz] of parts) {
+        _colorGeo(geo, col);
+        geo.translate(px, py, pz);
+        geo.applyMatrix4(wMat);
+        mergedSemiGeos.push(geo);
+      }
+      // Crates
+      for (let ci = 0; ci < 3; ci++) {
+        const crateGeo = _colorGeo(new THREE.BoxGeometry(0.5, 0.35, 0.4), 0x6a5030);
+        crateGeo.translate(wx + (wi === 0 ? -1.5 : 1.5), 0.175 + ci * 0.36, wz + (ci - 1) * 0.5);
+        mergedSemiGeos.push(crateGeo);
+      }
+      vehicleState.semiWorkers.push({
+        name: semiWorkerNames[workerIdx],
+        dialogue: semiWorkerDialogue[workerIdx],
+        ci: 0, wx, wz,
+      });
+      workerIdx++;
+    }
+  });
+  if (mergedSemiGeos.length) {
+    const merged = mergeGeometries(mergedSemiGeos, false);
+    scene.add(new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ vertexColors: true })));
+    mergedSemiGeos.forEach(g => g.dispose());
   }
-  const frameMat = new THREE.MeshBasicMaterial({ color: 0x323846 });
-  const frameTop = new THREE.Mesh(new THREE.BoxGeometry(doorW * 2 + 0.8, 0.2, 0.15), frameMat);
-  frameTop.position.set(0, doorH + 0.1, td / 2 + 0.02); scene.add(frameTop);
-  const transom = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 2 + 0.4, 0.6), new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.3 }));
-  transom.position.set(0, doorH + 0.5, td / 2 + 0.03); scene.add(transom);
+
+  // ── Business people: 6 people with insane personalities ──
+  const bizData = [
+    { name: 'Vanessa Crowe', color: 0x2a2e3a, carColor: 0x2a2a2a,
+      dialogue: ['Do you know what I see when I look at this tower? VERTICAL REAL ESTATE.', 'I\'m putting a juice bar on every floor. Cold-pressed. Astronaut-grade.', 'My investors said I was crazy. I said honey, crazy is a BRAND.'] },
+    { name: 'Maximilian Tusk', color: 0x3a3e4a, carColor: 0x3a3a4a,
+      dialogue: ['I\'ve been circling this tower for WEEKS. The zoning potential is OBSCENE.', 'Floor 6 could be a co-working space. Floor 7, a cryptocurrency lounge.', 'When this thing reaches orbit, the tax implications alone will make me weep with joy.'] },
+    { name: 'Delphine Glass', color: 0x1a2030, carColor: 0x1a1a2a,
+      dialogue: ['I represent seventeen venture capital firms and they ALL want in.', 'We\'re calling it SpaceTowerCoin. No, wait — TowerDAO. No — BOTH.', 'Every floor is a startup incubator. Every window is a billboard. I can SMELL the revenue.'] },
+    { name: 'Chester Beaumont III', color: 0x40444a, carColor: 0x4a4a5a,
+      dialogue: ['My family has invested in every great structure. The Pyramids. The Chunnel. This is NEXT.', 'I\'ve already trademarked "Goodbye Earth" for a perfume line. And a sandwich.', 'The penthouse suite will have a butler who is also a rocket scientist. I\'ve placed the ad.'] },
+    { name: 'Suki Neon', color: 0x303848, carColor: 0x2a3040,
+      dialogue: ['Pop-up nightclub. Floor 8. Zero gravity dance floor. Are you HEARING me?', 'The DJ booth will literally be in space. The bass drops will cause ORBITAL DECAY.', 'I need 40,000 square feet of LED panels and a liquor license that works in the mesosphere.'] },
+    { name: 'Reginald Flux', color: 0x2e3240, carColor: 0x404050,
+      dialogue: ['I\'m installing a revolving restaurant that spins so fast you lose your appetite. GENIUS.', 'My business model is simple: charge people to look DOWN at Earth. Premium melancholy.', 'I\'ve run the numbers. Sadness at altitude is a 14 billion dollar market.'] },
+    { name: 'Priya Argent', color: 0x2a3448, carColor: 0x3a3a48,
+      dialogue: ['I\'m scouting this for the world\'s first vertical marathon. Staircase only. No elevator. PURITY.', 'Every floor gets a hydration station and a motivational hologram. The holograms CRY if you stop.', 'Registration is already open. Five thousand runners. In SPACE. Insurance said no but I said YES.'] },
+    { name: 'Wendell Brink', color: 0x34384a, carColor: 0x2e2e3a,
+      dialogue: ['I want to put a golf course on floor 9. A REAL one. Eighteen holes. In a tower.', 'The ball trajectory in low gravity is going to be MAGNIFICENT. I\'ve done the math on a napkin.', 'My caddy will need a spacesuit. I\'ve already designed the polo shirt. It has FLAMES.'] },
+  ];
+  const vcMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+
+  for (let i = 0; i < bizData.length; i++) {
+    const bd = bizData[i];
+    // Merge person parts into 1 vertex-colored mesh
+    const personParts = [
+      [new THREE.BoxGeometry(0.22, 0.28, 0.14), bd.color, 0, 0.50, 0],
+      [new THREE.BoxGeometry(0.14, 0.14, 0.14), 0xd4a574, 0, 0.75, 0],
+      [new THREE.BoxGeometry(0.08, 0.20, 0.09), bd.color, -0.06, 0.20, 0],
+      [new THREE.BoxGeometry(0.08, 0.20, 0.09), bd.color, 0.06, 0.20, 0],
+      [new THREE.BoxGeometry(0.07, 0.22, 0.07), bd.color, -0.15, 0.46, 0],
+      [new THREE.BoxGeometry(0.07, 0.22, 0.07), bd.color, 0.15, 0.46, 0],
+      [new THREE.BoxGeometry(0.18, 0.12, 0.04), 0x3a2a1a, 0.18, 0.30, 0],
+      [new THREE.BoxGeometry(0.09, 0.06, 0.12), 0x1a1a1a, -0.06, 0.03, 0.01],
+      [new THREE.BoxGeometry(0.09, 0.06, 0.12), 0x1a1a1a, 0.06, 0.03, 0.01],
+    ];
+    const pGeos = personParts.map(([geo, col, x, y, z]) => { _colorGeo(geo, col); geo.translate(x, y, z); return geo; });
+    const bizMesh = new THREE.Mesh(mergeGeometries(pGeos, false), vcMat);
+    bizMesh.visible = false;
+    scene.add(bizMesh);
+    pGeos.forEach(g => g.dispose());
+
+    // Merge car parts into 1 vertex-colored mesh
+    const carParts = [
+      [new THREE.BoxGeometry(3, 1.5, 6), bd.carColor, 0, 0.9, 0],
+      [new THREE.BoxGeometry(2.6, 1.0, 3.2), bd.carColor, 0, 1.9, -0.2],
+      [new THREE.BoxGeometry(2.4, 0.8, 0.05), 0x5a8aaa, 0, 1.9, 1.41],   // front window (opaque)
+      [new THREE.BoxGeometry(2.4, 0.8, 0.05), 0x5a8aaa, 0, 1.9, -1.81],  // rear window (opaque)
+      [new THREE.BoxGeometry(3.2, 0.7, 0.8), 0x1a1a1a, 0, 0.4, 1.8],
+      [new THREE.BoxGeometry(3.2, 0.7, 0.8), 0x1a1a1a, 0, 0.4, -1.8],
+    ];
+    const cGeos = carParts.map(([geo, col, x, y, z]) => { _colorGeo(geo, col); geo.translate(x, y, z); return geo; });
+    const carMesh = new THREE.Mesh(mergeGeometries(cGeos, false), vcMat);
+    carMesh.visible = false;
+    scene.add(carMesh);
+    cGeos.forEach(g => g.dispose());
+
+    const approachAngle = Math.PI * 0.3 + (i / bizData.length) * Math.PI * 1.4;
+    const parkAngle = Math.PI / 2 + (i - 4) * 0.06;
+    const parkX = Math.cos(parkAngle) * roadMidR;
+    const parkZ = Math.sin(parkAngle) * roadMidR;
+
+    // Precompute driving route along roads: spoke → inner ring arc → parking spot
+    const route = _buildDriveRoute(approachAngle, parkAngle, parkX, parkZ, roadMidR);
+
+    vehicleState.bizPeople.push({
+      group: bizMesh, car: carMesh, approachAngle, parkAngle, parkX, parkZ, route,
+      name: bd.name, dialogue: bd.dialogue, ci: 0,
+      startTime: i * 25, cycleLen: 110, phase: 'waiting',
+    });
+  }
+}
+
+// ── Route building: cars follow spoke roads then inner ring ──
+const SPOKE_ANGLES = [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4];
+const OUTER_ROAD_R = 1875;
+const INNER_ROAD_R = TC.width / 2 + 80 + 25; // middle of inner ring road
+
+function _buildDriveRoute(approachAngle, parkAngle, parkX, parkZ, roadMidR) {
+  // Find nearest spoke to approach angle
+  let nearestSpoke = SPOKE_ANGLES[0];
+  let minDiff = Math.PI * 2;
+  for (const sa of SPOKE_ANGLES) {
+    let diff = Math.abs(approachAngle - sa);
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    if (diff < minDiff) { minDiff = diff; nearestSpoke = sa; }
+  }
+
+  const pts = [];
+
+  // Segment 1: start at spoke top (outer ring)
+  pts.push({ x: Math.cos(nearestSpoke) * OUTER_ROAD_R, z: Math.sin(nearestSpoke) * OUTER_ROAD_R });
+
+  // Segment 2: spoke bottom (inner ring)
+  pts.push({ x: Math.cos(nearestSpoke) * INNER_ROAD_R, z: Math.sin(nearestSpoke) * INNER_ROAD_R });
+
+  // Segment 3: arc along inner ring from spoke to parking angle
+  let arcDelta = parkAngle - nearestSpoke;
+  while (arcDelta > Math.PI) arcDelta -= Math.PI * 2;
+  while (arcDelta < -Math.PI) arcDelta += Math.PI * 2;
+  const arcSteps = Math.max(2, Math.ceil(Math.abs(arcDelta) / (Math.PI / 12)));
+  for (let j = 1; j <= arcSteps; j++) {
+    const a = nearestSpoke + arcDelta * (j / arcSteps);
+    pts.push({ x: Math.cos(a) * roadMidR, z: Math.sin(a) * roadMidR });
+  }
+
+  // Final: parking spot
+  pts.push({ x: parkX, z: parkZ });
+
+  // Calculate cumulative distances
+  let totalDist = 0;
+  const dists = [0];
+  for (let j = 1; j < pts.length; j++) {
+    const dx = pts[j].x - pts[j - 1].x;
+    const dz = pts[j].z - pts[j - 1].z;
+    totalDist += Math.sqrt(dx * dx + dz * dz);
+    dists.push(totalDist);
+  }
+
+  return { pts, dists, totalDist };
+}
+
+function _sampleRoute(route, p) {
+  const targetDist = Math.max(0, Math.min(1, p)) * route.totalDist;
+  for (let j = 1; j < route.pts.length; j++) {
+    if (route.dists[j] >= targetDist) {
+      const segLen = route.dists[j] - route.dists[j - 1];
+      const segP = segLen > 0 ? (targetDist - route.dists[j - 1]) / segLen : 0;
+      const a = route.pts[j - 1], b = route.pts[j];
+      return {
+        x: a.x + (b.x - a.x) * segP,
+        z: a.z + (b.z - a.z) * segP,
+        angle: Math.atan2(b.x - a.x, b.z - a.z),
+      };
+    }
+  }
+  const last = route.pts[route.pts.length - 1];
+  return { x: last.x, z: last.z, angle: 0 };
+}
+
+function updateVehicles(dt) {
+  vehicleState.elapsed += dt;
+  const t = vehicleState.elapsed;
+  const totalCycle = 200;
+
+  const towerFrontZ = TC.depth / 2 + 12;
+  const DRIVE_SPEED = 80; // units per second (along road)
+
+  for (const bp of vehicleState.bizPeople) {
+    const localT = ((t - bp.startTime) % totalCycle + totalCycle) % totalCycle;
+    const cl = bp.cycleLen;
+
+    if (localT >= cl) {
+      bp.group.visible = false;
+      bp.car.visible = false;
+      bp.phase = 'waiting';
+      continue;
+    }
+
+    // Compute drive times from route distance and speed
+    const driveInTime = bp.route.totalDist / DRIVE_SPEED;
+    const driveOutTime = bp.route.totalDist / (DRIVE_SPEED * 1.3); // slightly faster leaving
+
+    // Dynamic timeline based on route length
+    const T_DRIVE_IN = driveInTime;                      // ~22s
+    const T_PARK = T_DRIVE_IN + 2;                       // +2s
+    const T_WALK = T_PARK + 30;                          // +30s
+    const T_NOTE = T_WALK + 15;                          // +15s
+    const T_BACK = T_NOTE + 23;                          // +23s
+    const T_GETIN = T_BACK + 2;                          // +2s
+    const T_DRIVEOUT = T_GETIN + driveOutTime;           // ~17s
+
+    bp.car.visible = true;
+
+    if (localT < T_DRIVE_IN) {
+      // Drive in along road route
+      bp.phase = 'driving_in';
+      bp.group.visible = false;
+      const p = localT / T_DRIVE_IN;
+      // Ease: slow start, cruise, slow at end
+      const ease = p < 0.1 ? p * p * 50 : p > 0.9 ? 1 - (1 - p) * (1 - p) * 50 : p;
+      const pos = _sampleRoute(bp.route, ease);
+      bp.car.position.set(pos.x, 0.3, pos.z);
+      bp.car.rotation.y = pos.angle;
+    } else if (localT < T_PARK) {
+      bp.phase = 'parked';
+      bp.car.position.set(bp.parkX, 0.3, bp.parkZ);
+      bp.group.visible = true;
+      bp.group.position.set(bp.parkX + 5, 0, bp.parkZ);
+      bp.group.rotation.y = Math.atan2(-bp.parkX, towerFrontZ - bp.parkZ);
+    } else if (localT < T_WALK) {
+      bp.phase = 'walking_to';
+      bp.group.visible = true;
+      const p = (localT - T_PARK) / 30;
+      const destX = (bp.parkAngle - Math.PI / 2) * 8;
+      bp.group.position.set((bp.parkX + 5) * (1 - p) + destX * p, 0, bp.parkZ * (1 - p) + towerFrontZ * p);
+      bp.group.rotation.y = Math.atan2(destX - bp.parkX, towerFrontZ - bp.parkZ);
+    } else if (localT < T_NOTE) {
+      bp.phase = 'noting';
+      bp.group.visible = true;
+      const destX = (bp.parkAngle - Math.PI / 2) * 8;
+      bp.group.position.set(destX, 0, towerFrontZ);
+      bp.group.rotation.y = Math.PI;
+      bp.group.position.y = Math.sin(localT * 2) * 0.015;
+    } else if (localT < T_BACK) {
+      bp.phase = 'walking_back';
+      bp.group.visible = true;
+      const p = (localT - T_NOTE) / 23;
+      const destX = (bp.parkAngle - Math.PI / 2) * 8;
+      bp.group.position.set(destX * (1 - p) + (bp.parkX + 5) * p, 0, towerFrontZ * (1 - p) + bp.parkZ * p);
+      bp.group.rotation.y = Math.atan2(bp.parkX - destX, bp.parkZ - towerFrontZ);
+    } else if (localT < T_GETIN) {
+      bp.phase = 'parked';
+      bp.group.visible = false;
+    } else if (localT < T_DRIVEOUT) {
+      // Drive out — reverse route
+      bp.phase = 'driving_out';
+      bp.group.visible = false;
+      const p = (localT - T_GETIN) / driveOutTime;
+      const ease = p < 0.1 ? p * p * 50 : p;
+      const pos = _sampleRoute(bp.route, 1 - ease);
+      bp.car.position.set(pos.x, 0.3, pos.z);
+      bp.car.rotation.y = pos.angle + Math.PI; // facing away
+    } else {
+      bp.car.visible = false;
+      bp.group.visible = false;
+      bp.phase = 'waiting';
+    }
+  }
 }
 
 // ═══ BUILDINGS (merged statics + instanced windows with additive hover) ═══
@@ -334,8 +721,8 @@ function buildBuildings(scene) {
 
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 + (sr() - 0.5) * 0.04;
-    const radius = DIMS.buildingRingR + (sr() - 0.5) * 40;
-    const bw = sr() * 8 + 4, bd = sr() * 6 + 3, bh = sr() * 35 + 8;
+    const radius = DIMS.buildingRingR + (sr() - 0.5) * 500; // ±40 × S
+    const bw = (sr() * 8 + 4) * S, bd = (sr() * 6 + 3) * S, bh = (sr() * 35 + 8) * S;
     const bx = Math.cos(angle) * radius, bz = Math.sin(angle) * radius;
 
     // Building body → merge
@@ -350,8 +737,9 @@ function buildBuildings(scene) {
 
     // Floor beams → merge
     sr(); // consume beam color RNG
-    for (let by = 4; by < bh; by += 4) {
-      const beamGeo = new THREE.BoxGeometry(bw + 0.1, 0.08, bd + 0.1);
+    const beamStep = 50; // 4 × S
+    for (let by = beamStep; by < bh; by += beamStep) {
+      const beamGeo = new THREE.BoxGeometry(bw + 1.25, 1.0, bd + 1.25); // 0.1/0.08 × S
       _obj.position.set(bx, by, bz);
       _obj.rotation.set(0, 0, 0);
       _obj.lookAt(0, by, 0);
@@ -364,7 +752,7 @@ function buildBuildings(scene) {
     const hasRooftop = sr() > 0.75;
     let rooftopH = 0;
     if (hasRooftop) {
-      rooftopH = sr() * 4 + 2;
+      rooftopH = (sr() * 4 + 2) * S;
       const rtGeo = new THREE.BoxGeometry(bw * 0.3, rooftopH, bd * 0.3);
       rtGeo.translate(bx, bh + rooftopH / 2, bz);
       staticGeos.push(rtGeo);
@@ -372,8 +760,8 @@ function buildBuildings(scene) {
 
     // Blinking aviation LED on tallest buildings
     const blinkPhase = (Math.abs(bx * 37.1 + bz * 71.3) % 100) / 100 * Math.PI * 2;
-    if (bh > 38) {
-      const topY = hasRooftop ? bh + rooftopH + 0.3 : bh + 0.3;
+    if (bh > 475) { // 38 × S
+      const topY = hasRooftop ? bh + rooftopH + 3.75 : bh + 3.75; // 0.3 × S
       blinkInstances.push({ px: bx, py: topY, pz: bz, phase: blinkPhase });
     }
 
@@ -381,12 +769,12 @@ function buildBuildings(scene) {
     const inward = new THREE.Vector3(-bx, 0, -bz).normalize();
     const outward = inward.clone().negate();
     const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), inward).normalize();
-    const wr = Math.floor(bh / 4), wc = Math.max(1, Math.floor(bw / 2.5));
+    const wr = Math.floor(bh / (4 * S)), wc = Math.max(1, Math.floor(bw / (2.5 * S)));
     const faceDefs = [
       { normal: inward, halfDepth: bd / 2, width: bw, cols: wc },
       { normal: outward, halfDepth: bd / 2, width: bw, cols: wc },
-      { normal: right, halfDepth: bw / 2, width: bd, cols: Math.max(1, Math.floor(bd / 2.5)) },
-      { normal: right.clone().negate(), halfDepth: bw / 2, width: bd, cols: Math.max(1, Math.floor(bd / 2.5)) }
+      { normal: right, halfDepth: bw / 2, width: bd, cols: Math.max(1, Math.floor(bd / (2.5 * S))) },
+      { normal: right.clone().negate(), halfDepth: bw / 2, width: bd, cols: Math.max(1, Math.floor(bd / (2.5 * S))) }
     ];
     for (const face of faceDefs) {
       const faceRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), face.normal).normalize();
@@ -398,9 +786,9 @@ function buildBuildings(scene) {
           sr(); sr(); sr(); // consume RNG to maintain sequence stability
 
           const lx = -face.width / 2 + face.width * (c + 0.5) / face.cols;
-          const ly = 2 + r * 4;
-          const wx = bx + face.normal.x * (face.halfDepth + 0.05) + faceRight.x * lx;
-          const wz = bz + face.normal.z * (face.halfDepth + 0.05) + faceRight.z * lx;
+          const ly = (2 + r * 4) * S; // 25 + r*50
+          const wx = bx + face.normal.x * (face.halfDepth + 0.625) + faceRight.x * lx; // 0.05 × S
+          const wz = bz + face.normal.z * (face.halfDepth + 0.625) + faceRight.z * lx;
           winInstances.push({ px: wx, py: ly, pz: wz, nx: face.normal.x, nz: face.normal.z, baseBright });
         }
       }
@@ -417,7 +805,7 @@ function buildBuildings(scene) {
 
   // Building windows → InstancedMesh with additive blending (black = invisible, warm = glow)
   if (winInstances.length) {
-    const winGeo = new THREE.PlaneGeometry(0.8, 0.8);
+    const winGeo = new THREE.PlaneGeometry(10, 10); // 0.8 × S
     bldgHoverMesh = new THREE.InstancedMesh(winGeo, new THREE.MeshBasicMaterial({
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
     }), winInstances.length);
@@ -446,7 +834,7 @@ function buildBuildings(scene) {
 
   // Blinking red aviation LEDs on tall buildings
   if (blinkInstances.length) {
-    const ledGeo = new THREE.SphereGeometry(0.3, 6, 6);
+    const ledGeo = new THREE.SphereGeometry(3.75, 6, 6); // 0.3 × S
     bldgBlinkMesh = new THREE.InstancedMesh(ledGeo, new THREE.MeshBasicMaterial({
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
     }), blinkInstances.length);
@@ -469,35 +857,73 @@ function buildBuildings(scene) {
   }
 }
 
-// ═══ TREES (70 sprites) ═══
+// ═══ TREES (70 → 1 InstancedMesh with per-frame billboard) ═══
+let treeMesh = null;
+const treeInstanceData = []; // { x, y, z, w, h, color }
+
 function buildTrees(scene) {
   seed = 333;
-  for (let i = 0; i < 70; i++) {
-    const angle = (i / 70) * Math.PI * 2 + (sr() - 0.5) * 0.1;
-    const radius = DIMS.treeRingR + (sr() - 0.5) * 25;
+  const count = 70;
+  // Shared tree canvas texture (one for all trees)
+  const cvs = document.createElement('canvas'); cvs.width = 64; cvs.height = 64;
+  const ctx = cvs.getContext('2d');
+  ctx.fillStyle = 'rgb(8,25,8)';
+  ctx.beginPath(); ctx.ellipse(32, 28, 28, 24, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#0e140e'; ctx.fillRect(30, 42, 4, 20);
+  const tex = new THREE.CanvasTexture(cvs);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  const geo = new THREE.PlaneGeometry(1, 1);
+  treeMesh = new THREE.InstancedMesh(geo, mat, count);
+  treeMesh.frustumCulled = false;
+
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + (sr() - 0.5) * 0.1;
+    const radius = DIMS.treeRingR + (sr() - 0.5) * 312;
     const tx = Math.cos(angle) * radius, tz = Math.sin(angle) * radius;
-    const th = sr() * 12 + 6, tw = sr() * 8 + 5;
-    const cvs = document.createElement('canvas'); cvs.width = 64; cvs.height = 64;
-    const ctx = cvs.getContext('2d');
+    const th = (sr() * 12 + 6) * S, tw = (sr() * 8 + 5) * S;
     const shade = 10 + sr() * 20;
-    ctx.fillStyle = `rgb(${shade * 0.4 | 0},${shade + 10 | 0},${shade * 0.3 | 0})`;
-    ctx.beginPath(); ctx.ellipse(32, 28, 28, 24, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#0e140e'; ctx.fillRect(30, 42, 4, 20);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), transparent: true, depthWrite: false }));
-    sprite.position.set(tx, th * 0.5, tz); sprite.scale.set(tw, th, 1); scene.add(sprite);
+    const r = (shade * 0.4 | 0) / 255, g = ((shade + 10) | 0) / 255, b = (shade * 0.3 | 0) / 255;
+    _c.setRGB(r, g, b);
+    treeMesh.setColorAt(i, _c);
+    treeInstanceData.push({ x: tx, y: th * 0.5, z: tz, w: tw, h: th });
+    // Set initial matrix (will be updated per frame for billboard)
+    _obj.position.set(tx, th * 0.5, tz);
+    _obj.scale.set(tw, th, 1);
+    _obj.updateMatrix();
+    treeMesh.setMatrixAt(i, _obj.matrix);
   }
+  treeMesh.instanceMatrix.needsUpdate = true;
+  if (treeMesh.instanceColor) treeMesh.instanceColor.needsUpdate = true;
+  scene.add(treeMesh);
+}
+
+function updateTreeBillboards(cameraPos) {
+  if (!treeMesh || !cameraPos) return;
+  for (let i = 0; i < treeInstanceData.length; i++) {
+    const td = treeInstanceData[i];
+    // Y-axis billboard: rotate to face camera around Y only
+    const dx = cameraPos.x - td.x;
+    const dz = cameraPos.z - td.z;
+    const angle = Math.atan2(dx, dz);
+    _obj.position.set(td.x, td.y, td.z);
+    _obj.rotation.set(0, angle, 0);
+    _obj.scale.set(td.w, td.h, 1);
+    _obj.updateMatrix();
+    treeMesh.setMatrixAt(i, _obj.matrix);
+  }
+  treeMesh.instanceMatrix.needsUpdate = true;
 }
 
 // ═══ STARS (800 points, custom shader) ═══
 function buildStars(scene) {
   seed = 42;
-  const count = 800;
+  const count = 300;
   const positions = new Float32Array(count * 3);
   const alphas = new Float32Array(count);
   const scales = new Float32Array(count);
   for (let i = 0; i < count; i++) {
-    const theta = sr() * Math.PI * 2, phi = sr() * Math.PI * 0.45, r = 580 + sr() * 120;
-    const x = r * Math.sin(phi) * Math.cos(theta), y = r * Math.cos(phi) + 60, z = r * Math.sin(phi) * Math.sin(theta);
+    const theta = sr() * Math.PI * 2, phi = sr() * Math.PI * 0.45, r = 7250 + sr() * 1500; // × S
+    const x = r * Math.sin(phi) * Math.cos(theta), y = r * Math.cos(phi) + 750, z = r * Math.sin(phi) * Math.sin(theta); // 60 × S
     positions[i * 3] = x; positions[i * 3 + 1] = y; positions[i * 3 + 2] = z;
     const ba = sr() * 0.5 + 0.3; alphas[i] = ba; scales[i] = sr() * 2 + 0.8;
     starData.push({ idx: i, x, y, z, baseAlpha: ba, speed: sr() * 0.8 + 0.3, phase: sr() * Math.PI * 2, scale: scales[i], selected: false, selectGlow: 0 });
@@ -509,7 +935,7 @@ function buildStars(scene) {
   starPoints = new THREE.Points(geo, new THREE.ShaderMaterial({
     uniforms: { uSkyBlend: { value: 0 } },
     vertexShader: `attribute float alpha; attribute float scale; varying float vAlpha;
-      void main() { vAlpha=alpha; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=clamp(scale*(2000.0/-mv.z),1.0,8.0); gl_Position=projectionMatrix*mv; }`,
+      void main() { vAlpha=alpha; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=clamp(scale*(25000.0/-mv.z),1.0,8.0); gl_Position=projectionMatrix*mv; }`,
     fragmentShader: `uniform float uSkyBlend; varying float vAlpha;
       void main() { float d=length(gl_PointCoord-vec2(.5)); if(d>.5) discard; gl_FragColor=vec4(.91,.88,.82, vAlpha*smoothstep(.5,.1,d)*(1.0-uSkyBlend)); }`,
     transparent: true, depthWrite: false
@@ -572,17 +998,17 @@ function updateBuildingBlink(t) {
 function buildCrane(scene) {
   const totalH = TC.maxFloors * TC.floorH + TC.floorH * 3;
   const mat = new THREE.MeshBasicMaterial({ color: 0x465064, transparent: true, opacity: 0.6 });
-  const mastH = 15, mastX = TC.width / 2 + 1.5;
-  const mast = new THREE.Mesh(new THREE.BoxGeometry(0.2, mastH, 0.2), mat);
+  const mastH = 187, mastX = TC.width / 2 + 18.75; // 15 × S, 1.5 × S
+  const mast = new THREE.Mesh(new THREE.BoxGeometry(2.5, mastH, 2.5), mat); // 0.2 × S
   mast.position.set(mastX, totalH + mastH / 2, 0); scene.add(mast); craneParts.push(mast);
   const bl = TC.width * 1.2;
-  const boom = new THREE.Mesh(new THREE.BoxGeometry(bl, 0.15, 0.15), mat);
+  const boom = new THREE.Mesh(new THREE.BoxGeometry(bl, 1.875, 1.875), mat); // 0.15 × S
   boom.position.set(mastX + bl * 0.3, totalH + mastH, 0); scene.add(boom); craneParts.push(boom);
-  const cb = new THREE.Mesh(new THREE.BoxGeometry(bl * 0.4, 0.15, 0.15), mat);
+  const cb = new THREE.Mesh(new THREE.BoxGeometry(bl * 0.4, 1.875, 1.875), mat);
   cb.position.set(mastX - bl * 0.25, totalH + mastH, 0); scene.add(cb); craneParts.push(cb);
   const cg = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(mastX + bl * 0.6, totalH + mastH, 0),
-    new THREE.Vector3(mastX + bl * 0.6, totalH + mastH - 8, 0)
+    new THREE.Vector3(mastX + bl * 0.6, totalH + mastH - 100, 0) // 8 × S
   ]);
   cableMesh = new THREE.Line(cg, new THREE.LineBasicMaterial({ color: 0x465064, transparent: true, opacity: 0.3 }));
   scene.add(cableMesh); craneParts.push(cableMesh);
@@ -591,13 +1017,14 @@ function buildCrane(scene) {
 // ═══ ELEVATOR ═══
 function buildElevator(scene) {
   const group = new THREE.Group();
-  group.add(new THREE.Mesh(new THREE.BoxGeometry(1.2, TC.floorH * 2.5, 1.2), new THREE.MeshBasicMaterial({ color: 0x2a2e3a })));
-  const win = new THREE.Mesh(new THREE.BoxGeometry(0.8, TC.floorH * 1.4, 1.21), new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.5 }));
-  win.position.y = -0.2; group.add(win);
+  const carSize = 15; // 1.2 × S
+  group.add(new THREE.Mesh(new THREE.BoxGeometry(carSize, TC.floorH * 2.5, carSize), new THREE.MeshBasicMaterial({ color: 0x2a2e3a })));
+  const win = new THREE.Mesh(new THREE.BoxGeometry(10, TC.floorH * 1.4, carSize + 0.125), new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.5 }));
+  win.position.y = -2.5; group.add(win);
   const totalH = TC.maxFloors * TC.floorH + TC.floorH * 3;
-  elevTrack = new THREE.Mesh(new THREE.BoxGeometry(0.1, totalH, 0.1), new THREE.MeshBasicMaterial({ color: 0x323846, transparent: true, opacity: 0.4 }));
-  elevTrack.position.set(-(TC.width / 2 + 1.2), totalH / 2, 0); scene.add(elevTrack);
-  group.position.set(-(TC.width / 2 + 1.2), TC.floorH * 3 + elevFloor * TC.floorH, 0);
+  elevTrack = new THREE.Mesh(new THREE.BoxGeometry(1.25, totalH, 1.25), new THREE.MeshBasicMaterial({ color: 0x323846, transparent: true, opacity: 0.4 })); // 0.1 × S
+  elevTrack.position.set(-(TC.width / 2 + carSize), totalH / 2, 0); scene.add(elevTrack);
+  group.position.set(-(TC.width / 2 + carSize), TC.floorH * 3 + elevFloor * TC.floorH, 0);
   scene.add(group); elevMesh = group;
 }
 
@@ -629,8 +1056,8 @@ function spawnSat(scene) {
   const fa = sr() * Math.PI * 2;
   const sat = {
     fromAngle: fa, toAngle: fa + Math.PI * (0.5 + sr()) * (sr() > 0.5 ? 1 : -1),
-    height: 200 + sr() * 200, radius: 400 + sr() * 200, progress: 0, speed: 0.02 + sr() * 0.03,
-    mesh: new THREE.Mesh(new THREE.SphereGeometry(0.4, 4, 4), new THREE.MeshBasicMaterial({ color: 0xd0d8e8, transparent: true, opacity: 0.5 }))
+    height: 2500 + sr() * 2500, radius: 5000 + sr() * 2500, progress: 0, speed: 0.02 + sr() * 0.03, // × S
+    mesh: new THREE.Mesh(new THREE.SphereGeometry(5, 4, 4), new THREE.MeshBasicMaterial({ color: 0xd0d8e8, transparent: true, opacity: 0.5 })) // 0.4 × S
   };
   scene.add(sat.mesh); sats.push(sat);
 }
@@ -647,6 +1074,7 @@ function updateSats(scene, dt) {
 
 // ═══ DISSOLVE / RESTORE (for transition) ═══
 function dissolveTowerFloor(fi) {
+  // Hide windows
   for (const wd of towerWinData) {
     if (wd.floorIdx === fi && !wd.hidden) {
       towerWinMesh.setMatrixAt(wd.idx, _zeroScale);
@@ -654,6 +1082,16 @@ function dissolveTowerFloor(fi) {
     }
   }
   towerWinMesh.instanceMatrix.needsUpdate = true;
+  // Hide beams
+  if (towerBeamMesh) {
+    for (const bd of towerBeamData) {
+      if (bd.floorIdx === fi && !bd.hidden) {
+        towerBeamMesh.setMatrixAt(bd.idx, _zeroScale);
+        bd.hidden = true;
+      }
+    }
+    towerBeamMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 function restoreTowerFloor(fi) {
@@ -664,6 +1102,15 @@ function restoreTowerFloor(fi) {
     }
   }
   towerWinMesh.instanceMatrix.needsUpdate = true;
+  if (towerBeamMesh) {
+    for (const bd of towerBeamData) {
+      if (bd.floorIdx === fi && bd.hidden) {
+        towerBeamMesh.setMatrixAt(bd.idx, bd.originalMatrix);
+        bd.hidden = false;
+      }
+    }
+    towerBeamMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 function restoreAllTowerFloors() {
@@ -674,6 +1121,15 @@ function restoreAllTowerFloors() {
     }
   }
   towerWinMesh.instanceMatrix.needsUpdate = true;
+  if (towerBeamMesh) {
+    for (const bd of towerBeamData) {
+      if (bd.hidden) {
+        towerBeamMesh.setMatrixAt(bd.idx, bd.originalMatrix);
+        bd.hidden = false;
+      }
+    }
+    towerBeamMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 function applyPlayerLighting() {
@@ -686,6 +1142,15 @@ function applyPlayerLighting() {
     }
   }
   towerWinMesh.instanceMatrix.needsUpdate = true;
+  if (towerBeamMesh) {
+    for (const bd of towerBeamData) {
+      if (bd.floorIdx > TC.playerFloor && !bd.hidden) {
+        towerBeamMesh.setMatrixAt(bd.idx, _zeroScale);
+        bd.hidden = true;
+      }
+    }
+    towerBeamMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // ═══ HOVER SYSTEMS (called from main loop) ═══
