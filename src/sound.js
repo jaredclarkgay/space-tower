@@ -48,6 +48,15 @@ export function sndStep(){playNoise(0.05,0.04)}
 export function sndIncome(){playTone(880,0.05,'sine',0.1);playTone(1100,0.06,'sine',0.08,0.04)}
 export function sndWarn(){playTone(220,0.15,'sawtooth',0.15);playTone(180,0.2,'sawtooth',0.12,0.12)}
 export function sndElev(){playTone(880,0.12,'sine',0.2);playTone(1100,0.15,'sine',0.15,0.1)}
+export function sndBuild(){playTone(330,0.1,'triangle',0.25);playTone(440,0.1,'triangle',0.2,0.08);playTone(550,0.12,'triangle',0.25,0.16);playNoise(0.08,0.06)}
+export function sndTile(idx){const f=360+idx*35;playTone(f,0.06,'triangle',0.07);playNoise(0.02,0.02)}
+// Activation sounds — unique per-floor character
+export function sndWhoosh(){playNoise(0.2,0.12);playTone(200,0.25,'sine',0.1);playTone(400,0.15,'sine',0.06,0.1)}
+export function sndChime(){playTone(660,0.2,'sine',0.2);playTone(880,0.15,'sine',0.15,0.12);playTone(1100,0.25,'sine',0.2,0.24)}
+export function sndBoom(){playNoise(0.15,0.2);playTone(80,0.3,'sine',0.3);playTone(60,0.4,'sine',0.2,0.1)}
+export function sndGrow(){playTone(220,0.15,'triangle',0.15);playTone(330,0.2,'sine',0.12,0.1);playTone(440,0.15,'sine',0.1,0.25)}
+export function sndData(){playTone(800,0.04,'square',0.1);playTone(1000,0.04,'square',0.08,0.05);playTone(1200,0.04,'square',0.08,0.1);playTone(900,0.04,'square',0.06,0.15);playTone(1100,0.06,'square',0.1,0.2)}
+export function sndAwe(){playTone(220,0.5,'sine',0.2);playTone(330,0.5,'sine',0.15,0.2);playTone(440,0.6,'sine',0.2,0.4);playTone(550,0.8,'sine',0.15,0.6)}
 
 // Ambient drone — altitude-aware, continuous
 let ambOsc1=null,ambOsc2=null,ambGain=null,ambFilt=null;

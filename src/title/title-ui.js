@@ -111,7 +111,7 @@ export function createTitleUI(saveData, onContinue, onNewGame) {
 export function removeTitleUI() {
   const overlay = document.getElementById('title-overlay');
   if (overlay) overlay.innerHTML = '';
-  for (const id of ['version', 'hint', 'constellations', 'zoom-toggle', 'home-btn', 'view-tabs', 'arrival-text', 'enter-tower-btn', 'ext-radio', 'ext-hints']) {
+  for (const id of ['version', 'hint', 'constellations', 'zoom-toggle', 'home-btn', 'view-tabs', 'arrival-text', 'enter-tower-btn', 'ext-radio', 'ext-hints', 'ext-cam-slider']) {
     const el = document.getElementById(id);
     if (el) el.remove();
   }
@@ -124,13 +124,14 @@ export function fadeOutUI() {
     const hint = document.getElementById('hint');
     const cst = document.getElementById('constellations');
     const zoom = document.getElementById('zoom-toggle');
-    if (overlay) { overlay.style.transition = 'opacity 1.5s ease'; overlay.style.opacity = '0'; overlay.style.pointerEvents = 'none'; }
+    // Cancel CSS animations first (forwards fill overrides inline opacity)
+    if (overlay) { overlay.style.animation = 'none'; overlay.style.transition = 'opacity 1.5s ease'; overlay.style.opacity = '0'; overlay.style.pointerEvents = 'none'; }
     if (ver) { ver.style.transition = 'opacity 1s ease'; ver.style.opacity = '0'; }
     if (hint) hint.classList.remove('visible');
     if (cst) cst.classList.remove('visible');
-    if (zoom) { zoom.style.opacity = '0'; zoom.style.pointerEvents = 'none'; }
+    if (zoom) { zoom.style.animation = 'none'; zoom.style.opacity = '0'; zoom.style.pointerEvents = 'none'; }
     const tabs = document.getElementById('view-tabs');
-    if (tabs) { tabs.style.transition = 'opacity 1s ease'; tabs.style.opacity = '0'; tabs.style.pointerEvents = 'none'; }
+    if (tabs) { tabs.style.animation = 'none'; tabs.style.transition = 'opacity 1s ease'; tabs.style.opacity = '0'; tabs.style.pointerEvents = 'none'; }
     setTimeout(resolve, 1500);
   });
 }
@@ -207,7 +208,7 @@ export function showExteriorRadio() {
   const wrap = document.createElement('div');
   wrap.id = 'ext-radio';
   wrap.className = 'radio-wrap';
-  wrap.style.cssText = 'position:fixed;bottom:90px;right:28px;z-index:60;width:220px';
+  wrap.style.cssText = 'position:fixed;bottom:90px;right:20px;z-index:60;width:220px;max-width:calc(100vw - 40px);box-sizing:border-box;overflow:hidden';
   wrap.innerHTML = `
     <div class="radio-widget">
       <div class="radio-song">Tower Radio</div>
@@ -237,8 +238,33 @@ export function hideExteriorRadio() {
 }
 
 // ── Movement hints ──
+let _camDistSetter = null;
+let _camDistGetter = null;
+
+export function setCamDistCallbacks(getter, setter) {
+  _camDistGetter = getter;
+  _camDistSetter = setter;
+}
+
 export function showMovementHints() {
   if (document.getElementById('ext-hints')) return;
+
+  // Camera distance slider
+  if (_camDistGetter && _camDistSetter) {
+    const slider = document.createElement('div');
+    slider.id = 'ext-cam-slider';
+    slider.style.cssText = 'position:fixed;bottom:80px;left:14px;z-index:60;color:rgba(255,255,255,0.4);font-family:monospace;font-size:9px;line-height:1.4;background:rgba(0,0,0,0.3);padding:6px 10px;border-radius:5px;backdrop-filter:blur(4px)';
+    const range = document.createElement('input');
+    range.type = 'range'; range.min = '3'; range.max = '12'; range.step = '0.5';
+    range.value = String(_camDistGetter());
+    range.style.cssText = 'width:110px;accent-color:#888;cursor:pointer;margin:0';
+    range.addEventListener('input', () => _camDistSetter(parseFloat(range.value)));
+    slider.appendChild(document.createTextNode('CAM'));
+    slider.appendChild(document.createElement('br'));
+    slider.appendChild(range);
+    document.body.appendChild(slider);
+  }
+
   const el = document.createElement('div');
   el.id = 'ext-hints';
   el.style.cssText = 'position:fixed;bottom:14px;left:14px;z-index:60;color:rgba(255,255,255,0.4);font-family:monospace;font-size:9px;line-height:1.6;pointer-events:none;user-select:none;background:rgba(0,0,0,0.3);padding:6px 10px;border-radius:5px;backdrop-filter:blur(4px)';
@@ -249,6 +275,8 @@ export function showMovementHints() {
 export function hideMovementHints() {
   const el = document.getElementById('ext-hints');
   if (el) el.remove();
+  const sl = document.getElementById('ext-cam-slider');
+  if (sl) sl.remove();
 }
 
 // ── Helpers ──

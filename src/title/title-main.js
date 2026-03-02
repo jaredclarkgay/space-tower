@@ -2,10 +2,10 @@
 import * as THREE from 'three';
 import './title-styles.css';
 import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlend } from './title-city.js';
-import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn } from './title-ui.js';
+import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistCallbacks } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY } from './title-transition.js';
-import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior } from './title-exterior.js';
+import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward } from './title-exterior.js';
 import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
 import { setupRadio, disposeRadio } from '../radio-ui.js';
 
@@ -30,6 +30,7 @@ let cameraLookTarget = new THREE.Vector3(0, 2, 0);
 let camBehindAngle = 0;       // angle-based trailing (orbits behind player velocity)
 let wasExteriorActive = false; // detect activation edge
 const _camDir = new THREE.Vector3(); // reusable for camera direction
+let extCamDist = 6;           // adjustable via slider (default: character at ~2/3 size)
 
 // ── Listeners (stored for cleanup) ──
 let resizeHandler, mouseDownHandler, mouseMoveHandler, mouseUpHandler;
@@ -39,7 +40,7 @@ export function initTitle(canvas, saveData) {
   // Renderer
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(1);
 
   // Scene
   scene = new THREE.Scene();
@@ -52,9 +53,12 @@ export function initTitle(canvas, saveData) {
   cameraLookY = 65 * 1.2 * 0.35; // maxFloors * floorH * 0.35
   camera.lookAt(0, cameraLookY, 0);
 
+  // Wire camera distance callbacks for UI slider
+  setCamDistCallbacks(() => extCamDist, (v) => { extCamDist = v; });
+
   // Build city
-  const litFloors = saveData?.litFloors || [0, 1];
-  cityData = buildCityScene(scene, litFloors);
+  const buildout = saveData?.buildout || [];
+  cityData = buildCityScene(scene, buildout);
 
   // Constellation
   initConstellation(renderer, camera, cityData.starMeshes, scene, cityData, () => ({ isDragging, dragMoved }));
@@ -221,19 +225,23 @@ export function initTitle(canvas, saveData) {
 
       const pp = getPlayerPos();
       const pv = getPlayerVel();
-      const camDist = 6;
-      const camHeight = 1.2;
+      const camDist = extCamDist;
+      const camHeight = 0.8;
 
       // Angle-based trailing: camera orbits behind player's velocity direction
       // Only updates when player is moving — stays put when idle
       const speed = Math.sqrt(pv.x * pv.x + pv.z * pv.z);
       if (speed > 0.01) {
-        const targetAngle = Math.atan2(-pv.x, -pv.z); // behind velocity
+        // Forward: trail behind velocity. Backward: trail behind facing (negate velocity)
+        // Pure backward = camera stays put; strafing while backing up gently orbits
+        const bk = isWalkingBackward();
+        const targetAngle = Math.atan2(bk ? pv.x : -pv.x, bk ? pv.z : -pv.z);
         // Shortest-path angle interpolation (never swings through player)
         let delta = targetAngle - camBehindAngle;
         while (delta > Math.PI) delta -= 2 * Math.PI;
         while (delta < -Math.PI) delta += 2 * Math.PI;
-        camBehindAngle += delta * 0.04;
+        // Flip strafe direction when backing up so L/R feel natural
+        camBehindAngle += delta * 0.042 * (bk ? -1 : 1);
       }
 
       // Camera position: behind player at camBehindAngle
@@ -242,14 +250,14 @@ export function initTitle(canvas, saveData) {
       const targetZ = pp.z + Math.cos(camBehindAngle) * camDist;
 
       // Smooth position follow
-      camera.position.x += (targetX - camera.position.x) * 0.06;
-      camera.position.y += (targetY - camera.position.y) * 0.06;
-      camera.position.z += (targetZ - camera.position.z) * 0.06;
+      camera.position.x += (targetX - camera.position.x) * 0.12;
+      camera.position.y += (targetY - camera.position.y) * 0.12;
+      camera.position.z += (targetZ - camera.position.z) * 0.12;
 
       // Look above player — upward-facing angle to see the tower
-      cameraLookTarget.x += (pp.x - cameraLookTarget.x) * 0.08;
-      cameraLookTarget.y += ((pp.y + 2.0) - cameraLookTarget.y) * 0.08;
-      cameraLookTarget.z += (pp.z - cameraLookTarget.z) * 0.08;
+      cameraLookTarget.x += (pp.x - cameraLookTarget.x) * 0.15;
+      cameraLookTarget.y += ((pp.y + 1.2) - cameraLookTarget.y) * 0.15;
+      cameraLookTarget.z += (pp.z - cameraLookTarget.z) * 0.15;
 
       camera.lookAt(cameraLookTarget);
     } else {
@@ -267,14 +275,15 @@ export function initTitle(canvas, saveData) {
     // City update
     if (cityData) cityData.updateCity(t);
 
-    // Hover systems (throttled to every 3rd frame)
+    // Hover systems
     if (frameCount % 3 === 0) {
-      updateBuildingHover(camera, mouseScreenX, mouseScreenY, isTransitionActive() && TRANSITION.phase < 4);
-      updateTowerHover(camera, mouseScreenX, mouseScreenY);
+      updateBuildingHover(camera, mouseScreenX, mouseScreenY, isTransitionActive() && TRANSITION.phase < 4, t);
+      // Tower window toggle: only in orbit mode (don't toggle while walking)
+      if (!extActive) updateTowerHover(camera, mouseScreenX, mouseScreenY);
     }
 
-    // Constellation lines fade
-    updateConstellationLines();
+    // Constellation lines fade — skip in exterior mode
+    if (!extActive) updateConstellationLines();
 
     renderer.render(scene, camera);
   }
@@ -302,12 +311,12 @@ export function skipToExterior() {
   if (!cityData || !scene) return;
   const TC = cityData.TC;
 
-  // Hide title UI immediately
+  // Hide title UI immediately (cancel animations — forwards fill overrides inline opacity)
   const overlay = document.getElementById('title-overlay');
-  if (overlay) { overlay.style.opacity = '0'; overlay.style.pointerEvents = 'none'; }
+  if (overlay) { overlay.style.animation = 'none'; overlay.style.opacity = '0'; overlay.style.pointerEvents = 'none'; }
   ['version', 'hint', 'constellations', 'zoom-toggle', 'view-tabs'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) { el.style.opacity = '0'; el.style.pointerEvents = 'none'; }
+    if (el) { el.style.animation = 'none'; el.style.opacity = '0'; el.style.pointerEvents = 'none'; }
   });
 
   // Camera to close-up position
@@ -331,18 +340,29 @@ export function skipToExterior() {
   if (cityData.elevTrack) cityData.elevTrack.visible = false;
   cityData.extColumns.forEach(e => { e.visible = false; });
 
-  // Dissolve floors above 9
-  for (let fi = TC.maxFloors - 1; fi > 9; fi--) {
+  // Calculate highest built floor
+  const bo = TC.buildout || [];
+  let topBuilt = 0;
+  for (let fi = 0; fi < 10; fi++) if ((bo[fi] || 0) >= 1) topBuilt = fi + 1;
+
+  // Set player floor so applyPlayerLighting keeps windows visible up to built height
+  TC.playerFloor = Math.max(0, topBuilt - 1);
+
+  // Set exterior built height — repositions roof plate, limits climbing/collision
+  setBuiltHeight(topBuilt);
+
+  // Dissolve ALL floors above the built range (beams + windows)
+  for (let fi = TC.maxFloors - 1; fi >= topBuilt; fi--) {
     const fr = TC.floorMeshes[fi];
     if (fr && fr.beam) fr.beam.visible = false;
     cityData.dissolveTowerFloor(fi);
   }
 
-  // Scale structural columns to visible height
+  // Scale structural columns to match highest built floor
   const fh = TC.floorH;
   const baseH = fh * 3;
   const fullH = baseH + TC.maxFloors * fh;
-  const visH = baseH + 10 * fh;
+  const visH = baseH + Math.max(1, topBuilt) * fh;
   cityData.structColumns.forEach(c => {
     c.scale.y = visH / fullH;
     c.position.y = visH / 2;
@@ -351,9 +371,9 @@ export function skipToExterior() {
   // Set transition state so isTransitionActive() returns true at phase 4
   TRANSITION.active = true;
   TRANSITION.phase = 4;
-  TRANSITION.dissolveFloor = 9;
+  TRANSITION.dissolveFloor = Math.max(0, topBuilt - 1);
 
-  // Apply player lighting
+  // Apply player lighting (hides windows above TC.playerFloor)
   cityData.applyPlayerLighting();
 
   // Wire up onEnterGame for the "Enter Tower" button

@@ -1,25 +1,21 @@
 'use strict';
-import { S, recalc, cZoom, tZoom, setCZoom, setTZoom } from './state.js';
-import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF } from './constants.js';
+import { S, syncLitFloors, cZoom, tZoom, setCZoom, setTZoom, getActiveBuildFloor } from './state.js';
+import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF, BPF } from './constants.js';
 import { FD } from './floors.js';
 import { CASUAL_TOPS_M } from './npcs.js';
-import { initCanvas, draw, showMsg, floatText, getInter, nearSuit } from './render.js';
+import { initCanvas, draw, showMsg, getInter, nearSuit, spawnParticles, triggerShake, triggerFlash } from './render.js';
 import { setupInput } from './input.js';
 import { setupPanel, renderPanel } from './panel.js';
 import { genWorld } from './world.js';
 import { loadGame, autoSave } from './save.js';
 import { setupCompendium, isCompendiumOpen } from './compendium.js';
-import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, soundOn, toggleSound, getAudioCtx } from './sound.js';
+import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, sndBuild, sndTile, sndWhoosh, sndChime, sndBoom, sndGrow, sndData, sndAwe, soundOn, toggleSound, getAudioCtx } from './sound.js';
 import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js';
 import { setupRadio } from './radio-ui.js';
 
 // ═══ REAL-TIME ACCUMULATORS (frame-rate independent) ═══
 let _lastFrameTime = 0;
-let _incomeAcc = 0;   // income every 2s
-let _decayAcc = 0;    // decay every 3s
 let _saveAcc = 0;     // auto-save every 60s
-const INCOME_INTERVAL = 2000;
-const DECAY_INTERVAL = 3000;
 const SAVE_INTERVAL = 60000;
 
 // ═══ ELEVATOR PANEL ═══
@@ -31,12 +27,12 @@ function openElev(){
   S.elevSelected=S.player.cf;
   elevFloors.innerHTML='';
   for(let fi=NF-1;fi>=0;fi--){
-    const fd=FD[fi],lit=S.litFloors.has(fi),cur=S.player.cf===fi;
+    const fd=FD[fi],stg=S.buildout[fi].stage,cur=S.player.cf===fi;
     const div=document.createElement('div');
-    div.className='elev-floor'+(cur?' current':lit?'':' locked')+(fi===S.elevSelected?' selected':'');
-    div.innerHTML=`<span>${fd.name}</span><span class="ef-num">${lit?`F${fi+1}`:'🔒'}</span>`;
+    div.className='elev-floor'+(cur?' current':'')+(fi===S.elevSelected?' selected':'');
+    div.innerHTML=`<span style="opacity:${stg>=1?1:0.35}">${fd.name}</span><span class="ef-num">${stg>=5?'★':stg>0?`${stg}/5`:'—'}</span>`;
     div.dataset.fi=fi;
-    if(lit&&!cur){div.addEventListener('click',()=>rideElev(fi))}
+    if(!cur){div.addEventListener('click',()=>rideElev(fi))}
     elevFloors.appendChild(div);
   }
   elevPanel.classList.add('open');
@@ -56,6 +52,106 @@ function rideElev(targetFloor){
   closeElev();
 }
 
+// ─── Activation Moments (Stage 5) ───
+function triggerActivation(fi){
+  // Floor center Y in world coords
+  const fy=TB-(fi*FH);
+  const cx=0; // center of tower
+  switch(fi){
+    case 0: // LOBBY — doors swing open, gust of air
+      triggerShake(8);
+      triggerFlash('#fffbe0',0.5);
+      sndWhoosh();
+      // Motes drifting inward from left
+      spawnParticles(TL+100,fy-FH*0.5,25,'rgba(255,245,200,0.6)',{speed:3,life:80,size:2,spread:Math.PI*0.6,dir:0,gravity:-0.02});
+      break;
+    case 1: // QUARTERS — warm amber pulse, first resident fades in
+      triggerFlash('#ffd080',0.35);
+      sndChime();
+      // Warm glow particles at doorway
+      spawnParticles(TL+900,fy-FH*0.3,12,'rgba(255,200,120,0.5)',{speed:1,life:60,size:2.5,spread:Math.PI,dir:-Math.PI/2,gravity:-0.01});
+      break;
+    case 2: // GARDEN — green burst, pollen floats upward
+      triggerFlash('#80ff60',0.3);
+      sndGrow();
+      // Pollen/spore particles rising
+      spawnParticles(cx,fy-10,35,'rgba(180,240,80,0.6)',{speed:1.5,life:90,size:2,spread:Math.PI*0.8,dir:-Math.PI/2,gravity:-0.04});
+      spawnParticles(cx,fy-10,15,'rgba(255,240,60,0.4)',{speed:1,life:70,size:1.5,spread:Math.PI,dir:-Math.PI/2,gravity:-0.03});
+      break;
+    case 3: // RESEARCH — blue-white flash, data rain
+      triggerFlash('#a0c0ff',0.45);
+      sndData();
+      // Data particles streaming downward
+      for(let dx=-600;dx<=600;dx+=150){
+        spawnParticles(dx,fy-FH,8,'rgba(100,180,255,0.5)',{speed:2.5,life:50,size:1.5,spread:0.3,dir:Math.PI/2,gravity:0.02});
+      }
+      break;
+    case 4: // RESTAURANT — warm amber bloom, pendant lights moment
+      triggerFlash('#ffe0a0',0.4);
+      sndChime();
+      triggerShake(3);
+      // Warm glow particles at ceiling (pendant lights turning on)
+      for(let lx=-500;lx<=500;lx+=350){
+        spawnParticles(lx,fy-FH+30,6,'rgba(255,210,100,0.6)',{speed:0.8,life:50,size:3,spread:Math.PI,dir:Math.PI/2,gravity:0.01});
+      }
+      break;
+    case 5: // LOUNGE — softest activation, warm sigh
+      triggerFlash('#ffe8d0',0.2);
+      sndChime();
+      // Very gentle warm particles drifting
+      spawnParticles(cx,fy-FH*0.5,10,'rgba(255,220,160,0.4)',{speed:0.5,life:80,size:2,spread:Math.PI*2,dir:0,gravity:-0.01});
+      break;
+    case 6: // OBSERVATION — cool blue-white flash, sparkles on glass
+      triggerFlash('#d0e8ff',0.4);
+      sndAwe();
+      // Sparkle particles at window positions
+      spawnParticles(TL+200,fy-FH*0.6,8,'rgba(200,230,255,0.7)',{speed:1,life:60,size:2,spread:Math.PI,dir:-Math.PI/2,gravity:-0.01});
+      spawnParticles(TR-200,fy-FH*0.6,8,'rgba(200,230,255,0.7)',{speed:1,life:60,size:2,spread:Math.PI,dir:-Math.PI/2,gravity:-0.01});
+      break;
+    case 7: // STORAGE — industrial yellow flash, sharp shake
+      triggerFlash('#ffe040',0.4);
+      triggerShake(10);
+      sndBoom();
+      // Industrial sparks
+      spawnParticles(cx,fy-FH*0.5,20,'rgba(255,220,60,0.7)',{speed:3,life:40,size:2,spread:Math.PI*2,dir:0,gravity:0.06});
+      break;
+    case 8: // OBSERVATORY — first light beam, star scatter
+      triggerFlash('#e0eeff',0.5);
+      sndAwe();
+      // Vertical beam of white light from ceiling
+      spawnParticles(cx,fy-FH*0.5,30,'rgba(200,220,255,0.6)',{speed:2,life:70,size:2.5,spread:0.4,dir:Math.PI/2,gravity:-0.01});
+      // Star-like particles scattering from beam
+      spawnParticles(cx,fy-FH*0.3,20,'rgba(255,255,255,0.5)',{speed:2.5,life:60,size:1.5,spread:Math.PI*2,dir:0,gravity:0});
+      break;
+    case 9: // COMMAND — status cascade, golden tower pulse
+      sndBoom();
+      triggerShake(6);
+      // Rapid status LED cascade (bottom to top, delayed via setTimeout)
+      for(let ci=0;ci<9;ci++){
+        setTimeout(()=>{
+          triggerFlash('#ffd700',0.12);
+          const cfy=TB-(ci*FH)-FH*0.5;
+          spawnParticles(0,cfy,4,'rgba(255,215,0,0.6)',{speed:1.5,life:30,size:2,spread:Math.PI*2,dir:0,gravity:0});
+        },ci*80);
+      }
+      // Final golden pulse after cascade
+      setTimeout(()=>{
+        triggerFlash('#ffd700',0.6);
+        triggerShake(4);
+        sndAwe();
+      },750);
+      break;
+  }
+  // Queue NPC arrivals for this floor
+  let delay=90;
+  S.npcs.forEach((n,idx)=>{
+    if(n.floor===fi&&!n.arrived){
+      S.arrivalQueue.push({npcIdx:idx,delay});
+      delay+=120;
+    }
+  });
+}
+
 // ─── NPC Discovery ───
 function discoverNpc(n, lineText){
   if(!S.compendium.entries[n.name]){
@@ -65,8 +161,77 @@ function discoverNpc(n, lineText){
   if(!e.dialogueHeard.includes(lineText))e.dialogueHeard.push(lineText);
 }
 
+// ═══ ARRIVAL SYSTEM ═══
+function processArrivals(){
+  // Process queue — decrement delays, spawn NPCs at door when ready
+  for(let i=S.arrivalQueue.length-1;i>=0;i--){
+    const q=S.arrivalQueue[i];
+    q.delay--;
+    if(q.delay<=0){
+      const n=S.npcs[q.npcIdx];
+      n.x=TL+10;n.y=TB-48;n.onF=true;n.vx=0;n.vy=0;
+      n.arrState='entering';n.fr=true;
+      S.arrivalQueue.splice(i,1);
+    }
+  }
+  // NPC arrival state machine
+  S.npcs.forEach(n=>{
+    if(n.arrived||n.arrState==='queue')return;
+    if(n.arrState==='entering'){
+      n.vx=4;n.fr=true;n.st='walk';
+      n.x+=n.vx;
+      // Gravity + floor collision
+      n.y+=n.vy;n.vy+=GRAV;
+      n.onF=false;
+      for(let f of S.floors){if(f.level<0)continue;if(n.vy>=0&&n.y<=f.y&&n.y+n.vy>=f.y){n.y=f.y;n.vy=0;n.onF=true;break}}
+      if(n.y>TB){n.y=TB;n.vy=0;n.onF=true}
+      n.bob+=0.2;
+      if(n.x>=ELEV_X-80){
+        if(n.floor===0){n.arrived=true;n.arrState='done';n.x=n.destX;n.vx=0;n.st='idle'}
+        else{n.arrState='riding';n.arrTimer=60+n.floor*10;n.vx=0;n.st='idle'}
+      }
+    } else if(n.arrState==='riding'){
+      n.arrTimer--;
+      if(n.arrTimer<=0){
+        n.x=ELEV_X+80;n.y=TB-(n.floor*FH)-48;n.onF=true;n.vy=0;
+        n.arrState='arriving';n.fr=n.destX>n.x;
+      }
+    } else if(n.arrState==='arriving'){
+      const dir=n.destX>n.x?1:-1;
+      n.vx=3*dir;n.fr=dir>0;n.st='walk';
+      n.x+=n.vx;
+      // Gravity + floor collision
+      n.y+=n.vy;n.vy+=GRAV;
+      n.onF=false;
+      for(let f of S.floors){if(f.level<0)continue;if(n.vy>=0&&n.y<=f.y&&n.y+n.vy>=f.y){n.y=f.y;n.vy=0;n.onF=true;break}}
+      n.bob+=0.2;
+      if(Math.abs(n.x-n.destX)<20){n.arrived=true;n.arrState='done';n.x=n.destX;n.vx=0;n.st='idle'}
+    }
+  });
+  // Door auto-open logic
+  const p=S.player;
+  const playerNearDoor=p.x<TL+80&&p.y>=TB-100;
+  const npcEntering=S.npcs.some(n=>n.arrState==='entering'&&n.x<TL+80);
+  const doorTarget=(playerNearDoor||npcEntering)?1:0;
+  S.door.open+=(doorTarget-S.door.open)*0.08;
+}
+
 // ═══ UPDATE ═══
 function update(){
+  processArrivals();
+  // Dynamic rooftop — keep floor entry in sync for collision
+  const _abf2=getActiveBuildFloor();
+  const _dynRY=TB-(_abf2>=0?_abf2+1:NF)*FH;
+  const _rf=S.floors.find(f=>f.level===-1);
+  if(_rf){_rf.y=_dynRY;S.floors.sort((a,b)=>a.y-b.y)}
+  // Advance build reveal timers + per-tile sound (30% speed — slow sweep)
+  for(let i=0;i<NF;i++){
+    const rt=S.buildout[i].revealT;
+    if(rt<BPF*10+40){
+      S.buildout[i].revealT++;
+      for(let bi=0;bi<BPF;bi++){if(rt===bi*10)sndTile(bi)}
+    }
+  }
   const p=S.player,k=S.keys,inter=getInter();
   S.frame++;
   const zLerp=(p.isChg||p.isDrp)?0.04:0.15;
@@ -78,8 +243,6 @@ function update(){
   else if(S.elevAnim==='opening'){if(S.elevDoors>0.95)S.elevAnim='idle'}
 
   const frameNow=performance.now(),frameDt=_lastFrameTime?frameNow-_lastFrameTime:16;_lastFrameTime=frameNow;
-  _incomeAcc+=frameDt;if(_incomeAcc>=INCOME_INTERVAL){_incomeAcc-=INCOME_INTERVAL;let cg=5+S.crRate;S.res.credits+=cg;floatText(`+${cg} 💰`,cg>5?'#00ff88':'#ffd700');S.panelDirty=true}
-  _decayAcc+=frameDt;if(_decayAcc>=DECAY_INTERVAL){_decayAcc-=DECAY_INTERVAL;const nLit=S.litFloors.size;const decay=0.3+nLit*0.15;S.sat=Math.max(0,S.sat-decay);S.panelDirty=true;if(S.sat<20&&_incomeAcc<100){floatText('⚠ Morale critical','#ff6b35');sndWarn()}}
   if(S.jp['KeyF']){const spEl=document.getElementById('sp');if(p.suit){p.suit=false;spEl.style.display='none'}else{const s=nearSuit();if(s){s.taken=true;p.suit=true;p.suitC=pk(CASUAL_TOPS_M);spEl.style.display='block'}}}
   _saveAcc+=frameDt;if(_saveAcc>=SAVE_INTERVAL){_saveAcc-=SAVE_INTERVAL;autoSave()}
   if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()){
@@ -97,7 +260,7 @@ function update(){
     if(dk&&p.onF&&!stDn){if(!p.isDrp)p.baseZoom=p.baseZoom||tZoom;p.isDrp=true;p.drpT=Math.min(p.drpT+1,DROP_MX);setTZoom(p.baseZoom-p.drpT/DROP_MX*0.25)}
     else if(dk&&stDn){p.st='climb';p.clT=inter.v;p.clP=1;p.x=inter.v.tx;p.vx=0;p.isDrp=false;p.drpT=0;setTZoom(p.baseZoom||tZoom)}
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
-    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'){openElev()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
+    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=5)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
       else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
       }S.iLock=true}}else S.iLock=false;
   } else {
@@ -111,16 +274,18 @@ function update(){
     const xMin=TL-UW+p.w/2,xMax=TR+UW-p.w/2;
     if(p.x<xMin)p.x=xMin;if(p.x>xMax)p.x=xMax;
     p.onF=false;
-    for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false}break}}
+    for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&S.buildout[f.level].stage<1&&f.level!==_abf2)continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false}break}}
     if(p.y>TB){p.y=TB;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=0;p.flipCommitted=false}
   }
   } // end movement guard
   if(S.elevOpen){
-    if(S.jp['ArrowUp']||S.jp['KeyW']){S.elevSelected=Math.min(S.elevSelected+1,NF-1);updateElevHighlight()}
-    if(S.jp['ArrowDown']||S.jp['KeyS']){S.elevSelected=Math.max(S.elevSelected-1,0);updateElevHighlight()}
-    if(S.jp['Enter']||S.jp['KeyE']){if(S.litFloors.has(S.elevSelected)&&S.elevSelected!==p.cf)rideElev(S.elevSelected)}
+    if(S.jp['ArrowUp']||S.jp['KeyW']){let ns=S.elevSelected+1;while(ns<NF&&S.buildout[ns].stage<1&&ns!==p.cf)ns++;if(ns<NF){S.elevSelected=ns;updateElevHighlight()}}
+    if(S.jp['ArrowDown']||S.jp['KeyS']){let ns=S.elevSelected-1;while(ns>=0&&S.buildout[ns].stage<1&&ns!==p.cf)ns--;if(ns>=0){S.elevSelected=ns;updateElevHighlight()}}
+    if(S.jp['Enter']||S.jp['KeyE']){if(S.elevSelected!==p.cf&&S.buildout[S.elevSelected].stage>=1)rideElev(S.elevSelected)}
   }
-  S.npcs.forEach(n=>{n.at--;if(n.at<=0){n.at=60+Math.random()*140;const r=Math.random();if(r<0.4){n.st='idle';n.vx=0}else if(r<0.7){n.st='walk';n.vx=n.spd;n.fr=true}else{n.st='walk';n.vx=-n.spd;n.fr=false}}
+  S.npcs.forEach(n=>{
+    if(!n.arrived)return; // arrival system handles unarrived NPCs
+    n.at--;if(n.at<=0){n.at=60+Math.random()*140;const r=Math.random();if(r<0.4){n.st='idle';n.vx=0}else if(r<0.7){n.st='walk';n.vx=n.spd;n.fr=true}else{n.st='walk';n.vx=-n.spd;n.fr=false}}
     if(n.type==='b'){n.jt--;if(n.jt<=0&&n.onF){n.vy=-6;n.onF=false;n.jt=180+Math.floor(Math.random()*180)}if(n.st==='walk')n.lp+=0.18}
     n.x+=n.vx;const elevL=ELEV_X-80,elevR=ELEV_X+80;if(n.x>elevL&&n.x<ELEV_X&&n.vx>0){n.x=elevL;n.vx=-n.vx;n.fr=false}if(n.x<elevR&&n.x>ELEV_X&&n.vx<0){n.x=elevR;n.vx=-n.vx;n.fr=true}n.y+=n.vy;n.vy+=GRAV;if(n.x<TL+30){n.x=TL+30;n.vx=Math.abs(n.vx);n.fr=true}if(n.x>TR-30){n.x=TR-30;n.vx=-Math.abs(n.vx);n.fr=false}
     n.onF=false;for(let f of S.floors){if(f.level<0)continue;if(n.vy>=0&&n.y<=f.y&&n.y+n.vy>=f.y){n.y=f.y;n.vy=0;n.onF=true;break}}
@@ -185,11 +350,20 @@ export function initGame(saveData){
 
   // Generate world + load save
   genWorld();
-  S.player.x=0;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
-  if(saveData){
-    if(loadGame()){showMsg('SAVE LOADED','Welcome back, builder.')}
+  if(saveData&&loadGame()){
+    S.player.x=ELEV_X;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
+    showMsg('SAVE LOADED','Welcome back, builder.');
+  } else {
+    S.player.x=TL-100;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
   }
-  recalc();
+  // Finalize arrivals for already-completed floors (post-load)
+  S.npcs.forEach(n=>{
+    if(S.buildout[n.floor].stage>=5){
+      n.arrived=true;n.arrState='done';
+      n.x=n.destX;n.y=TB-(n.floor*FH)-48;n.onF=true;n.vx=0;n.st='idle';
+    }
+  });
+  syncLitFloors();
   renderPanel();
 }
 

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { setSkyBlend } from './title-city.js';
 import { showArrivalText, hideArrivalText, showHomeBtn, hideHomeBtn, fadeOutUI, fadeInUI, hideExteriorRadio, hideMovementHints } from './title-ui.js';
-import { activateExterior, deactivateExterior } from './title-exterior.js';
+import { activateExterior, deactivateExterior, setBuiltHeight } from './title-exterior.js';
 import { setupRadio, disposeRadio } from '../radio-ui.js';
 
 /**
@@ -121,7 +121,36 @@ export function updateTransition(dt, orbitAngle) {
 
     if (t >= 1) {
       TRANSITION.phase = 4;
+
+      // Calculate highest built floor
+      const bo = TC.buildout || [];
+      let topBuilt = 0;
+      for (let fi = 0; fi < 10; fi++) if ((bo[fi] || 0) >= 1) topBuilt = fi + 1;
+
+      // Set player floor so applyPlayerLighting keeps built floors' windows visible
+      TC.playerFloor = Math.max(0, topBuilt - 1);
       _cityData.applyPlayerLighting();
+
+      // Set exterior built height — repositions roof plate, limits climbing/collision
+      setBuiltHeight(topBuilt);
+
+      // Hide beams + windows for ALL floors above the built range
+      for (let fi = Math.max(topBuilt, TRANSITION.targetFloor); fi >= topBuilt; fi--) {
+        if (fi < TC.floorMeshes.length) {
+          const fr = TC.floorMeshes[fi];
+          if (fr && fr.beam) fr.beam.visible = false;
+          _cityData.dissolveTowerFloor(fi);
+        }
+      }
+
+      // Adjust column height to match highest built floor
+      const adjVisH = baseH + Math.max(1, topBuilt) * fh;
+      _cityData.structColumns.forEach(c => {
+        c.scale.y = adjVisH / fullH;
+        c.position.y = adjVisH / 2;
+      });
+      TRANSITION.dissolveFloor = Math.max(0, topBuilt - 1);
+
       showArrivalText(_onEnterGame);
       showHomeBtn(() => { playReverseTransition(); });
       setupRadio('#ext-radio');
@@ -210,6 +239,9 @@ export function updateReverseTransition(dt, setZoom) {
       c.scale.y = 1;
       c.position.y = fullH / 2;
     });
+
+    // Restore roof and climbing to full tower height
+    setBuiltHeight(10);
 
     // Reset zoom
     if (setZoom) setZoom(260);

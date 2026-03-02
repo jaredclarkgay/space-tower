@@ -361,15 +361,14 @@ export async function initMusic(existingAudioCtx) {
     musicGain = new Tone.Gain(0).toDestination();
     initialized = true;
 
-    // Restore saved state, or default to Superman
+    // Restore saved state, or start on a random track
     const saved = _restoreMusicState();
     if (saved) {
       currentIndex = saved.trackIndex;
       volume = saved.volume;
       _pendingSeek = saved.position || 0;
     } else {
-      const supIdx = PLAYLIST.findIndex(t => t.name === 'Superman');
-      currentIndex = supIdx >= 0 ? supIdx : 0;
+      currentIndex = Math.floor(Math.random() * PLAYLIST.length);
     }
   } catch (e) {
     console.warn('Music init failed:', e);

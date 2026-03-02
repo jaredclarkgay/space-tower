@@ -21,10 +21,10 @@ const PLAYER = {
 };
 
 const MOVE_SPEED = 0.06;
-const JUMP_BASE = 0.10;
-const JUMP_MAX = 0.30;
-const CHARGE_MAX = 40;
-const GRAVITY = 0.006;
+const JUMP_BASE = 0.11;
+const JUMP_MAX = 0.46;
+const CHARGE_MAX = 80;
+const GRAVITY = 0.0035;
 const CLIMB_SPEED = 0.04;
 
 // Tower geometry — must match TC/BEAM_DEPTH in title-city.js
@@ -47,8 +47,12 @@ const COLUMNS = [
 ];
 const COL_GRAB_RADIUS = 0.5;
 
-// Roof height — solid steel plate at the top of the visible tower
+// Roof height — full tower constant (used as default/max)
 const ROOF_Y = BASE_H + (MAX_EXT_FLOOR + 1) * FLOOR_H;
+
+// Active built height — mutable, set by setBuiltHeight()
+let activeRoofY = ROOF_Y;
+let activeMaxFloor = MAX_EXT_FLOOR;
 
 let playerGroup = null;
 let carryBox = null;
@@ -65,16 +69,31 @@ const CLIMB_ORBIT_SPEED = 0.05;
 // ── Interaction prompt ──
 let promptEl = null;
 
+// ── Backward walk flag ──
+let walkingBackward = false;
+let wasBackward = false;
+
+// ── Player collision radius ──
+const PLAYER_R = 0.2;
+
+// ── Site object colliders [cx, cz, halfW, halfD] ──
+const SITE_COLLIDERS = [
+  [8, -4, 0.45, 0.45],       // porta-potty
+  [12, -1.5, 0.5, 0.4],      // generator
+  [1.5, 4.5, 0.35, 0.3],     // toolbox
+];
+
 // ── Jump flip state ──
 let flipCommitted = false;
+let flipDouble = false;
 let flipInitVel = 0;      // initial upward velocity at jump launch
 let jumpStartY = 0;
 // Max jump height: v₀²/(2g) where v₀=JUMP_MAX, g=GRAVITY → 0.30²/(2*0.006) = 7.5
 const MAX_JUMP_HEIGHT = (JUMP_MAX * JUMP_MAX) / (2 * GRAVITY);
 const FLIP_THRESHOLD = MAX_JUMP_HEIGHT * 0.5;
 
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function easeInOutSine(t) {
+  return -(Math.cos(Math.PI * t) - 1) / 2;
 }
 
 // ── Build player character ──
@@ -221,7 +240,7 @@ export function buildConstructionSite(scene) {
   roofPlate.position.y = ROOF_Y;
   siteGroup.add(roofPlate);
 
-  siteGroup.userData = { dropRing };
+  siteGroup.userData = { dropRing, roofPlate };
 
   scene.add(siteGroup);
   return siteGroup;
@@ -241,44 +260,7 @@ export function setupExteriorInput() {
   _keyupHandler = (e) => {
     keys[e.code] = false;
     if (e.code === 'Space' && PLAYER.active) {
-      if (PLAYER.isClimbing) {
-        // Jump off column at current orbit position
-        PLAYER.isClimbing = false;
-        PLAYER.onGround = false;
-        climbCooldown = 15;
-        const pp = PLAYER.pos;
-        const [cx, cz] = COLUMNS[climbCol] || [0, 0];
-
-        // If at a beam height, step onto the beam (inward from orbit)
-        for (let fi = 0; fi <= MAX_EXT_FLOOR; fi++) {
-          const surfY = BASE_H + fi * FLOOR_H;
-          if (Math.abs(pp.y - surfY) < 0.25) {
-            pp.y = surfY;
-            PLAYER.onGround = true;
-            pp.x = cx - Math.sin(climbAngle) * 0.5;
-            pp.z = cz - Math.cos(climbAngle) * 0.5;
-            PLAYER.vel.set(0, 0, 0);
-            climbCol = -1;
-            return;
-          }
-        }
-        // If at roof height, step onto roof
-        if (Math.abs(pp.y - ROOF_Y) < 0.25) {
-          pp.y = ROOF_Y;
-          PLAYER.onGround = true;
-          pp.x = cx - Math.sin(climbAngle) * 0.5;
-          pp.z = cz - Math.cos(climbAngle) * 0.5;
-          PLAYER.vel.set(0, 0, 0);
-          climbCol = -1;
-          return;
-        }
-
-        // Not at beam — jump outward at orbit angle
-        PLAYER.vel.x = Math.sin(climbAngle) * 0.08;
-        PLAYER.vel.z = Math.cos(climbAngle) * 0.08;
-        PLAYER.vel.y = JUMP_BASE * 0.7;
-        climbCol = -1;
-      } else if (PLAYER.isCharging && PLAYER.onGround) {
+      if (PLAYER.isCharging && PLAYER.onGround) {
         const t = PLAYER.chargeT / CHARGE_MAX;
         PLAYER.vel.y = JUMP_BASE + (JUMP_MAX - JUMP_BASE) * t;
         PLAYER.onGround = false;
@@ -288,6 +270,7 @@ export function setupExteriorInput() {
         jumpStartY = PLAYER.pos.y;
         flipInitVel = PLAYER.vel.y;
         flipCommitted = t >= 0.35;
+        flipDouble = t >= 0.9;
       }
     }
   };
@@ -360,19 +343,19 @@ function _checkTowerCollision() {
 
   const prevY = pp.y - pv.y;
 
-  // Roof plate — solid, full tower footprint
+  // Roof plate — solid, full tower footprint (at active built height)
   if (Math.abs(pp.x) <= OUTER_EDGE && Math.abs(pp.z) <= OUTER_EDGE) {
-    if (prevY >= ROOF_Y - 0.1 && pp.y <= ROOF_Y) {
-      pp.y = ROOF_Y;
+    if (prevY >= activeRoofY - 0.1 && pp.y <= activeRoofY) {
+      pp.y = activeRoofY;
       pv.y = 0;
       PLAYER.onGround = true;
       return;
     }
   }
 
-  // Beam floors (fi >= 1) — only on beam perimeter
+  // Beam floors (fi >= 1) — only on beam perimeter, limited to built floors
   if (_isOnBeam(pp.x, pp.z)) {
-    for (let fi = MAX_EXT_FLOOR; fi >= 1; fi--) {
+    for (let fi = activeMaxFloor; fi >= 1; fi--) {
       const surfY = BASE_H + fi * FLOOR_H;
       if (prevY >= surfY - 0.1 && pp.y <= surfY) {
         pp.y = surfY;
@@ -401,16 +384,17 @@ function _checkFoundationWalls() {
 
   if (pp.y >= BASE_H - 0.01) return;
 
-  if (Math.abs(pp.x) < FOUNDATION_HALF && Math.abs(pp.z) < FOUNDATION_HALF) {
-    const dxP = FOUNDATION_HALF - pp.x;
-    const dxN = pp.x + FOUNDATION_HALF;
-    const dzP = FOUNDATION_HALF - pp.z;
-    const dzN = pp.z + FOUNDATION_HALF;
+  const fh = FOUNDATION_HALF + PLAYER_R;
+  if (Math.abs(pp.x) < fh && Math.abs(pp.z) < fh) {
+    const dxP = fh - pp.x;
+    const dxN = pp.x + fh;
+    const dzP = fh - pp.z;
+    const dzN = pp.z + fh;
     const minD = Math.min(dxP, dxN, dzP, dzN);
-    if (minD === dxP) { pp.x = FOUNDATION_HALF + 0.01; pv.x = 0; }
-    else if (minD === dxN) { pp.x = -FOUNDATION_HALF - 0.01; pv.x = 0; }
-    else if (minD === dzP) { pp.z = FOUNDATION_HALF + 0.01; pv.z = 0; }
-    else { pp.z = -FOUNDATION_HALF - 0.01; pv.z = 0; }
+    if (minD === dxP) { pp.x = fh + 0.01; pv.x = 0; }
+    else if (minD === dxN) { pp.x = -fh - 0.01; pv.x = 0; }
+    else if (minD === dzP) { pp.z = fh + 0.01; pv.z = 0; }
+    else { pp.z = -fh - 0.01; pv.z = 0; }
   }
 }
 
@@ -435,12 +419,29 @@ function _checkColumnCollision() {
   }
 }
 
+// Site object collision — push player out of construction site objects
+function _checkSiteCollision() {
+  const pp = PLAYER.pos;
+  const pv = PLAYER.vel;
+  if (pp.y > 1.5) return; // only at ground level
+  for (const [cx, cz, hw, hd] of SITE_COLLIDERS) {
+    const dx = pp.x - cx;
+    const dz = pp.z - cz;
+    const overX = (hw + PLAYER_R) - Math.abs(dx);
+    const overZ = (hd + PLAYER_R) - Math.abs(dz);
+    if (overX > 0 && overZ > 0) {
+      if (overX < overZ) { pp.x = cx + Math.sign(dx || 1) * (hw + PLAYER_R); pv.x = 0; }
+      else { pp.z = cz + Math.sign(dz || 1) * (hd + PLAYER_R); pv.z = 0; }
+    }
+  }
+}
+
 // Climb: grab corner columns — walk into column to start climbing
 function _checkTowerClimb() {
   if (PLAYER.isClimbing || climbCooldown > 0) return;
 
   const pp = PLAYER.pos;
-  if (pp.y > ROOF_Y) return;
+  if (pp.y > activeRoofY) return;
 
   for (let ci = 0; ci < COLUMNS.length; ci++) {
     const [cx, cz] = COLUMNS[ci];
@@ -495,40 +496,25 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
 
   if (climbCooldown > 0) climbCooldown--;
 
-  // ── Drop-through: press Down while standing on a beam ──
-  if (PLAYER.onGround && pp.y > BASE_H + 0.5 && (keys['KeyS'] || keys['ArrowDown'])) {
-    if (_isOnBeam(pp.x, pp.z)) {
-      PLAYER.onGround = false;
-      pp.y -= 0.15; // push below current beam surface
-    }
-  }
-
-  // ── Input ──
+  // ── Input (S/Down = backward from facing, not camera-relative) ──
   let inputFwd = 0, inputRight = 0;
   if (keys['KeyW'] || keys['ArrowUp']) inputFwd = 1;
-  if (keys['KeyS'] || keys['ArrowDown']) inputFwd = -1;
   if (keys['KeyA'] || keys['ArrowLeft']) inputRight = -1;
   if (keys['KeyD'] || keys['ArrowRight']) inputRight = 1;
+  const hasBack = keys['KeyS'] || keys['ArrowDown'];
 
   const inputLen = Math.sqrt(inputFwd * inputFwd + inputRight * inputRight);
+  walkingBackward = false;
 
-  if (PLAYER.isClimbing && climbCol >= 0) {
-    // ── Climbing a column: W/S = up/down, A/D = orbit around column ──
-    pv.x = 0; pv.z = 0; pv.y = 0;
-    const [cx, cz] = COLUMNS[climbCol];
-    if (keys['KeyW'] || keys['ArrowUp']) pp.y += CLIMB_SPEED;
-    if (keys['KeyS'] || keys['ArrowDown']) pp.y -= CLIMB_SPEED;
-    if (keys['KeyA'] || keys['ArrowLeft']) climbAngle -= CLIMB_ORBIT_SPEED;
-    if (keys['KeyD'] || keys['ArrowRight']) climbAngle += CLIMB_ORBIT_SPEED;
-    // Reposition around column center
-    pp.x = cx + Math.sin(climbAngle) * CLIMB_DIST;
-    pp.z = cz + Math.cos(climbAngle) * CLIMB_DIST;
-    if (pp.y > ROOF_Y) pp.y = ROOF_Y;
-    if (pp.y <= 0) { pp.y = 0; PLAYER.isClimbing = false; PLAYER.onGround = true; climbCol = -1; }
-  } else if (inputLen > 0) {
-    // ── Camera-relative movement ──
-    const nf = inputFwd / inputLen;
-    const nr = inputRight / inputLen;
+  if (hasBack && !inputFwd) {
+    // ── Backward walk: camera-relative (reverse + strafe), model stays locked ──
+    walkingBackward = true;
+    wasBackward = true;
+    const bf = -1;
+    const br = inputRight;
+    const bLen = Math.sqrt(bf * bf + br * br);
+    const nf = bf / bLen;
+    const nr = br / bLen;
     const fLen = Math.sqrt(camFwdX * camFwdX + camFwdZ * camFwdZ) || 1;
     const fX = camFwdX / fLen;
     const fZ = camFwdZ / fLen;
@@ -540,21 +526,44 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     pv.x = worldX * spd;
     pv.z = worldZ * spd;
     PLAYER.walkCycle += 0.15;
+  } else if (inputLen > 0) {
+    // ── Camera-relative movement (W, A, D) ──
+    wasBackward = false;
+    const nf = inputFwd / inputLen;
+    const nr = inputRight / inputLen;
+    const fLen = Math.sqrt(camFwdX * camFwdX + camFwdZ * camFwdZ) || 1;
+    const fX = camFwdX / fLen;
+    const fZ = camFwdZ / fLen;
+    const rX = -fZ;
+    const rZ = fX;
+    const worldX = rX * nr + fX * nf;
+    const worldZ = rZ * nr + fZ * nf;
+    const spd2 = PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED;
+    pv.x = worldX * spd2;
+    pv.z = worldZ * spd2;
+    PLAYER.walkCycle += 0.15;
   } else {
-    pv.x *= 0.8;
-    pv.z *= 0.8;
+    if (wasBackward) {
+      // Kill residual backward velocity so camera doesn't whip
+      pv.x = 0;
+      pv.z = 0;
+      wasBackward = false;
+    } else {
+      pv.x *= 0.8;
+      pv.z *= 0.8;
+    }
     if (Math.abs(pv.x) < 0.001) pv.x = 0;
     if (Math.abs(pv.z) < 0.001) pv.z = 0;
   }
 
   // ── Jump charge ──
-  if (keys['Space'] && PLAYER.onGround && !PLAYER.isClimbing) {
+  if (keys['Space'] && PLAYER.onGround) {
     PLAYER.isCharging = true;
     PLAYER.chargeT = Math.min(PLAYER.chargeT + 1, CHARGE_MAX);
   }
 
   // ── Gravity ──
-  if (!PLAYER.onGround && !PLAYER.isClimbing) pv.y -= GRAVITY;
+  if (!PLAYER.onGround) pv.y -= GRAVITY;
 
   // ── Apply velocity ──
   pp.x += pv.x;
@@ -565,11 +574,11 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   _checkTowerCollision();
   _checkFoundationWalls();
   _checkColumnCollision();
-  if (!PLAYER.isClimbing) _checkTowerClimb();
+  _checkSiteCollision();
 
   // ── Walk off edge ──
   if (PLAYER.onGround && pp.y > 0.1) {
-    if (Math.abs(pp.y - ROOF_Y) < 0.1) {
+    if (Math.abs(pp.y - activeRoofY) < 0.1) {
       // On roof plate — check still within tower footprint
       if (Math.abs(pp.x) > OUTER_EDGE || Math.abs(pp.z) > OUTER_EDGE) PLAYER.onGround = false;
     } else if (pp.y >= BASE_H + FLOOR_H - 0.1) {
@@ -592,18 +601,7 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   const walking = Math.abs(pv.x) > 0.005 || Math.abs(pv.z) > 0.005;
   const ud = playerGroup.userData;
 
-  if (PLAYER.isClimbing) {
-    ud.torso.position.y = 0.52;
-    // Arms reaching up — alternating hand-over-hand
-    const climbPhase = Math.sin(pp.y * 3);
-    ud.leftArm.rotation.x = -2.6 + climbPhase * 0.3;   // nearly vertical up
-    ud.rightArm.rotation.x = -2.6 - climbPhase * 0.3;   // alternating
-    ud.leftArm.rotation.z = -0.15;  // slight inward angle toward column
-    ud.rightArm.rotation.z = 0.15;
-    ud.leftLeg.rotation.x = Math.sin(pp.y * 3) * 0.35;
-    ud.rightLeg.rotation.x = -Math.sin(pp.y * 3) * 0.35;
-    ud.torso.rotation.z = 0;
-  } else if (PLAYER.isCharging) {
+  if (PLAYER.isCharging) {
     const squat = PLAYER.chargeT / CHARGE_MAX * 0.15;
     ud.torso.position.y = 0.52 - squat;
     ud.leftLeg.rotation.x = squat * 2;
@@ -636,30 +634,40 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
 
   // ── Position + rotation ──
   playerGroup.position.copy(pp);
-  if (walking && !PLAYER.isClimbing) {
-    const targetRot = Math.atan2(pv.x, pv.z);
+  if (walking) {
+    // Forward: face velocity direction. Backward: face opposite of velocity (= camera forward)
+    const targetRot = walkingBackward
+      ? Math.atan2(-pv.x, -pv.z)
+      : Math.atan2(pv.x, pv.z);
     let delta = targetRot - playerGroup.rotation.y;
     while (delta > Math.PI) delta -= 2 * Math.PI;
     while (delta < -Math.PI) delta += 2 * Math.PI;
     playerGroup.rotation.y += delta * 0.15;
   }
-  if (PLAYER.isClimbing && climbCol >= 0) {
-    // Face inward toward the column
-    playerGroup.rotation.y = climbAngle + Math.PI;
-  }
 
-  // ── Jump flip (committed at launch if charge >= 35%) ──
+  // ── Jump flip (committed at launch if charge >= 35%) — double flip with tuck ──
   if (flipCommitted && !PLAYER.onGround) {
-    // Velocity-based progress: v₀ → 0 (peak) → -v₀ (landing)
-    // Maps to 0 → 0.5 → 1.0 smoothly across the entire arc
     const t = (flipInitVel - PLAYER.vel.y) / (2 * flipInitVel);
     const clamped = Math.max(0, Math.min(1, t));
-    playerGroup.rotation.x = easeInOutCubic(clamped) * Math.PI * 2;
+    const eased = easeInOutSine(clamped);
+    // 360° single flip, or 720° double if charge >= 90%
+    playerGroup.rotation.x = eased * (flipDouble ? Math.PI * 4 : Math.PI * 2);
+    // Tuck: arms/legs pull in at peak (t≈0.5), spread at start/end
+    const tuck = Math.sin(clamped * Math.PI); // 0→1→0 over the arc
+    ud.leftArm.rotation.x = -2.2 * tuck;
+    ud.rightArm.rotation.x = -2.2 * tuck;
+    ud.leftArm.rotation.z = -0.4 * tuck;
+    ud.rightArm.rotation.z = 0.4 * tuck;
+    ud.leftLeg.rotation.x = -1.8 * tuck;
+    ud.rightLeg.rotation.x = -1.8 * tuck;
+    // Slight torso compression at peak
+    ud.torso.position.y = 0.52 - 0.06 * tuck;
   }
 
   if (PLAYER.onGround && (flipCommitted || playerGroup.rotation.x !== 0)) {
     playerGroup.rotation.x = 0;
     flipCommitted = false;
+    flipDouble = false;
   }
 
   _updatePrompt();
@@ -690,5 +698,15 @@ export function deactivateExterior() {
   if (promptEl) { promptEl.remove(); promptEl = null; }
 }
 
+export function setBuiltHeight(topBuilt) {
+  activeMaxFloor = Math.max(0, topBuilt - 1);
+  activeRoofY = BASE_H + Math.max(1, topBuilt) * FLOOR_H;
+  // Reposition roof plate to match built height
+  if (siteGroup && siteGroup.userData.roofPlate) {
+    siteGroup.userData.roofPlate.position.y = activeRoofY;
+  }
+}
+
 export function isExteriorActive() { return PLAYER.active; }
+export function isWalkingBackward() { return walkingBackward; }
 export function getPlayerGroup() { return playerGroup; }

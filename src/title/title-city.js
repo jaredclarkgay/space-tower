@@ -47,13 +47,17 @@ const towerFlickerList = []; // { idx, baseBright, speed, phase, amt }
 let bldgHoverMesh = null;
 const bldgWinData = []; // { idx, worldPos, baseBright }
 
+// ── Building blink lights (red aviation LEDs on tall buildings) ──
+let bldgBlinkMesh = null;
+const bldgBlinkData = []; // { idx, phase }
+
 // ── Temp objects (reused) ──
 const _obj = new THREE.Object3D();
 const _zeroScale = new THREE.Matrix4().makeScale(0, 0, 0);
 const _v3 = new THREE.Vector3();
 const _c = new THREE.Color();
 
-export function buildCityScene(scene, litFloors) {
+export function buildCityScene(scene, buildout) {
   // Reset module-level arrays to prevent double-population on re-entry
   extColumns.length = 0;
   structColumns.length = 0;
@@ -68,6 +72,9 @@ export function buildCityScene(scene, litFloors) {
   towerFlickerList.length = 0;
   bldgHoverMesh = null;
   bldgWinData.length = 0;
+  bldgBlinkMesh = null;
+  bldgBlinkData.length = 0;
+  TC.buildout = buildout || [];
   TC.litFloors = []; TC.group = null; TC.floorMeshes = [];
 
   buildGround(scene);
@@ -88,6 +95,7 @@ export function buildCityScene(scene, litFloors) {
     const dt = 1 / 60;
     updateStars(t);
     updateTowerWindowFlicker(t);
+    updateBuildingBlink(t);
     if (cableMesh && cableMesh.visible) {
       const p = cableMesh.geometry.attributes.position.array;
       const sw = Math.sin(t * 0.35) * 1.5;
@@ -140,11 +148,15 @@ function buildTower(scene) {
   TC.group = new THREE.Group();
   seed = 999;
 
-  // Determine lit floors
+  // Determine lit floors — first 10 from buildout, rest random for title screen
   TC.litFloors = [];
   for (let i = 0; i < nf; i++) {
-    const ch = i < 12 ? 0.9 : i < 25 ? 0.75 : i < 40 ? 0.5 : i < 55 ? 0.25 : 0.05;
-    TC.litFloors.push(sr() < ch);
+    if (i < 10) {
+      TC.litFloors.push((TC.buildout[i] || 0) >= 2);
+    } else {
+      const ch = i < 12 ? 0.9 : i < 25 ? 0.75 : i < 40 ? 0.5 : i < 55 ? 0.25 : 0.05;
+      TC.litFloors.push(sr() < ch);
+    }
   }
 
   // Foundation
@@ -318,6 +330,7 @@ function buildBuildings(scene) {
   const count = 240;
   const staticGeos = [];
   const winInstances = []; // { px, py, pz, nx, nz, baseBright }
+  const blinkInstances = []; // { px, py, pz, phase }
 
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 + (sr() - 0.5) * 0.04;
@@ -348,11 +361,20 @@ function buildBuildings(scene) {
     }
 
     // Rooftop → merge
-    if (sr() > 0.75) {
-      const rtH = sr() * 4 + 2;
-      const rtGeo = new THREE.BoxGeometry(bw * 0.3, rtH, bd * 0.3);
-      rtGeo.translate(bx, bh + rtH / 2, bz);
+    const hasRooftop = sr() > 0.75;
+    let rooftopH = 0;
+    if (hasRooftop) {
+      rooftopH = sr() * 4 + 2;
+      const rtGeo = new THREE.BoxGeometry(bw * 0.3, rooftopH, bd * 0.3);
+      rtGeo.translate(bx, bh + rooftopH / 2, bz);
       staticGeos.push(rtGeo);
+    }
+
+    // Blinking aviation LED on tallest buildings
+    const blinkPhase = (Math.abs(bx * 37.1 + bz * 71.3) % 100) / 100 * Math.PI * 2;
+    if (bh > 38) {
+      const topY = hasRooftop ? bh + rooftopH + 0.3 : bh + 0.3;
+      blinkInstances.push({ px: bx, py: topY, pz: bz, phase: blinkPhase });
     }
 
     // 4-face windows → collect ALL for InstancedMesh (maintain RNG pattern)
@@ -373,7 +395,7 @@ function buildBuildings(scene) {
           if (sr() > 0.35) continue;
           const isLit = sr() < 0.25;
           const baseBright = isLit ? (sr() * 0.3 + 0.2) : 0;
-          sr(); sr(); sr(); // consume flickerSpeed, flickerPhase, flickerAmt
+          sr(); sr(); sr(); // consume RNG to maintain sequence stability
 
           const lx = -face.width / 2 + face.width * (c + 0.5) / face.cols;
           const ly = 2 + r * 4;
@@ -420,6 +442,30 @@ function buildBuildings(scene) {
     bldgHoverMesh.instanceMatrix.needsUpdate = true;
     if (bldgHoverMesh.instanceColor) bldgHoverMesh.instanceColor.needsUpdate = true;
     scene.add(bldgHoverMesh);
+  }
+
+  // Blinking red aviation LEDs on tall buildings
+  if (blinkInstances.length) {
+    const ledGeo = new THREE.SphereGeometry(0.3, 6, 6);
+    bldgBlinkMesh = new THREE.InstancedMesh(ledGeo, new THREE.MeshBasicMaterial({
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+    }), blinkInstances.length);
+    bldgBlinkMesh.frustumCulled = false;
+
+    for (let i = 0; i < blinkInstances.length; i++) {
+      const bl = blinkInstances[i];
+      _obj.position.set(bl.px, bl.py, bl.pz);
+      _obj.rotation.set(0, 0, 0);
+      _obj.updateMatrix();
+      bldgBlinkMesh.setMatrixAt(i, _obj.matrix);
+      _c.setRGB(0.9, 0.1, 0.1);
+      bldgBlinkMesh.setColorAt(i, _c);
+      bldgBlinkData.push({ idx: i, phase: bl.phase });
+    }
+
+    bldgBlinkMesh.instanceMatrix.needsUpdate = true;
+    if (bldgBlinkMesh.instanceColor) bldgBlinkMesh.instanceColor.needsUpdate = true;
+    scene.add(bldgBlinkMesh);
   }
 }
 
@@ -505,6 +551,21 @@ function updateTowerWindowFlicker(t) {
     changed = true;
   }
   if (changed) towerWinMesh.instanceColor.needsUpdate = true;
+}
+
+// ═══ BUILDING BLINK LIGHTS (red aviation LEDs) ═══
+function updateBuildingBlink(t) {
+  if (!bldgBlinkMesh || !bldgBlinkMesh.instanceColor) return;
+  const arr = bldgBlinkMesh.instanceColor.array;
+  for (const bl of bldgBlinkData) {
+    // Alternate bright/dim every ~900ms, phase-shifted per building (matches 2D)
+    const blink = Math.sin(t * 3.5 + bl.phase) > 0;
+    const bright = blink ? 0.9 : 0.08;
+    arr[bl.idx * 3] = bright;
+    arr[bl.idx * 3 + 1] = bright * 0.12;
+    arr[bl.idx * 3 + 2] = bright * 0.12;
+  }
+  bldgBlinkMesh.instanceColor.needsUpdate = true;
 }
 
 // ═══ CRANE ═══
@@ -628,7 +689,7 @@ function applyPlayerLighting() {
 }
 
 // ═══ HOVER SYSTEMS (called from main loop) ═══
-export function updateBuildingHover(camera, mouseX, mouseY, skip) {
+export function updateBuildingHover(camera, mouseX, mouseY, skip, t) {
   if (skip || !bldgHoverMesh || !bldgHoverMesh.instanceColor) return;
   const hw = innerWidth / 2, hh = innerHeight / 2;
   const radius = 120;
@@ -641,7 +702,14 @@ export function updateBuildingHover(camera, mouseX, mouseY, skip) {
       const dist = Math.sqrt((sx - mouseX) ** 2 + (sy - mouseY) ** 2);
       glow = dist < radius ? (1 - dist / radius) * 0.5 : 0;
     }
-    const bright = Math.max(wd.baseBright, glow);
+    // Shimmer: lit windows pulse on/off via half-wave sin (visible even against bright daytime sky)
+    let shimmer = wd.baseBright;
+    if (wd.baseBright > 0 && t !== undefined) {
+      const speed = 0.5 + (Math.abs(wd.worldPos.x * 7.3 + wd.worldPos.z * 13.7) % 3.0);
+      const phase = Math.abs(wd.worldPos.x * 0.37 + wd.worldPos.y * 1.13 + wd.worldPos.z * 0.71) % (Math.PI * 2);
+      shimmer = wd.baseBright * Math.max(0, Math.sin(t * speed + phase));
+    }
+    const bright = Math.max(shimmer, glow);
     arr[wd.idx * 3] = 0.9 * bright;
     arr[wd.idx * 3 + 1] = 0.7 * bright;
     arr[wd.idx * 3 + 2] = 0.4 * bright;
