@@ -58,6 +58,31 @@ export function sndGrow(){playTone(220,0.15,'triangle',0.15);playTone(330,0.2,'s
 export function sndData(){playTone(800,0.04,'square',0.1);playTone(1000,0.04,'square',0.08,0.05);playTone(1200,0.04,'square',0.08,0.1);playTone(900,0.04,'square',0.06,0.15);playTone(1100,0.06,'square',0.1,0.2)}
 export function sndAwe(){playTone(220,0.5,'sine',0.2);playTone(330,0.5,'sine',0.15,0.2);playTone(440,0.6,'sine',0.2,0.4);playTone(550,0.8,'sine',0.15,0.6)}
 
+// Floor 8 sounds
+export function sndSlam(){playNoise(0.08,0.15);playTone(180,0.1,'square',0.2);playTone(120,0.15,'square',0.15,0.05)}
+export function sndTick(){playTone(1000,0.03,'sine',0.15)}
+export function sndVictory(){playTone(440,0.15,'sine',0.25);playTone(554,0.15,'sine',0.2,0.12);playTone(660,0.15,'sine',0.25,0.24);playTone(880,0.3,'sine',0.3,0.36)}
+export function sndDefeat(){playTone(440,0.2,'sawtooth',0.15);playTone(370,0.25,'sawtooth',0.12,0.15);playTone(330,0.35,'sawtooth',0.1,0.3)}
+export function sndBell(){playTone(800,0.3,'sine',0.2);playTone(1200,0.2,'sine',0.15,0.05)}
+// Keeper sounds
+export function sndKeeper(){playTone(110,0.4,'sine',0.2);playTone(165,0.3,'sine',0.15,0.15);playTone(220,0.5,'sine',0.2,0.3)}
+export function sndKeeperTick(){playTone(300+Math.random()*100,0.02,'triangle',0.05)}
+// RGB door ambient hum
+let _doorOsc=null,_doorGain=null;
+export function sndDoorHumStart(){
+  if(!audioCtx||_doorOsc)return;
+  _doorOsc=audioCtx.createOscillator();_doorGain=audioCtx.createGain();
+  _doorOsc.type='sine';_doorOsc.frequency.value=80;
+  _doorGain.gain.value=0;_doorGain.connect(masterGain);_doorOsc.connect(_doorGain);
+  _doorOsc.start();_doorGain.gain.setTargetAtTime(0.06,audioCtx.currentTime,0.5);
+}
+export function sndDoorHumStop(){
+  if(!_doorGain||!_doorOsc)return;
+  _doorGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.3);
+  const o=_doorOsc;setTimeout(()=>{try{o.stop()}catch(e){}},1000);
+  _doorOsc=null;_doorGain=null;
+}
+
 // Ambient drone — altitude-aware, continuous
 let ambOsc1=null,ambOsc2=null,ambGain=null,ambFilt=null;
 function startAmbient(){

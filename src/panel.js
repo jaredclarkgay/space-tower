@@ -11,6 +11,44 @@ export function setupPanel(){
   bpContent=document.getElementById('bp-content');
   document.getElementById('fn-prev').addEventListener('click',()=>{if(S.panelFloor>0){S.panelFloor--;S.panelDirty=true}});
   document.getElementById('fn-next').addEventListener('click',()=>{if(S.panelFloor<NF-1){S.panelFloor++;S.panelDirty=true}});
+
+  // Delegated click handler for all dynamic panel content
+  bpContent.addEventListener('click',(e)=>{
+    // Floor row navigation
+    const fpRow=e.target.closest('.fp-row');
+    if(fpRow){
+      S.panelFloor=parseInt(fpRow.dataset.fi);S.panelDirty=true;renderPanel();
+      return;
+    }
+
+    // Module placement
+    const modCard=e.target.closest('.mod-card');
+    if(modCard){
+      const mfi=parseInt(modCard.dataset.fi),mid=modCard.dataset.id;
+      const mod=FD[mfi].mods.find(m=>m.id===mid);
+      if(!mod||!canAfford(mod.cost))return;
+      // Find first empty buildable block
+      for(let bi=0;bi<BPF;bi++){
+        if(!isBuildable(bi))continue;
+        if(S.modules[mfi][bi])continue;
+        placeModule(mfi,bi,mod);
+        renderPanel();
+        return;
+      }
+      return;
+    }
+
+    // Module selling (block team modules from Floor 8)
+    const modPlaced=e.target.closest('.mod-placed');
+    if(modPlaced){
+      const mfi=parseInt(modPlaced.dataset.fi),mbi=parseInt(modPlaced.dataset.bi);
+      const mod=S.modules[mfi]&&S.modules[mfi][mbi];
+      if(mod&&mod.team)return; // can't sell Floor 8 game modules
+      sellModule(mfi,mbi);
+      renderPanel();
+      return;
+    }
+  });
 }
 
 export function renderPanel(){
@@ -62,7 +100,7 @@ export function renderPanel(){
       h+=`<div class="mod-placed" data-fi="${fi}" data-bi="${bi}" style="display:flex;align-items:center;gap:6px;padding:3px 6px;margin:2px 0;border-radius:3px;cursor:pointer;background:rgba(255,255,255,0.04)">`;
       h+=`<span style="font-size:14px">${mod.ic}</span>`;
       h+=`<span style="font-size:10px;flex:1;opacity:0.7">${mod.nm}</span>`;
-      h+=`<span style="font-size:9px;color:#ff6b6b;opacity:0.6">SELL $${mod.sell}</span>`;
+      h+=mod.team?`<span style="font-size:9px;color:${mod.team==='b'?'#FF6600':'#4060a0'};opacity:0.6">${mod.team==='b'?'BUILDER':'SUIT'}</span>`:`<span style="font-size:9px;color:#ff6b6b;opacity:0.6">SELL $${mod.sell}</span>`;
       h+=`</div>`;
     }
     if(!hasInstalled)h+=`<div style="text-align:center;font-size:9px;opacity:0.25;margin:4px 0">No modules installed</div>`;
@@ -120,37 +158,4 @@ export function renderPanel(){
   }
 
   bpContent.innerHTML=h;
-
-  // Click handlers for floor nav
-  bpContent.querySelectorAll('.fp-row').forEach(el=>{
-    el.addEventListener('click',()=>{
-      S.panelFloor=parseInt(el.dataset.fi);S.panelDirty=true;renderPanel();
-    });
-  });
-
-  // Click handlers for module placement
-  bpContent.querySelectorAll('.mod-card').forEach(el=>{
-    el.addEventListener('click',()=>{
-      const mfi=parseInt(el.dataset.fi),mid=el.dataset.id;
-      const mod=FD[mfi].mods.find(m=>m.id===mid);
-      if(!mod||!canAfford(mod.cost))return;
-      // Find first empty buildable block
-      for(let bi=0;bi<BPF;bi++){
-        if(!isBuildable(bi))continue;
-        if(S.modules[mfi][bi])continue;
-        placeModule(mfi,bi,mod);
-        renderPanel();
-        return;
-      }
-    });
-  });
-
-  // Click handlers for module selling
-  bpContent.querySelectorAll('.mod-placed').forEach(el=>{
-    el.addEventListener('click',()=>{
-      const mfi=parseInt(el.dataset.fi),mbi=parseInt(el.dataset.bi);
-      sellModule(mfi,mbi);
-      renderPanel();
-    });
-  });
 }

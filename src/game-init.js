@@ -1,6 +1,6 @@
 'use strict';
 import { S, syncLitFloors, cZoom, tZoom, setCZoom, setTZoom, getActiveBuildFloor } from './state.js';
-import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF, BPF } from './constants.js';
+import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF, BPF, PG } from './constants.js';
 import { FD } from './floors.js';
 import { CASUAL_TOPS_M } from './npcs.js';
 import { initCanvas, draw, showMsg, getInter, nearSuit, spawnParticles, triggerShake, triggerFlash } from './render.js';
@@ -9,9 +9,11 @@ import { setupPanel, renderPanel } from './panel.js';
 import { genWorld } from './world.js';
 import { loadGame, autoSave } from './save.js';
 import { setupCompendium, isCompendiumOpen } from './compendium.js';
-import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, sndBuild, sndTile, sndWhoosh, sndChime, sndBoom, sndGrow, sndData, sndAwe, soundOn, toggleSound, getAudioCtx } from './sound.js';
+import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, sndBuild, sndTile, sndWhoosh, sndChime, sndBoom, sndGrow, sndData, sndAwe, soundOn, toggleSound, getAudioCtx, sndDoorHumStart, sndDoorHumStop } from './sound.js';
 import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js';
 import { setupRadio } from './radio-ui.js';
+import { checkFloor8Trigger, updateFloor8, tryPlaceBuilderModule, checkRematchBell, startRematch, getFloor8State, isFloor8Frozen, isFloor8Active } from './floor8-game.js';
+import { isKeeperProximity, startKeeperZoom, endKeeperZoom, updateKeeper, advanceKeeperDialogue, getZoomState } from './keeper.js';
 
 // ═══ REAL-TIME ACCUMULATORS (frame-rate independent) ═══
 let _lastFrameTime = 0;
@@ -21,6 +23,7 @@ const SAVE_INTERVAL = 60000;
 // ═══ DOOR EXIT ═══
 let _exitDoorCheck = null;
 let _simStartTime = 0;
+let _keeperDebounce = false;
 
 // ═══ ELEVATOR PANEL ═══
 let elevPanel, elevFloors, fpElRef;
@@ -238,6 +241,9 @@ function update(){
       for(let bi=0;bi<BPF;bi++){if(rt===bi*10)sndTile(bi)}
     }
   }
+  // Floor 8 + Keeper updates
+  checkFloor8Trigger();updateFloor8();
+  updateKeeper();
   const p=S.player,k=S.keys,inter=getInter();
   S.frame++;
   const zLerp=(p.isChg||p.isDrp)?0.04:0.15;
@@ -251,7 +257,23 @@ function update(){
   const frameNow=performance.now(),frameDt=_lastFrameTime?frameNow-_lastFrameTime:16;_lastFrameTime=frameNow;
   if(S.jp['KeyF']){const spEl=document.getElementById('sp');if(p.suit){p.suit=false;spEl.style.display='none'}else{const s=nearSuit();if(s){s.taken=true;p.suit=true;p.suitC=pk(CASUAL_TOPS_M);spEl.style.display='block'}}}
   _saveAcc+=frameDt;if(_saveAcc>=SAVE_INTERVAL){_saveAcc-=SAVE_INTERVAL;autoSave()}
-  if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()){
+  // Floor 8 E handler (before normal interactions)
+  const _f8s=getFloor8State();
+  if(_f8s.phase==='PLAYING'&&p.cf===7&&k['KeyE']&&!S.iLock){tryPlaceBuilderModule();S.iLock=true}
+  if(k['KeyE']&&!S.iLock&&checkRematchBell()){startRematch();S.iLock=true}
+  // Keeper E/Escape handler
+  if(S.keeper.active){
+    if(k['KeyE']&&!S.iLock){advanceKeeperDialogue();S.iLock=true}
+    if(!k['KeyE'])S.iLock=false;
+    if(S.jp['Escape']){endKeeperZoom()}
+  }
+  // Keeper proximity auto-trigger (debounce: must leave proximity before re-triggering)
+  if(!S.keeper.active&&isKeeperProximity()&&getZoomState()==='idle'&&!_keeperDebounce){startKeeperZoom();_keeperDebounce=true}
+  if(!isKeeperProximity())_keeperDebounce=false;
+  // RGB door ambient hum
+  if(p.cf===4&&S.buildout[4].stage>=5&&Math.abs(p.x-(TL+2*PG+PG/2))<200){sndDoorHumStart()}else{sndDoorHumStop()}
+  const _f8frozen=isFloor8Frozen()||S.keeper.active;
+  if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()&&!_f8frozen){
   const jk=k['ArrowUp']||k['KeyW'],dk=k['ArrowDown']||k['KeyS'];
   const stUp=inter&&inter.t==='up',stDn=inter&&inter.t==='dn';
   if(p.st!=='climb'){
@@ -267,7 +289,7 @@ function update(){
     if(dk&&p.onF&&!stDn){if(!p.isDrp)p.baseZoom=p.baseZoom||tZoom;p.isDrp=true;p.drpT=Math.min(p.drpT+1,DROP_MX);setTZoom(p.baseZoom-p.drpT/DROP_MX*0.25)}
     else if(dk&&stDn){p.st='climb';p.clT=inter.v;p.clP=1;p.x=inter.v.tx;p.vx=0;p.isDrp=false;p.drpT=0;setTZoom(p.baseZoom||tZoom)}
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
-    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=5)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
+    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isFloor8Active()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=5)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
       else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
       }S.iLock=true}}else S.iLock=false;
   } else {
@@ -281,7 +303,7 @@ function update(){
     const xMin=TL-UW+p.w/2,xMax=TR+UW-p.w/2;
     if(p.x<xMin)p.x=xMin;if(p.x>xMax)p.x=xMax;
     p.onF=false;
-    for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&S.buildout[f.level].stage<1&&f.level!==_abf2)continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false}break}}
+    for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&S.buildout[f.level].stage<1&&f.level!==_abf2)continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false}break}}
     if(p.y>TB){p.y=TB;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=0;p.flipCommitted=false}
   }
   } // end movement guard
@@ -305,7 +327,8 @@ function update(){
   if(p.st==='walk'||p.st==='climb')p.bob+=0.2;else p.bob*=0.9;
   if(p.st==='walk'&&S.frame%12===0)sndStep();
   fpElRef.textContent=p.cf<0?'ROOFTOP · UNDER CONSTRUCTION':`FLOOR ${p.cf+1} · ${FD[p.cf]?.name||''}`;
-  S.cam.tx=p.x;S.cam.ty=p.y-60;S.cam.x+=(S.cam.tx-S.cam.x)*0.08;S.cam.y+=(S.cam.ty-S.cam.y)*0.08;
+  if(!S.keeper.active){S.cam.tx=p.x;S.cam.ty=p.y-60}
+  S.cam.x+=(S.cam.tx-S.cam.x)*0.08;S.cam.y+=(S.cam.ty-S.cam.y)*0.08;
   S.jp={};
 }
 

@@ -1,5 +1,7 @@
 'use strict';
-import { S, cZoom, getActiveBuildFloor } from './state.js';
+import { S, cZoom, keeperZoom, getActiveBuildFloor } from './state.js';
+import { getFloor8State, isFloor8Active } from './floor8-game.js';
+import { drawKeeper, drawKeeperDesk, drawKeeperGlow, drawKeeperOverlay } from './keeper.js';
 import { TW, FH, FT, NF, TL, TR, TB, TT, PG, BPF, UW, ROOF_Y, MOB, PH, CHG_MX, DROP_MX, lerpColor, isWinBlock, isElevBlock, ELEV_X } from './constants.js';
 import { FTHEME, FD, STAGES } from './floors.js';
 import { updateAmbient } from './sound.js';
@@ -616,6 +618,49 @@ function drawModDetail(mod,mx,my,mw,mh){
       const ppx=mx+mw*0.2+pos2*(mw*0.6/20),ppy=my+mh*0.55-Math.sin(pos2/20*Math.PI)*mh*0.3;
       X.beginPath();X.arc(ppx,ppy,3,0,Math.PI*2);X.fill();
       break;
+    // ═══ FLOOR 8 MODULES ═══
+    case 'f8_workbench':
+      X.fillStyle='rgba(0,0,0,0.1)';X.fillRect(mx+8,my+mh*0.55,mw-16,5);
+      X.fillStyle='rgba(180,120,40,0.3)';X.fillRect(mx+12,my+mh*0.3,mw-24,mh*0.25);
+      X.fillStyle='rgba(100,80,40,0.3)';X.fillRect(mx+mw*0.6,my+mh*0.2,4,mh*0.35);
+      break;
+    case 'f8_toolrack':
+      X.strokeStyle='rgba(120,100,60,0.3)';X.lineWidth=1.5;
+      for(let r=0;r<3;r++)X.beginPath(),X.moveTo(mx+10,my+mh*0.2+r*mh*0.2),X.lineTo(mx+mw-10,my+mh*0.2+r*mh*0.2),X.stroke();
+      X.fillStyle='rgba(160,120,40,0.3)';for(let i=0;i<5;i++)X.fillRect(mx+14+i*12,my+mh*0.22,3,mh*0.15);
+      break;
+    case 'f8_lumber':
+      X.fillStyle='rgba(160,128,64,0.3)';
+      for(let i=0;i<4;i++)X.fillRect(mx+10,my+mh*0.4+i*8,mw-20,5);
+      X.fillStyle='rgba(120,96,48,0.2)';X.fillRect(mx+15,my+mh*0.35,mw-30,4);
+      break;
+    case 'f8_blueprint':
+      X.fillStyle='rgba(220,200,140,0.2)';X.fillRect(mx+10,my+mh*0.25,mw-20,mh*0.4);
+      X.strokeStyle='rgba(60,100,180,0.2)';X.lineWidth=1;
+      for(let i=0;i<3;i++){X.beginPath();X.moveTo(mx+15,my+mh*0.3+i*12);X.lineTo(mx+mw-15,my+mh*0.3+i*12);X.stroke()}
+      for(let i=0;i<3;i++){X.beginPath();X.moveTo(mx+20+i*18,my+mh*0.27);X.lineTo(mx+20+i*18,my+mh*0.6);X.stroke()}
+      break;
+    case 'f8_monitor':
+      X.fillStyle='rgba(20,30,50,0.3)';X.fillRect(mx+mw*0.2,my+mh*0.2,mw*0.6,mh*0.4);
+      X.fillStyle=`rgba(60,100,180,${0.1+Math.sin(t)*0.05})`;X.fillRect(mx+mw*0.22,my+mh*0.22,mw*0.56,mh*0.36);
+      X.fillStyle='rgba(0,0,0,0.1)';X.fillRect(mx+mw*0.4,my+mh*0.6,mw*0.2,mh*0.15);
+      break;
+    case 'f8_cabinet':
+      X.fillStyle='rgba(50,55,70,0.3)';X.beginPath();X.roundRect(mx+mw*0.15,my+mh*0.15,mw*0.7,mh*0.65,3);X.fill();
+      X.strokeStyle='rgba(80,85,100,0.3)';X.lineWidth=1;
+      for(let r=0;r<3;r++)X.beginPath(),X.moveTo(mx+mw*0.2,my+mh*0.3+r*mh*0.15),X.lineTo(mx+mw*0.8,my+mh*0.3+r*mh*0.15),X.stroke();
+      X.fillStyle='rgba(180,160,100,0.3)';for(let r=0;r<3;r++)X.beginPath(),X.arc(mx+mw*0.75,my+mh*0.25+r*mh*0.15,1.5,0,Math.PI*2),X.fill();
+      break;
+    case 'f8_whiteboard':
+      X.fillStyle='rgba(240,240,245,0.15)';X.fillRect(mx+8,my+mh*0.15,mw-16,mh*0.55);
+      X.strokeStyle='rgba(200,200,210,0.2)';X.lineWidth=1;X.strokeRect(mx+8,my+mh*0.15,mw-16,mh*0.55);
+      X.fillStyle='rgba(60,80,120,0.2)';for(let i=0;i<3;i++)X.fillRect(mx+14,my+mh*0.25+i*12,mw*0.5,2);
+      break;
+    case 'f8_cooler':
+      X.fillStyle='rgba(200,210,220,0.2)';X.beginPath();X.roundRect(mx+mw*0.3,my+mh*0.2,mw*0.4,mh*0.55,4);X.fill();
+      X.fillStyle='rgba(80,160,220,0.15)';X.fillRect(mx+mw*0.35,my+mh*0.3,mw*0.3,mh*0.2);
+      X.fillStyle='rgba(60,60,70,0.2)';X.beginPath();X.arc(mx+mw*0.5,my+mh*0.55,3,0,Math.PI*2);X.fill();
+      break;
   }
 }
 function drawMod(mod,bx,fy,bi,fi){
@@ -727,7 +772,10 @@ function drawFloorLife(i,stage,fy){
         X.globalAlpha=0.05;X.fillStyle='#ffb050';X.beginPath();X.arc(TL+300,fy-FH*0.4,80,0,Math.PI*2);X.fill();X.globalAlpha=1;
       }
       if(stage>=4){X.fillStyle='rgba(255,255,255,0.1)';for(let si=0;si<6;si++){const sx=TL+250+si*40+Math.sin(t+si)*15,sy=fy-FH*0.6-((t*15+si*23)%60);X.beginPath();X.arc(sx,sy,2+Math.sin(t+si),0,Math.PI*2);X.fill()}}
-      if(stage>=5){for(let pl=TL+500;pl<TR-200;pl+=350){const sw2=Math.sin(t*0.7+pl*0.01)*3;X.strokeStyle='rgba(60,50,40,0.3)';X.lineWidth=1;X.beginPath();X.moveTo(pl,fy-FH);X.lineTo(pl+sw2,fy-FH+25);X.stroke();X.globalAlpha=0.08;X.fillStyle='#ffd070';X.beginPath();X.arc(pl+sw2,fy-FH+30,20,0,Math.PI*2);X.fill();X.globalAlpha=1}}
+      if(stage>=5){
+        for(let pl=TL+500;pl<TR-200;pl+=350){const sw2=Math.sin(t*0.7+pl*0.01)*3;X.strokeStyle='rgba(60,50,40,0.3)';X.lineWidth=1;X.beginPath();X.moveTo(pl,fy-FH);X.lineTo(pl+sw2,fy-FH+25);X.stroke();X.globalAlpha=0.08;X.fillStyle='#ffd070';X.beginPath();X.arc(pl+sw2,fy-FH+30,20,0,Math.PI*2);X.fill();X.globalAlpha=1}
+        drawRGBDoor(fy,_now);
+      }
       break;
     case 5: // LOUNGE — alcoves, speakers, warm mood spots, floating music notes
       if(stage>=2){
@@ -808,7 +856,10 @@ function drawFloorLife(i,stage,fy){
         X.globalAlpha=0.04;const cc=['#00c8ff','#00ff78','#ffc800'];for(let si=0;si<3;si++){X.fillStyle=cc[si];X.beginPath();X.arc(TL+400+si*600,fy-FH*0.5,35,0,Math.PI*2);X.fill()}X.globalAlpha=1;
       }
       if(stage>=4){const rx=TL+TW*0.7,ry=fy-FH*0.5,rr=30,sa=t*1.5;X.strokeStyle='rgba(0,255,120,0.15)';X.lineWidth=1;X.beginPath();X.arc(rx,ry,rr,0,Math.PI*2);X.stroke();X.strokeStyle='rgba(0,255,120,0.35)';X.lineWidth=2;X.beginPath();X.moveTo(rx,ry);X.lineTo(rx+Math.cos(sa)*rr,ry+Math.sin(sa)*rr);X.stroke();X.globalAlpha=0.1;X.fillStyle='rgba(0,255,120,1)';X.beginPath();X.moveTo(rx,ry);X.arc(rx,ry,rr,sa-0.5,sa);X.closePath();X.fill();X.globalAlpha=1}
-      if(stage>=5){for(let fi=0;fi<9;fi++){const fs=S.buildout[fi].stage;X.fillStyle=fs>=5?'rgba(0,200,80,0.5)':fs>=1?'rgba(200,200,0,0.3)':'rgba(80,80,80,0.2)';X.beginPath();X.arc(TL+500+fi*22,fy-FH+20,3,0,Math.PI*2);X.fill()}}
+      if(stage>=5){
+        for(let fi=0;fi<9;fi++){const fs=S.buildout[fi].stage;X.fillStyle=fs>=5?'rgba(0,200,80,0.5)':fs>=1?'rgba(200,200,0,0.3)':'rgba(80,80,80,0.2)';X.beginPath();X.arc(TL+500+fi*22,fy-FH+20,3,0,Math.PI*2);X.fill()}
+        drawKeeperDesk(X,_now,fy);
+      }
       break;
   }
 }
@@ -935,10 +986,145 @@ function updateAndDrawParticles(){
 export function triggerShake(intensity){S.fx.shake=Math.max(S.fx.shake,intensity)}
 export function triggerFlash(color,intensity){S.fx.flash=Math.max(S.fx.flash,intensity||1);S.fx.flashColor=color||'#fff'}
 
+// ═══ RGB DOOR (Floor 5, block 2) ═══
+function drawRGBDoor(fy,_now2){
+  const t=_now2*0.001;
+  const doorX=TL+2*PG+PG*0.15,doorW=PG*0.7,doorH=FH*0.75;
+  const doorY=fy-doorH;
+  const cx=doorX+doorW/2,cy=doorY+doorH/2;
+  // Glow from crack
+  const pulse=Math.sin(t*Math.PI*0.5)*0.5+0.5;
+  for(let i=4;i>=1;i--){
+    const r=i*20+10;
+    const a=(0.02+pulse*0.02)*(5-i)/4;
+    X.fillStyle=`rgba(255,180,60,${a})`;
+    X.beginPath();X.arc(cx,cy,r,0,Math.PI*2);X.fill();
+  }
+  // Light rectangle on floor (trapezoid)
+  X.fillStyle=`rgba(255,200,80,${0.04+pulse*0.02})`;
+  X.beginPath();X.moveTo(doorX+doorW*0.2,fy);X.lineTo(doorX+doorW*0.8,fy);X.lineTo(doorX+doorW*1.2,fy+4);X.lineTo(doorX-doorW*0.2,fy+4);X.closePath();X.fill();
+  // Door surface
+  X.fillStyle='#1A1015';
+  X.beginPath();X.roundRect(doorX,doorY,doorW/2-1,doorH,2);X.fill();
+  X.beginPath();X.roundRect(doorX+doorW/2+1,doorY,doorW/2-1,doorH,2);X.fill();
+  // Center crack with glow
+  X.fillStyle=`rgba(255,200,80,${0.3+pulse*0.3})`;
+  X.fillRect(cx-1,doorY+4,2,doorH-8);
+  // Gap underneath
+  X.fillStyle=`rgba(255,200,80,${0.2+pulse*0.1})`;
+  X.fillRect(doorX+4,fy-3,doorW-8,3);
+  // Door frame
+  X.strokeStyle='rgba(80,60,40,0.3)';X.lineWidth=2;
+  X.strokeRect(doorX-2,doorY-2,doorW+4,doorH+4);
+  // Floating particles
+  const pts=S.rgbDoor.particles;
+  while(pts.length<6)pts.push({x:cx+(Math.random()-0.5)*doorW*0.6,y:fy,life:Math.random()*120+60,maxLife:120+Math.random()*60,vx:(Math.random()-0.5)*0.3,vy:-0.3-Math.random()*0.5,col:Math.random()<0.5?'rgba(255,200,80,':'rgba(255,160,40,'});
+  for(let i=pts.length-1;i>=0;i--){
+    const p=pts[i];
+    p.x+=p.vx;p.y+=p.vy;p.life--;
+    if(p.life<=0){pts.splice(i,1);continue}
+    const a=p.life/p.maxLife;
+    X.fillStyle=p.col+`${a*0.5})`;
+    X.beginPath();X.arc(p.x,p.y,1.5+a,0,Math.PI*2);X.fill();
+  }
+}
+function drawRGBDoorText(cx,cy,_now2){
+  const t=_now2*0.001;
+  const lines=['The warmth is real. The door is not ready.','Something on the other side knows you\'re here.','You smell bread. And something else.','Not yet.','The door remembers everyone who stood here.'];
+  const idx=Math.floor(t/4)%lines.length;
+  const frac=(t/4)%1;
+  let alpha=0;
+  if(frac<0.15)alpha=frac/0.15;
+  else if(frac<0.5)alpha=1;
+  else if(frac<0.65)alpha=1-(frac-0.5)/0.15;
+  alpha*=0.7;
+  if(alpha<=0)return;
+  X.save();
+  X.globalAlpha=alpha;
+  X.fillStyle='#FFD700';
+  X.font='italic 11px monospace';X.textAlign='center';
+  X.fillText(lines[idx],cx,cy);
+  X.restore();
+}
+
+// ═══ FLOOR 8 OVERLAY ═══
+function drawFloor8Overlay(W,H,_now2){
+  const f8=getFloor8State();
+  if(f8.phase==='IDLE'||f8.phase==='DONE')return;
+  const t=_now2*0.001;
+  switch(f8.phase){
+    case 'INTRO':{
+      X.fillStyle='rgba(0,0,0,0.6)';X.fillRect(0,0,W,H);
+      X.fillStyle='#FF6600';X.font='bold 48px monospace';X.textAlign='center';
+      X.fillText('THE RECKONING',W/2,H/2);
+      X.fillStyle='rgba(255,255,255,0.4)';X.font='14px monospace';
+      X.fillText('Builders vs. Suits — claim the floor!',W/2,H/2+40);
+      break;
+    }
+    case 'COUNTDOWN':{
+      X.fillStyle='rgba(0,0,0,0.4)';X.fillRect(0,0,W,H);
+      const sec=Math.ceil(f8.timer/60);
+      const pulse=1+Math.sin(f8.timer*0.3)*0.1;
+      X.save();X.translate(W/2,H/2);X.scale(pulse,pulse);
+      X.fillStyle='#FFD700';X.font='bold 120px monospace';X.textAlign='center';X.textBaseline='middle';
+      X.fillText(String(sec),0,0);
+      X.restore();
+      break;
+    }
+    case 'PLAYING':{
+      // Timer bar
+      const barW=300,barH=12,barX=(W-barW)/2,barY=20;
+      const frac=f8.timer/3600;
+      X.fillStyle='rgba(0,0,0,0.4)';X.beginPath();X.roundRect(barX-2,barY-2,barW+4,barH+4,4);X.fill();
+      X.fillStyle=frac>0.25?'#FF6600':'#ff3030';X.beginPath();X.roundRect(barX,barY,barW*frac,barH,3);X.fill();
+      // Time text
+      const secLeft=Math.ceil(f8.timer/60);
+      X.fillStyle='#fff';X.font='bold 10px monospace';X.textAlign='center';
+      X.fillText(`${secLeft}s`,W/2,barY+barH+14);
+      // Scores
+      X.fillStyle='#FF6600';X.font='bold 16px monospace';X.textAlign='left';
+      X.fillText(`BUILDERS: ${f8.bScore}`,barX-120,barY+barH);
+      X.fillStyle='#4060a0';X.textAlign='right';
+      X.fillText(`SUITS: ${f8.sScore}`,barX+barW+120,barY+barH);
+      // Instructions
+      X.fillStyle='rgba(255,255,255,0.3)';X.font='10px monospace';X.textAlign='center';
+      X.fillText('Walk to empty blocks and press [E] to claim!',W/2,barY+barH+28);
+      break;
+    }
+    case 'RESULT':{
+      X.fillStyle='rgba(0,0,0,0.5)';X.fillRect(0,0,W,H);
+      const winner=f8.outcome==='builders';
+      X.fillStyle=winner?'#FF6600':'#4060a0';X.font='bold 42px monospace';X.textAlign='center';
+      X.fillText(winner?'BUILDERS WIN!':'SUITS WIN!',W/2,H/2-10);
+      X.fillStyle='rgba(255,255,255,0.5)';X.font='16px monospace';
+      X.fillText(`${f8.bScore} - ${f8.sScore}`,W/2,H/2+30);
+      break;
+    }
+  }
+}
+
+// ═══ REMATCH BELL (world space) ═══
+function drawRematchBell(f8){
+  if(f8.phase!=='DONE'||!f8.played||!f8.bellX)return;
+  const bx=f8.bellX,by=TB-7*FH; // floor 8 slab Y
+  const t=_now*0.001;
+  // Post
+  X.fillStyle='#606060';X.fillRect(bx-2,by-50,4,50);
+  // Bell
+  const swing=Math.sin(t*2)*0.15;
+  X.save();X.translate(bx,by-50);X.rotate(swing);
+  X.fillStyle='#c8a030';
+  X.beginPath();X.moveTo(-8,0);X.quadraticCurveTo(-10,16,-12,20);X.lineTo(12,20);X.quadraticCurveTo(10,16,8,0);X.closePath();X.fill();
+  // Clapper
+  X.fillStyle='#806020';X.beginPath();X.arc(0,18,3,0,Math.PI*2);X.fill();
+  X.restore();
+}
+
 // ═══ DRAW ═══
 export function draw(){
   const W=C.width,H=C.height;
   _now=performance.now();
+  const eZoom=cZoom*(1+keeperZoom);
   const altFrac=Math.max(0,Math.min(1,(TB-S.cam.y)/(TB-TT)));
   updateAmbient(altFrac);
 
@@ -1016,7 +1202,7 @@ export function draw(){
   const shkY=shk>0?(Math.random()-0.5)*shk*2:0;
   if(shk>0)S.fx.shake*=0.88;if(S.fx.shake<0.3)S.fx.shake=0;
 
-  X.save();X.translate(W/2-S.cam.x*cZoom+shkX,H/2-S.cam.y*cZoom+shkY);X.scale(cZoom,cZoom);
+  X.save();X.translate(W/2-S.cam.x*eZoom+shkX,H/2-S.cam.y*eZoom+shkY);X.scale(eZoom,eZoom);
 
   // Ground (cached — never changes)
   if(!_cachedGroundGrad){_cachedGroundGrad=X.createLinearGradient(0,TB,0,TB+100);_cachedGroundGrad.addColorStop(0,'#8AB880');_cachedGroundGrad.addColorStop(0.4,'#6AA070');_cachedGroundGrad.addColorStop(1,'#4A7858')}
@@ -1025,23 +1211,23 @@ export function draw(){
   // City layer — parallax 0.35×
   X.restore();
   X.save();
-  X.translate(W/2-S.cam.x*cZoom*0.35+shkX,H/2-S.cam.y*cZoom+shkY);X.scale(cZoom,cZoom);
+  X.translate(W/2-S.cam.x*eZoom*0.35+shkX,H/2-S.cam.y*eZoom+shkY);X.scale(eZoom,eZoom);
   // City skyline — cached offscreen, only blink LEDs drawn live
   if(_cityCache)X.drawImage(_cityCache.c,_cityCache.ox,_cityCache.oy);
   if(S.cityBuildings)S.cityBuildings.forEach(b=>{if(!b.tall)return;const bx=b.x,by=TB-b.h;const blink=Math.floor(_now/900+b.x*0.013)%2===0;X.fillStyle=blink?'rgba(255,50,50,0.9)':'rgba(255,50,50,0.15)';X.beginPath();X.arc(bx+b.w*0.74,by-26,2.5,0,Math.PI*2);X.fill()});
   X.restore();
   // Re-enter main camera so treeline's X.restore() exits correctly
-  X.save();X.translate(W/2-S.cam.x*cZoom+shkX,H/2-S.cam.y*cZoom+shkY);X.scale(cZoom,cZoom);
+  X.save();X.translate(W/2-S.cam.x*eZoom+shkX,H/2-S.cam.y*eZoom+shkY);X.scale(eZoom,eZoom);
 
   // Parallax treeline — cached offscreen
   X.restore();
   X.save();
   const pxFactor=0.6;
-  X.translate(W/2-S.cam.x*cZoom*pxFactor+shkX,H/2-S.cam.y*cZoom+shkY);X.scale(cZoom,cZoom);
+  X.translate(W/2-S.cam.x*eZoom*pxFactor+shkX,H/2-S.cam.y*eZoom+shkY);X.scale(eZoom,eZoom);
   if(_treeCache)X.drawImage(_treeCache.c,_treeCache.ox,_treeCache.oy);
   X.restore();
   // Re-apply main camera
-  X.save();X.translate(W/2-S.cam.x*cZoom+shkX,H/2-S.cam.y*cZoom+shkY);X.scale(cZoom,cZoom);
+  X.save();X.translate(W/2-S.cam.x*eZoom+shkX,H/2-S.cam.y*eZoom+shkY);X.scale(eZoom,eZoom);
 
   // Parking lots
   const pkW=300,pkY=TB;
@@ -1064,14 +1250,14 @@ export function draw(){
   drawScaffold(TL-80,dynRoofY,80,TB-dynRoofY);
   drawScaffold(TR,dynRoofY,80,TB-dynRoofY);
   // Viewport culling bounds (world Y, with generous margin for slabs/ambient)
-  const _vTop=S.cam.y-H/(2*cZoom)-FH*2,_vBot=S.cam.y+H/(2*cZoom)+FH*2;
+  const _vTop=S.cam.y-H/(2*eZoom)-FH*2,_vBot=S.cam.y+H/(2*eZoom)+FH*2;
   S.floors.forEach((f)=>{
     if(f.level<0)return;
     const i=f.level,stage=S.buildout[i].stage,fy=f.y;
     if(fy-FH>_vBot||fy<_vTop)return; // off-screen — skip entirely
     const th=FTHEME[i]||FTHEME[0];
-    // Exterior ledge lines (steel)
-    X.strokeStyle='rgba(100,110,130,0.35)';X.lineWidth=4;X.beginPath();X.moveTo(TL-UW,fy);X.lineTo(TL,fy);X.stroke();X.beginPath();X.moveTo(TR,fy);X.lineTo(TR+UW,fy);X.stroke();
+    // Exterior ledge lines (steel) — only on built floors
+    if(stage>=1){X.strokeStyle='rgba(100,110,130,0.35)';X.lineWidth=4;X.beginPath();X.moveTo(TL-UW,fy);X.lineTo(TL,fy);X.stroke();X.beginPath();X.moveTo(TR,fy);X.lineTo(TR+UW,fy);X.stroke()}
 
     for(let bi=0;bi<BPF;bi++){
       const bx=TL+bi*PG,isWin=isWinBlock(bi),isElev=isElevBlock(bi);
@@ -1350,6 +1536,9 @@ export function draw(){
   // Suits — stage 5+
   S.suits.forEach(s=>{if(s.taken||S.buildout[s.floor].stage<5)return;const bob=Math.sin(_now*0.002+s.x)*2;X.fillStyle='rgba(80,70,100,0.45)';X.beginPath();X.roundRect(s.x-10,s.y-44+bob,20,32,6);X.fill()});
 
+  // Keeper glow (behind all characters)
+  drawKeeperGlow(X,_now);
+
   // NPCs — arrived or in transit, and only once tower has 3+ floors built
   const npcsOn=abf>=3||abf===-1;
   const al=[],ca=[],bz=[],cw=[];
@@ -1367,6 +1556,16 @@ export function draw(){
   bz.forEach(n=>drawBiz(n));
   cw.forEach(n=>drawWorker(n));
   S.workers.forEach(w=>drawWorker(w));
+
+  // Floor 8 suit NPCs
+  const _f8=getFloor8State();
+  if(_f8.phase!=='IDLE')_f8.suitNpcs.forEach(n=>drawBiz(n));
+
+  // Keeper character
+  drawKeeper(X,_now);
+
+  // Rematch bell
+  drawRematchBell(_f8);
 
   // Player (fade during elevator door animation)
   const p=S.player;if(S.elevAnim!=='idle')X.globalAlpha=Math.max(0,S.elevDoors);
@@ -1388,10 +1587,31 @@ export function draw(){
     X.fillStyle='rgba(0,0,0,0.55)';X.beginPath();X.roundRect(px2-tw/2-8,py2-12,tw+16,20,4);X.fill();X.fillStyle='#ffee88';X.fillText(pt,px2,py2+2)}}
   const ns=nearSuit();if(ns&&!p.suit){X.font='bold 12px Segoe UI,sans-serif';X.textAlign='center';X.fillStyle='rgba(0,0,0,0.5)';const stxt='[F] Suit',stw=X.measureText(stxt).width;X.beginPath();X.roundRect(ns.x-stw/2-6,ns.y-66,stw+12,18,4);X.fill();X.fillStyle='#ffd870';X.fillText(stxt,ns.x,ns.y-54)}
 
+  // RGB door proximity text (world space)
+  if(p.cf===4&&S.buildout[4].stage>=5){
+    const doorCX=TL+2*PG+PG/2;
+    if(Math.abs(p.x-doorCX)<150)drawRGBDoorText(doorCX,TB-4*FH-FH*0.3,_now);
+  }
+
+  // Rematch bell interaction prompt
+  if(_f8.phase==='DONE'&&_f8.played&&_f8.bellX&&p.cf===7&&Math.abs(p.x-_f8.bellX)<60){
+    const btxt='[E] Rematch';
+    X.font='bold 12px Segoe UI,sans-serif';X.textAlign='center';
+    const btw=X.measureText(btxt).width;
+    X.fillStyle='rgba(0,0,0,0.5)';X.beginPath();X.roundRect(_f8.bellX-btw/2-6,TB-7*FH-68,btw+12,18,4);X.fill();
+    X.fillStyle='#ffd870';X.fillText(btxt,_f8.bellX,TB-7*FH-56);
+  }
+
   // Particles (world space)
   updateAndDrawParticles();
 
   X.restore();
+
+  // Floor 8 overlay (screen space)
+  drawFloor8Overlay(W,H,_now);
+
+  // Keeper overlay (screen space)
+  drawKeeperOverlay(X,W,H,_now);
 
   // Screen flash overlay (screen space)
   if(S.fx.flash>0){

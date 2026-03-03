@@ -19,16 +19,21 @@ export const S={
   particles:[],
   door:{open:0},
   arrivalQueue:[],
+  floor8:{phase:'IDLE',timer:0,played:false,outcome:null,bScore:0,sScore:0,suitNpcs:[],bellX:0},
+  keeper:{active:false,zoom:0,spoken:false,exchange:0,twText:'',twIdx:0,twDone:false,twTimer:0},
+  rgbDoor:{particles:[],textTimer:0},
   modules:Array.from({length:NF},()=>Array(BPF).fill(null)),
   credits:500,
   sat:50,
-  modSel:null,
 };
 
 export let cZoom=MOB?0.5:0.7;
 export let tZoom=cZoom;
 export function setCZoom(v){cZoom=v}
 export function setTZoom(v){tZoom=v}
+
+export let keeperZoom=0;
+export function setKeeperZoom(v){keeperZoom=v}
 
 // ═══ BUILDOUT ENGINE ═══
 export function syncLitFloors(){
