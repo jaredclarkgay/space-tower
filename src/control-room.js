@@ -130,16 +130,22 @@ function _handleInput(dt){
   const right=k['ArrowRight']||k['KeyD'];
   const up=k['ArrowUp']||k['KeyW'];
   const down=k['ArrowDown']||k['KeyS'];
+  const sprint=k['ShiftLeft']||k['ShiftRight']?2:1;
+  const spd=160*sprint;
 
   cr.walking=false;cr.walkDir=0;
 
-  if(down){
-    cr.pz=Math.max(0,cr.pz-0.5*dt);
-    cr.walking=true;
-  } else {
-    if(left){cr.px=Math.max(-250,cr.px-160*dt);cr.walking=true;cr.walkDir=-1}
-    if(right){cr.px=Math.min(250,cr.px+160*dt);cr.walking=true;cr.walkDir=1}
-    if(up){cr.pz=Math.min(1,cr.pz+0.5*dt);cr.walking=true}
+  if(left){cr.px=Math.max(-600,cr.px-spd*dt);cr.walking=true;cr.walkDir=-1}
+  if(right){cr.px=Math.min(600,cr.px+spd*dt);cr.walking=true;cr.walkDir=1}
+  if(down){cr.pz=Math.max(0,cr.pz-0.5*dt);cr.walking=true}
+  if(up&&cr.pz<1){cr.pz=Math.min(1,cr.pz+0.5*dt);cr.walking=true}
+  // Jump
+  if((k['Space']||(up&&cr.pz>=1))&&!cr.jumping&&cr.pz>=0.5){
+    cr.jumping=true;cr.jumpVel=-4.5;cr.jumpY=0;
+  }
+  if(cr.jumping){
+    cr.jumpY+=cr.jumpVel*dt;cr.jumpVel+=12*dt;
+    if(cr.jumpY>=0){cr.jumpY=0;cr.jumping=false;cr.jumpVel=0}
   }
   cr.nearElev=cr.pz<0.08;
 }
@@ -488,12 +494,13 @@ function _drawPlayer(X,W,H){
   const d=cr.pz;
   const scale=3.2-d*2.0;
   const screenX=W/2+cr.px*(0.3+d*0.7)*0.5;
+  const jumpOff=(cr.jumpY||0)*scale;
   const screenY=H*0.92-d*H*0.29;
   const walking=cr.walking||(cr.phase===2&&!cr.introWalkDone);
   const bob=walking?Math.sin(_t*6)*1.5:Math.sin(_t*0.7)*0.4;
 
   X.save();
-  X.translate(screenX,screenY+bob);
+  X.translate(screenX,screenY+bob+jumpOff);
   X.scale(scale,scale);
 
   if(cr.walkDir<0&&cr.phase>=3)X.scale(-1,1);
@@ -657,28 +664,29 @@ function _drawFullScreen(X,W,H){
   X.fillStyle=CR.blueMid;
   X.fillText('SPACE TOWER — CONTROL ROOM — SEGMENT 1',28,27);
 
-  // Tower (left)
-  const twrX=80,twrW=200,twrBase=vH-60,flrH=72;
+  // Tower (left) — white wireframe, full height
+  const twrX=80,twrW=200,twrTop=55,twrBot=vH-30;
+  const flrH=(twrBot-twrTop)/10;
   const sel=cr.selectedFloor;
   for(let i=0;i<10;i++){
-    const f=_getFloorData(i);const fy=twrBase-(i+1)*flrH;
+    const f=_getFloorData(i);const fy=twrBot-(i+1)*flrH;
     const isSel=sel===i;
 
-    X.strokeStyle=f.stage>0?(isSel?CR.blue:CR.blueMid+'44'):CR.blueGhost+'66';
+    X.strokeStyle=f.stage>0?(isSel?'#ffffff':CR.white+'66'):CR.whiteFaint+'44';
     X.lineWidth=isSel?2:1;
     X.strokeRect(twrX,fy,twrW,flrH-2);
 
     if(f.stage>0){
       const fill=f.stage/5;
-      X.fillStyle=isSel?CR.blueMid+'22':CR.blueFaint+'10';
+      X.fillStyle=isSel?'rgba(255,255,255,0.06)':'rgba(255,255,255,0.02)';
       X.fillRect(twrX,fy,twrW*fill,flrH-2);
       if(f.stage<5){
         const p=Math.sin(_t*2.5+i)*0.08+0.08;
-        X.fillStyle=`rgba(126,200,238,${p})`;
+        X.fillStyle=`rgba(255,255,255,${p*0.5})`;
         X.fillRect(twrX,fy,twrW*fill,flrH-2);
       }
       for(let m=0;m<9;m++){
-        X.fillStyle=m<f.mods?(m%5===1?CR.cream+'33':m%7===3?CR.red+'28':CR.blue+'33'):CR.blueGhost+'22';
+        X.fillStyle=m<f.mods?(m%5===1?CR.cream+'33':m%7===3?CR.red+'28':'rgba(255,255,255,0.15)'):CR.whiteFaint+'18';
         X.fillRect(twrX+8+m*21,fy+flrH-15,17,6);
       }
       X.font='8px monospace';X.fillStyle=CR.whiteFaint;X.textAlign='left';
@@ -687,11 +695,11 @@ function _drawFullScreen(X,W,H){
     }
 
     X.font=isSel?'bold 12px monospace':'11px monospace';X.textAlign='left';
-    X.fillStyle=isSel?CR.white:(f.stage>0?CR.whiteMid+'99':CR.whiteFaint+'88');
+    X.fillStyle=isSel?'#ffffff':(f.stage>0?CR.whiteMid+'99':CR.whiteFaint+'88');
     X.fillText(f.name,twrX+twrW+14,fy+flrH/2+4);
 
     if(isSel){
-      X.strokeStyle=CR.blue;X.lineWidth=1.5;
+      X.strokeStyle='#ffffff';X.lineWidth=1.5;
       const bk=8;
       X.beginPath();
       X.moveTo(twrX-4,fy+bk);X.lineTo(twrX-4,fy);X.lineTo(twrX+bk,fy);
@@ -727,36 +735,36 @@ function _drawFullScreen(X,W,H){
   X.font='11px monospace';X.fillStyle=CR.whiteFaint;
   X.fillText(`${active} ACTIVE · ${building} BUILDING · ${10-active-building} DARK`,stX,355);
 
-  // Next Step (right)
+  // Next Step (right) — 3x size
   const nsX=900;
   const nextTask=_getNextTask();
-  X.font='bold 14px monospace';X.fillStyle=CR.blue;
-  X.fillText('NEXT STEP',nsX,90);
-  X.fillStyle=CR.blueMid+'33';X.fillRect(nsX,96,500,1);
+  X.font='bold 42px monospace';X.fillStyle=CR.blue;
+  X.fillText('NEXT STEP',nsX,110);
+  X.fillStyle=CR.blueMid+'33';X.fillRect(nsX,120,600,2);
 
   if(nextTask){
-    X.font='bold 16px monospace';X.fillStyle=CR.blue;
-    X.fillText(`FLOOR ${nextTask.floor+1}`,nsX,125);
-    X.font='18px monospace';X.fillStyle=CR.white+'dd';
-    _wrapText(X,nextTask.text,nsX,155,500,26);
+    X.font='bold 48px monospace';X.fillStyle=CR.blue;
+    X.fillText(`FLOOR ${nextTask.floor+1}`,nsX,185);
+    X.font='36px monospace';X.fillStyle=CR.white+'dd';
+    _wrapText(X,nextTask.text,nsX,240,600,48);
   }
 
   const doneCount=_cache.doneCount;
-  X.font='9px monospace';X.fillStyle=CR.whiteFaint;
-  X.fillText(`${doneCount}/10 COMPLETE`,nsX,220);
+  X.font='18px monospace';X.fillStyle=CR.whiteFaint;
+  X.fillText(`${doneCount}/10 COMPLETE`,nsX,440);
   for(let i=0;i<10;i++){
     const done=_getTaskDone(i);
     const isNext=nextTask&&nextTask.floor===i;
     X.fillStyle=done?CR.blue+'88':(isNext?CR.blue+'33':CR.blueGhost+'66');
-    X.fillRect(nsX+i*22,228,18,6);
+    X.fillRect(nsX+i*44,460,36,10);
   }
 
   // Full task list
   for(let i=0;i<NF;i++){
-    const ty=270+i*40;
+    const ty=510+i*42;
     const done=_getTaskDone(i);
     const isCurrent=nextTask&&nextTask.floor===i;
-    X.font=isCurrent?'bold 11px monospace':'10px monospace';
+    X.font=isCurrent?'bold 16px monospace':'14px monospace';
     X.fillStyle=done?CR.blueMid+'55':(isCurrent?CR.white:CR.whiteFaint+'88');
     X.fillText(`${done?'✓':isCurrent?'→':'·'}  F${i+1}  ${TASK_TEXT[i]}`,nsX,ty);
   }

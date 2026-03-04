@@ -138,6 +138,7 @@ export function buildCityScene(scene, buildout) {
     updateElevator(dt);
     updateSats(scene, dt);
     if (earthMesh) earthMesh.rotation.y = t * 0.03;
+    updateMoon(t);
   }
 
   return {
@@ -1294,8 +1295,11 @@ export function updateTowerHover(camera, mouseX, mouseY) {
 // ═══ EARTH GLOBE ═══
 let earthMesh = null;
 let earthAtmos = null;
+let moonMesh = null;
 const EARTH_Y = -10000;
 const EARTH_R = 3000;
+const MOON_R = 200;
+const MOON_DIST = EARTH_R * 1.8;
 
 function buildEarth(scene) {
   // Procedural Earth texture on a 1024×512 canvas (equirectangular)
@@ -1304,13 +1308,13 @@ function buildEarth(scene) {
   cv.width = w; cv.height = h;
   const cx = cv.getContext('2d');
 
-  // Ocean base
-  cx.fillStyle = '#1a3a5c';
+  // Ocean base — dark blue
+  cx.fillStyle = '#0a1428';
   cx.fillRect(0, 0, w, h);
 
   // Subtle ocean variation
   for (let i = 0; i < 60; i++) {
-    cx.fillStyle = `rgba(${20 + sr() * 15|0},${55 + sr() * 20|0},${85 + sr() * 20|0},0.3)`;
+    cx.fillStyle = `rgba(${8 + sr() * 10|0},${18 + sr() * 15|0},${35 + sr() * 15|0},0.3)`;
     cx.beginPath();
     cx.ellipse(sr() * w, sr() * h, sr() * 120 + 40, sr() * 60 + 20, sr() * Math.PI, 0, Math.PI * 2);
     cx.fill();
@@ -1318,7 +1322,7 @@ function buildEarth(scene) {
 
   // Simplified continents in equirectangular projection
   // North America
-  cx.fillStyle = '#2d5e2d';
+  cx.fillStyle = '#142a14';
   cx.beginPath();
   cx.moveTo(w * 0.12, h * 0.18);
   cx.quadraticCurveTo(w * 0.18, h * 0.12, w * 0.28, h * 0.15);
@@ -1342,7 +1346,7 @@ function buildEarth(scene) {
   cx.fill();
 
   // Europe
-  cx.fillStyle = '#2b5c2b';
+  cx.fillStyle = '#132812';
   cx.beginPath();
   cx.moveTo(w * 0.44, h * 0.15);
   cx.quadraticCurveTo(w * 0.48, h * 0.12, w * 0.52, h * 0.14);
@@ -1354,7 +1358,7 @@ function buildEarth(scene) {
   cx.fill();
 
   // Africa
-  cx.fillStyle = '#3a6a2a';
+  cx.fillStyle = '#1a3212';
   cx.beginPath();
   cx.moveTo(w * 0.45, h * 0.35);
   cx.quadraticCurveTo(w * 0.5, h * 0.32, w * 0.55, h * 0.35);
@@ -1367,7 +1371,7 @@ function buildEarth(scene) {
   cx.fill();
 
   // Asia
-  cx.fillStyle = '#2e5e2e';
+  cx.fillStyle = '#142a14';
   cx.beginPath();
   cx.moveTo(w * 0.55, h * 0.12);
   cx.quadraticCurveTo(w * 0.65, h * 0.08, w * 0.78, h * 0.12);
@@ -1389,7 +1393,7 @@ function buildEarth(scene) {
   cx.fill();
 
   // Australia
-  cx.fillStyle = '#4a6a3a';
+  cx.fillStyle = '#1e3218';
   cx.beginPath();
   cx.moveTo(w * 0.78, h * 0.58);
   cx.quadraticCurveTo(w * 0.84, h * 0.55, w * 0.88, h * 0.58);
@@ -1400,7 +1404,7 @@ function buildEarth(scene) {
   cx.fill();
 
   // Greenland
-  cx.fillStyle = '#4a7a5a';
+  cx.fillStyle = '#1e3828';
   cx.beginPath();
   cx.moveTo(w * 0.3, h * 0.06);
   cx.quadraticCurveTo(w * 0.35, h * 0.04, w * 0.37, h * 0.08);
@@ -1410,7 +1414,7 @@ function buildEarth(scene) {
   cx.fill();
 
   // Ice caps
-  cx.fillStyle = 'rgba(200,220,240,0.25)';
+  cx.fillStyle = 'rgba(150,170,200,0.12)';
   cx.fillRect(0, 0, w, h * 0.04);
   cx.fillRect(0, h * 0.94, w, h * 0.06);
 
@@ -1434,6 +1438,14 @@ function buildEarth(scene) {
   earthAtmos.visible = false;
   scene.add(earthAtmos);
 
+  // Moon
+  const moonGeo = new THREE.SphereGeometry(MOON_R, 24, 16);
+  const moonMat = new THREE.MeshBasicMaterial({ color: 0x606878, fog: false });
+  moonMesh = new THREE.Mesh(moonGeo, moonMat);
+  moonMesh.position.set(MOON_DIST, EARTH_Y + EARTH_R * 0.6, 0);
+  moonMesh.visible = false;
+  scene.add(moonMesh);
+
   return earthMesh;
 }
 
@@ -1441,7 +1453,16 @@ export function getEarthParams() {
   return { y: EARTH_Y, r: EARTH_R };
 }
 
+export function updateMoon(t) {
+  if (!moonMesh) return;
+  const a = t * 0.02; // very slow orbit
+  moonMesh.position.x = Math.cos(a) * MOON_DIST;
+  moonMesh.position.z = Math.sin(a) * MOON_DIST;
+  moonMesh.position.y = EARTH_Y + EARTH_R * 0.6;
+}
+
 export function setEarthVisible(v) {
   if (earthMesh) earthMesh.visible = v;
   if (earthAtmos) earthAtmos.visible = v;
+  if (moonMesh) moonMesh.visible = v;
 }

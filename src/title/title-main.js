@@ -1,7 +1,7 @@
 'use strict';
 import * as THREE from 'three';
 import './title-styles.css';
-import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlend, getEarthParams, setEarthVisible } from './title-city.js';
+import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlend, getEarthParams, setEarthVisible, updateMoon } from './title-city.js';
 import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistCallbacks } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY } from './title-transition.js';
@@ -213,7 +213,7 @@ export function initTitle(canvas, saveData) {
     if (!isDragging && !isTransitionActive()) {
       idleTimer += dt;
       if (idleTimer > 4) autoRotate = true;
-      if (autoRotate) orbitAngle += autoRotateSpeed * dt;
+      if (autoRotate) orbitAngle += (orbitalView ? 0.008 : autoRotateSpeed) * dt;
     }
 
     // Zoom lerp (only when not transitioning)
@@ -280,11 +280,11 @@ export function initTitle(canvas, saveData) {
 
       camera.lookAt(cameraLookTarget);
     } else if (orbitalView) {
-      // Orbital view — camera orbits the Earth globe
+      // Orbital view — camera above Earth, bottom third of globe visible
       const ep = getEarthParams();
-      const targetR = ep.r * 2.5;  // orbit radius around Earth
-      const targetH = ep.y + ep.r * 1.2;  // slightly above equator
-      const targetLookY = ep.y;  // look at Earth center
+      const targetR = ep.r * 1.8;  // orbit radius
+      const targetH = ep.y + ep.r * 2.2;  // high above Earth
+      const targetLookY = ep.y + ep.r * 0.7;  // look at top of Earth
 
       // Smooth lerp to orbital position
       orbitalCamR += (targetR - orbitalCamR) * 0.03;
