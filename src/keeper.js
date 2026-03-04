@@ -19,7 +19,7 @@ const ZOOM_OUT_SPEED=0.04; // lerp per frame (~1s)
 function getKeeperDialogue(){
   const floorsBuilt=S.buildout.filter(b=>b.stage>=5).length;
   const sat=S.sat;
-  const f8outcome=S.floor8.outcome;
+  const f8outcome=S.reckoning.outcome;
   return [
     `${floorsBuilt} floors. ${floorsBuilt>=8?'Impressive.':'Hmm.'} I felt each one arrive — through the steel, through my teeth.`,
     sat>=60?'Your people seem... content. That is harder than it sounds, ten floors up with nowhere to go but higher.'
@@ -37,6 +37,7 @@ const RETURN_LINE='Still here? The tower won\'t build itself.';
 // ═══ KEEPER DRAWING ═══
 export function drawKeeper(X,_now){
   if(S.buildout[KEEPER_FLOOR].stage<5)return;
+  const _rp=S.reckoning.phase;if(_rp!=='IDLE'&&_rp!=='DONE')return;
   const t=_now*0.001;
   const x=KEEPER_X,y=KEEPER_FY;
   const bob=Math.sin(t*0.8)*2;
@@ -95,6 +96,7 @@ export function drawKeeper(X,_now){
 // ═══ KEEPER DESK ═══
 export function drawKeeperDesk(X,_now,fy){
   if(S.buildout[KEEPER_FLOOR].stage<5)return;
+  const _rp=S.reckoning.phase;if(_rp!=='IDLE'&&_rp!=='DONE')return;
   const t=_now*0.001;
   const dx=DESK_X,dy=fy,dw=DESK_W;
 
@@ -137,6 +139,7 @@ export function drawKeeperDesk(X,_now,fy){
 // ═══ KEEPER GLOW ═══
 export function drawKeeperGlow(X,_now){
   if(S.buildout[KEEPER_FLOOR].stage<5)return;
+  const _rp=S.reckoning.phase;if(_rp!=='IDLE'&&_rp!=='DONE')return;
   const t=_now*0.001;
   const x=KEEPER_X,y=KEEPER_FY-36;
   const pulse=Math.sin(t*Math.PI)*0.5+0.5; // ~2s period
@@ -154,6 +157,9 @@ let _savedCamTx=0,_savedCamTy=0;
 
 export function isKeeperProximity(){
   if(S.buildout[KEEPER_FLOOR].stage<5)return false;
+  // Disable during reckoning
+  const rp=S.reckoning.phase;
+  if(rp!=='IDLE'&&rp!=='DONE')return false;
   return S.player.cf===KEEPER_FLOOR&&Math.abs(S.player.x-KEEPER_X)<PROXIMITY;
 }
 

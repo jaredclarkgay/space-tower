@@ -1,12 +1,13 @@
 'use strict';
 import * as THREE from 'three';
 import './title-styles.css';
-import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlend } from './title-city.js';
+import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlend, getEarthParams, setEarthVisible } from './title-city.js';
 import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistCallbacks } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY } from './title-transition.js';
-import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setGroundNPCs, setBizPeople } from './title-exterior.js';
+import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive } from './title-exterior.js';
 import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
+import { ensureAudioCtx, getAudioCtx } from '../sound.js';
 import { setupRadio, disposeRadio } from '../radio-ui.js';
 
 let renderer, scene, camera;
@@ -21,6 +22,10 @@ let cameraLookY = 0;
 
 // ── Zoom ──
 let zoomClose = false, zoomTarget = 3250;
+
+// ── Orbital (Earth) view ──
+let orbitalView = false;
+let orbitalCamY = 0, orbitalCamR = 0, orbitalLookY = 0; // lerp targets
 
 // ── Mouse tracking ──
 let mouseScreenX = -9999, mouseScreenY = -9999;
@@ -53,6 +58,11 @@ export function initTitle(canvas, saveData) {
   cameraLookY = 200; // look at lower portion — tower extends off screen
   camera.lookAt(0, cameraLookY, 0);
 
+  // Init orbital lerp values to city position
+  orbitalCamR = DIMS.cameraOrbitR;
+  orbitalCamY = DIMS.cameraHeight;
+  orbitalLookY = cameraLookY;
+
   // Wire camera distance callbacks for UI slider
   setCamDistCallbacks(() => extCamDist, (v) => { extCamDist = v; });
 
@@ -74,13 +84,13 @@ export function initTitle(canvas, saveData) {
   // Exterior input
   setupExteriorInput();
 
-  // Music — init on first interaction, then auto-play
+  // Music — init on first interaction using shared AudioContext from sound.js
   const _initTitleMusic = async () => {
     if (isMusicInitialized()) return;
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      await initMusic(ctx);
-      play();
+      ensureAudioCtx();
+      const ctx = getAudioCtx();
+      if (ctx) { await initMusic(ctx); play(); }
     } catch (e) { /* music init failed, non-critical */ }
     document.removeEventListener('click', _initTitleMusic);
     document.removeEventListener('touchstart', _initTitleMusic);
@@ -99,15 +109,23 @@ export function initTitle(canvas, saveData) {
     });
   }
 
-  // ── View tabs (orbital = stub) ──
+  // ── View tabs (City / Orbital) ──
   const tabs = document.getElementById('view-tabs');
   if (tabs) {
     tabs.addEventListener('click', (e) => {
       const tab = e.target.closest('.view-tab');
-      if (!tab) return;
-      // City is always active; orbital is a stub
-      if (tab.dataset.view === 'orbital') {
-        // Stub: no-op for now
+      if (!tab || isTransitionActive()) return;
+      const view = tab.dataset.view;
+      if (view === 'orbital' && !orbitalView) {
+        orbitalView = true;
+        setEarthVisible(true);
+        autoRotate = true; idleTimer = 5;
+        tabs.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === 'orbital'));
+      } else if (view === 'city' && orbitalView) {
+        orbitalView = false;
+        setEarthVisible(false);
+        autoRotate = true; idleTimer = 5;
+        tabs.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === 'city'));
       }
     });
   }
@@ -183,12 +201,6 @@ export function initTitle(canvas, saveData) {
   let lastTime = performance.now();
   let frameCount = 0;
 
-  // FPS counter (temporary debug)
-  let _fpsFrames = 0, _fpsLast = performance.now();
-  const _fpsEl = document.createElement('div');
-  _fpsEl.style.cssText = 'position:fixed;top:4px;left:4px;z-index:9999;color:lime;font:bold 14px monospace;background:rgba(0,0,0,0.7);padding:2px 6px;pointer-events:none';
-  document.body.appendChild(_fpsEl);
-
   function animate() {
     titleAnimId = requestAnimationFrame(animate);
     const now = performance.now();
@@ -196,15 +208,6 @@ export function initTitle(canvas, saveData) {
     lastTime = now;
     const t = now * 0.001;
     frameCount++;
-
-    // FPS display
-    _fpsFrames++;
-    if (now - _fpsLast >= 500) {
-      const fps = (_fpsFrames / ((now - _fpsLast) / 1000)).toFixed(0);
-      const info = renderer.info.render;
-      _fpsEl.textContent = `${fps} FPS | ${info.calls} draws | ${info.triangles} tris`;
-      _fpsFrames = 0; _fpsLast = now;
-    }
 
     // Auto-rotate with idle timer
     if (!isDragging && !isTransitionActive()) {
@@ -223,7 +226,7 @@ export function initTitle(canvas, saveData) {
     updateReverseTransition(dt, (r) => { zoomTarget = r; zoomClose = false; });
 
     // Update camera
-    const extActive = isExteriorActive();
+    const extActive = isExteriorActive() || isDoorAnimActive();
 
     // Detect exterior activation edge — initialize camera angle
     if (extActive && !wasExteriorActive) {
@@ -276,32 +279,55 @@ export function initTitle(canvas, saveData) {
       cameraLookTarget.z += (pp.z - cameraLookTarget.z) * 0.15;
 
       camera.lookAt(cameraLookTarget);
+    } else if (orbitalView) {
+      // Orbital view — camera orbits the Earth globe
+      const ep = getEarthParams();
+      const targetR = ep.r * 2.5;  // orbit radius around Earth
+      const targetH = ep.y + ep.r * 1.2;  // slightly above equator
+      const targetLookY = ep.y;  // look at Earth center
+
+      // Smooth lerp to orbital position
+      orbitalCamR += (targetR - orbitalCamR) * 0.03;
+      orbitalCamY += (targetH - orbitalCamY) * 0.03;
+      orbitalLookY += (targetLookY - orbitalLookY) * 0.03;
+
+      camera.position.x = Math.cos(orbitAngle) * orbitalCamR;
+      camera.position.z = Math.sin(orbitAngle) * orbitalCamR;
+      camera.position.y = orbitalCamY;
+      camera.lookAt(0, orbitalLookY, 0);
     } else {
-      // Original orbit camera — only runs when NOT in exterior mode
-      camera.position.x = Math.cos(orbitAngle) * DIMS.cameraOrbitR;
-      camera.position.z = Math.sin(orbitAngle) * DIMS.cameraOrbitR;
-      camera.position.y = DIMS.cameraHeight;
+      // City orbit camera
+      // Lerp back from orbital if we were just there
+      orbitalCamR += (DIMS.cameraOrbitR - orbitalCamR) * 0.05;
+      orbitalCamY += (DIMS.cameraHeight - orbitalCamY) * 0.05;
+
+      const useR = Math.abs(orbitalCamR - DIMS.cameraOrbitR) > 10 ? orbitalCamR : DIMS.cameraOrbitR;
+      const useY = Math.abs(orbitalCamY - DIMS.cameraHeight) > 5 ? orbitalCamY : DIMS.cameraHeight;
+
+      camera.position.x = Math.cos(orbitAngle) * useR;
+      camera.position.z = Math.sin(orbitAngle) * useR;
+      camera.position.y = useY;
       const visFloors = getVisibleFloors();
       const visH = visFloors * 3.333 + 3.333 * 3; // floorH * floors + baseH
       const targetY = Math.min(visH * 0.15, 200); // look at base — tower extends off screen
       cameraLookY += (targetY - cameraLookY) * 0.05;
-      camera.lookAt(0, cameraLookY, 0);
+      orbitalLookY += (cameraLookY - orbitalLookY) * 0.05;
+      camera.lookAt(0, Math.abs(orbitalLookY - cameraLookY) > 5 ? orbitalLookY : cameraLookY, 0);
     }
 
     // City update
     if (cityData) cityData.updateCity(t, camera.position);
 
-    // Hover systems
+    // Hover systems (skip in exterior and orbital views)
     if (frameCount % 3 === 0) {
-      if (!extActive) {
+      if (!extActive && !orbitalView) {
         updateBuildingHover(camera, mouseScreenX, mouseScreenY, isTransitionActive() && TRANSITION.phase < 4, t);
-        // Tower window toggle: only in orbit mode (don't toggle while walking)
         updateTowerHover(camera, mouseScreenX, mouseScreenY);
       }
     }
 
-    // Constellation lines fade — skip in exterior mode
-    if (!extActive) updateConstellationLines();
+    // Constellation lines fade — skip in exterior and orbital views
+    if (!extActive && !orbitalView) updateConstellationLines();
 
     renderer.render(scene, camera);
   }
@@ -310,6 +336,7 @@ export function initTitle(canvas, saveData) {
 
 function _startTransition(isNew) {
   autoRotate = false;
+  orbitalView = false;
 
   const setOrbitAngle = (fn) => { orbitAngle = fn(orbitAngle); };
 
@@ -322,6 +349,7 @@ function _startTransition(isNew) {
   setEnterDoorCallback(onEnterGame);
   if (cityData.semiWorkers) setGroundNPCs(cityData.semiWorkers);
   if (cityData.bizPeople) setBizPeople(cityData.bizPeople);
+  if (cityData.doorLeft) setDoorMeshes(cityData.doorLeft, cityData.doorRight);
 
   playTransition(scene, camera, renderer, cityData, () => orbitAngle, setOrbitAngle, onEnterGame);
 }
@@ -348,6 +376,7 @@ export function skipToExterior() {
   zoomTarget = 1000;
   zoomClose = false;
   autoRotate = false;
+  orbitalView = false;
 
   // Sky to day instantly
   SKY.blend = 1;
@@ -404,6 +433,7 @@ export function skipToExterior() {
   setEnterDoorCallback(onEnterGame);
   if (cityData.semiWorkers) setGroundNPCs(cityData.semiWorkers);
   if (cityData.bizPeople) setBizPeople(cityData.bizPeople);
+  if (cityData.doorLeft) setDoorMeshes(cityData.doorLeft, cityData.doorRight);
 
   // Show arrival text, home button, and activate exterior
   showArrivalText(onEnterGame);

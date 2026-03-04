@@ -7,9 +7,14 @@ export let soundOn=true;
 const SOUND_KEY='spacetower_sound';
 try{soundOn=localStorage.getItem(SOUND_KEY)!=='off'}catch(e){}
 
+// Create/resume the single shared AudioContext (no masterGain, no ambient)
+export function ensureAudioCtx(){
+  if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+}
 function initAudio(){
-  if(audioCtx)return;
-  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  ensureAudioCtx();
+  if(masterGain)return;
   masterGain=audioCtx.createGain();masterGain.gain.value=soundOn?0.35:0;masterGain.connect(audioCtx.destination);
 }
 export function toggleSound(){
@@ -64,6 +69,8 @@ export function sndTick(){playTone(1000,0.03,'sine',0.15)}
 export function sndVictory(){playTone(440,0.15,'sine',0.25);playTone(554,0.15,'sine',0.2,0.12);playTone(660,0.15,'sine',0.25,0.24);playTone(880,0.3,'sine',0.3,0.36)}
 export function sndDefeat(){playTone(440,0.2,'sawtooth',0.15);playTone(370,0.25,'sawtooth',0.12,0.15);playTone(330,0.35,'sawtooth',0.1,0.3)}
 export function sndBell(){playTone(800,0.3,'sine',0.2);playTone(1200,0.2,'sine',0.15,0.05)}
+export function sndReckoningClaim(){playTone(400,0.06,'triangle',0.15);playTone(520,0.08,'triangle',0.12,0.04)}
+export function sndReckoningWave(){playTone(330,0.1,'sine',0.2);playTone(440,0.1,'sine',0.18,0.08);playTone(550,0.12,'sine',0.2,0.16);playNoise(0.06,0.08)}
 // Keeper sounds
 export function sndKeeper(){playTone(110,0.4,'sine',0.2);playTone(165,0.3,'sine',0.15,0.15);playTone(220,0.5,'sine',0.2,0.3)}
 export function sndKeeperTick(){playTone(300+Math.random()*100,0.02,'triangle',0.05)}
@@ -105,6 +112,6 @@ export function updateAmbient(altFrac2){
   ambFilt.frequency.setTargetAtTime(300+altFrac2*600,t,0.5);
   ambGain.gain.setTargetAtTime(0.1+altFrac2*0.12,t,0.5);
 }
-// First interaction triggers AudioContext (browser policy)
-export function ensureAudio(){if(!audioCtx){initAudio();startAmbient()}}
+// First interaction triggers AudioContext + masterGain + ambient
+export function ensureAudio(){initAudio()}
 export function getAudioCtx(){return audioCtx}

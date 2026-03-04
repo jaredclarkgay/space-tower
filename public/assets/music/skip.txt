@@ -1,0 +1,2 @@
+# Songs to skip — one filename per line
+# Example: Baby.mid

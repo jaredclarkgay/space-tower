@@ -12,7 +12,7 @@ import { setupCompendium, isCompendiumOpen } from './compendium.js';
 import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, sndBuild, sndTile, sndWhoosh, sndChime, sndBoom, sndGrow, sndData, sndAwe, soundOn, toggleSound, getAudioCtx, sndDoorHumStart, sndDoorHumStop } from './sound.js';
 import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js';
 import { setupRadio } from './radio-ui.js';
-import { checkFloor8Trigger, updateFloor8, tryPlaceBuilderModule, checkRematchBell, startRematch, getFloor8State, isFloor8Frozen, isFloor8Active } from './floor8-game.js';
+import { checkReckoningTrigger, updateReckoning, checkReckoningBell, startRematch, isReckoningFrozen, isReckoningActive, setupTestMode, handleReckoningIntroE, handleReckoningColorLeft, handleReckoningColorRight, handleReckoningColorConfirm, checkColorWheel, openColorWheel } from './reckoning.js';
 import { isKeeperProximity, startKeeperZoom, endKeeperZoom, updateKeeper, advanceKeeperDialogue, getZoomState } from './keeper.js';
 
 // ═══ REAL-TIME ACCUMULATORS (frame-rate independent) ═══
@@ -215,14 +215,14 @@ function processArrivals(){
       if(Math.abs(n.x-n.destX)<20){n.arrived=true;n.arrState='done';n.x=n.destX;n.vx=0;n.st='idle'}
     }
   });
-  // Door auto-open logic
+  // Door auto-open logic (both sides, works from inside and outside)
   const p=S.player;
-  const playerNearDoor=p.x<TL+80&&p.y>=TB-100;
+  const atGround=p.y>=TB-100;
+  const nearDoorL=atGround&&Math.abs(p.x-TL)<80;
+  const nearDoorR=atGround&&Math.abs(p.x-TR)<80;
   const npcEntering=S.npcs.some(n=>n.arrState==='entering'&&n.x<TL+80);
-  const doorTarget=(playerNearDoor||npcEntering)?1:0;
-  S.door.open+=(doorTarget-S.door.open)*0.08;
-  // Walk through the door to go outside (grace period prevents bleed-through from exterior)
-  if (_exitDoorCheck && performance.now() - _simStartTime > 800 && p.x < TL - 20 && p.y >= TB - 100) _exitDoorCheck();
+  S.door.open+=((nearDoorL||npcEntering?1:0)-S.door.open)*0.08;
+  S.door.openR+=((nearDoorR?1:0)-S.door.openR)*0.08;
 }
 
 // ═══ UPDATE ═══
@@ -241,8 +241,8 @@ function update(){
       for(let bi=0;bi<BPF;bi++){if(rt===bi*10)sndTile(bi)}
     }
   }
-  // Floor 8 + Keeper updates
-  checkFloor8Trigger();updateFloor8();
+  // Reckoning + Keeper updates
+  checkReckoningTrigger();updateReckoning();
   updateKeeper();
   const p=S.player,k=S.keys,inter=getInter();
   S.frame++;
@@ -257,10 +257,20 @@ function update(){
   const frameNow=performance.now(),frameDt=_lastFrameTime?frameNow-_lastFrameTime:16;_lastFrameTime=frameNow;
   if(S.jp['KeyF']){const spEl=document.getElementById('sp');if(p.suit){p.suit=false;spEl.style.display='none'}else{const s=nearSuit();if(s){s.taken=true;p.suit=true;p.suitC=pk(CASUAL_TOPS_M);spEl.style.display='block'}}}
   _saveAcc+=frameDt;if(_saveAcc>=SAVE_INTERVAL){_saveAcc-=SAVE_INTERVAL;autoSave()}
-  // Floor 8 E handler (before normal interactions)
-  const _f8s=getFloor8State();
-  if(_f8s.phase==='PLAYING'&&p.cf===7&&k['KeyE']&&!S.iLock){tryPlaceBuilderModule();S.iLock=true}
-  if(k['KeyE']&&!S.iLock&&checkRematchBell()){startRematch();S.iLock=true}
+  // Reckoning intro E handler (skip typewriter / begin)
+  if(S.reckoning.phase==='INTRO'){if(k['KeyE']&&!S.iLock){handleReckoningIntroE();S.iLock=true}if(!k['KeyE'])S.iLock=false}
+  // Reckoning color pick handler (post-reckoning or free-roam recolor)
+  if(S.reckoning.phase==='COLOR_PICK'||S.reckoning.colorPick){
+    if(S.jp['ArrowLeft']||S.jp['KeyA'])handleReckoningColorLeft();
+    if(S.jp['ArrowRight']||S.jp['KeyD'])handleReckoningColorRight();
+    if(k['KeyE']&&!S.iLock){handleReckoningColorConfirm();S.iLock=true}
+    if(S.jp['Escape']&&S.reckoning.colorPick&&S.reckoning.phase==='DONE'){S.reckoning.colorPick=false}
+    if(!k['KeyE'])S.iLock=false;
+  }
+  // Reckoning rematch bell E handler
+  if(k['KeyE']&&!S.iLock&&checkReckoningBell()){startRematch();S.iLock=true}
+  // Color wheel station E handler
+  if(k['KeyE']&&!S.iLock&&checkColorWheel()){openColorWheel();S.iLock=true}
   // Keeper E/Escape handler
   if(S.keeper.active){
     if(k['KeyE']&&!S.iLock){advanceKeeperDialogue();S.iLock=true}
@@ -270,26 +280,48 @@ function update(){
   // Keeper proximity auto-trigger (debounce: must leave proximity before re-triggering)
   if(!S.keeper.active&&isKeeperProximity()&&getZoomState()==='idle'&&!_keeperDebounce){startKeeperZoom();_keeperDebounce=true}
   if(!isKeeperProximity())_keeperDebounce=false;
+  // E to go outside — near front door (either side) or at frame edges after falling off
+  const _xMin=TL-UW+p.w/2+50,_xMax=TR+UW-p.w/2-50;
+  const _nearExit=!isReckoningActive()&&(
+    (p.y>=TB-100&&(p.x<TL+50||p.x>TR-50)) || // ground floor, either wall
+    (p.x<=_xMin||p.x>=_xMax)                   // frame edges (fell off building)
+  );
+  if(k['KeyE']&&!S.iLock&&_exitDoorCheck&&performance.now()-_simStartTime>800&&_nearExit){_exitDoorCheck();S.iLock=true}
   // RGB door ambient hum
   if(p.cf===4&&S.buildout[4].stage>=5&&Math.abs(p.x-(TL+2*PG+PG/2))<200){sndDoorHumStart()}else{sndDoorHumStop()}
-  const _f8frozen=isFloor8Frozen()||S.keeper.active;
+  const _f8frozen=isReckoningFrozen()||S.keeper.active;
   if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()&&!_f8frozen){
   const jk=k['ArrowUp']||k['KeyW'],dk=k['ArrowDown']||k['KeyS'];
   const stUp=inter&&inter.t==='up',stDn=inter&&inter.t==='dn';
   if(p.st!=='climb'){
     p.vx=0;
     const _spr=k['ShiftLeft']||k['ShiftRight']?2:1;
-    if(k['ArrowLeft']||k['KeyA']){p.vx=-p.spd*_spr;p.fr=false;if(p.onF)p.st='walk'}
-    if(k['ArrowRight']||k['KeyD']){p.vx=p.spd*_spr;p.fr=true;if(p.onF)p.st='walk'}
+    const _lk=k['ArrowLeft']||k['KeyA'],_rk=k['ArrowRight']||k['KeyD'];
+    if(_lk){p.vx=-p.spd*_spr;p.fr=false;if(p.onF)p.st='walk'}
+    if(_rk){p.vx=p.spd*_spr;p.fr=true;if(p.onF)p.st='walk'}
+    // Wall slide: override horizontal input — stick to wall
+    if(p.wallSlide){
+      p.vx=0;
+      // Detach if pressing away from wall
+      if((p.wallDir===-1&&_rk)||(p.wallDir===1&&_lk)){p.wallSlide=false}
+      // Wall jump
+      else if(jk||k['Space']){
+        p.vy=-14;p.wallSlide=false;p.st='jump';
+        p.wjVx=-p.wallDir*8;p.fr=p.wallDir===-1;
+        p.flipInitVel=p.vy;p.flipCommitted=true;
+      }
+    }
+    // Add wall jump momentum
+    if(p.wjVx){p.vx+=p.wjVx;p.wjVx*=0.9;if(Math.abs(p.wjVx)<0.3)p.wjVx=0}
     if(p.vx===0&&p.onF&&!p.isChg&&!p.isDrp)p.st='idle';
     if(jk&&stUp){p.st='climb';p.clT=inter.v;p.clP=0;p.x=inter.v.bx;p.vx=0;p.isChg=false;p.chgT=0;setTZoom(p.baseZoom||tZoom)}
     else if(jk||k['Space']){
       if(p.onF){if(!p.isChg)p.baseZoom=tZoom;p.isChg=true;p.chgT=Math.min(p.chgT+1,CHG_MX);setTZoom(p.baseZoom-p.chgT/CHG_MX*0.2)}
-    } else {if(p.isChg&&p.onF){const t=p.chgT/CHG_MX;p.vy=JUMP_F+(JUMP_MX-JUMP_F)*t;p.onF=false;p.st='jump';p.flipInitVel=p.vy;p.flipCommitted=t>=0.35}if(p.isChg)setTZoom(p.baseZoom);p.isChg=false;p.chgT=0}
+    } else {if(p.isChg&&p.onF){const t=p.chgT/CHG_MX;p.vy=JUMP_F+(JUMP_MX-JUMP_F)*t;p.onF=false;p.st='jump';p.flipInitVel=p.vy;p.flipCommitted=t>=0.15;p.wallSlide=false}if(p.isChg)setTZoom(p.baseZoom);p.isChg=false;p.chgT=0}
     if(dk&&p.onF&&!stDn){if(!p.isDrp)p.baseZoom=p.baseZoom||tZoom;p.isDrp=true;p.drpT=Math.min(p.drpT+1,DROP_MX);setTZoom(p.baseZoom-p.drpT/DROP_MX*0.25)}
     else if(dk&&stDn){p.st='climb';p.clT=inter.v;p.clP=1;p.x=inter.v.tx;p.vx=0;p.isDrp=false;p.drpT=0;setTZoom(p.baseZoom||tZoom)}
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
-    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isFloor8Active()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=5)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
+    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=5)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
       else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
       }S.iLock=true}}else S.iLock=false;
   } else {
@@ -299,12 +331,35 @@ function update(){
     else{p.x=st.bx+(st.tx-st.bx)*p.clP;p.y=st.by+(st.ty-st.by)*p.clP}
   }
   if(p.st!=='climb'){
+    const _prevX=p.x;
     p.x+=p.vx;p.y+=p.vy;p.vy+=GRAV;
+    // Wall slide: cap fall speed (gravity still applies so ascending jumps arc naturally)
+    if(p.wallSlide){if(p.vy>1.5)p.vy=1.5}
     const xMin=TL-UW+p.w/2,xMax=TR+UW-p.w/2;
     if(p.x<xMin)p.x=xMin;if(p.x>xMax)p.x=xMax;
+    // Tower walls — solid below building height, open above rooftop
+    const _wm=p.w/2;
+    if(p.y>=_dynRY){
+      const _wasIn=_prevX>=TL&&_prevX<=TR;
+      if(_wasIn){if(p.x<TL+_wm)p.x=TL+_wm;if(p.x>TR-_wm)p.x=TR-_wm}
+      else if(_prevX<TL){if(p.x>TL-_wm)p.x=TL-_wm}
+      else{if(p.x<TR+_wm)p.x=TR+_wm}
+    }
+    // Wall slide — descending and pressed against tower wall (interior or exterior)
+    if(p.st==='jump'&&!p.onF&&p.vy>=0&&p.y>=_dynRY){
+      const _wasIn2=_prevX>=TL&&_prevX<=TR;
+      if(_wasIn2){
+        if(p.x<=TL+_wm+2){p.x=TL+_wm;p.wallSlide=true;p.wallDir=-1;p.wjVx=0;p.fr=true}
+        else if(p.x>=TR-_wm-2){p.x=TR-_wm;p.wallSlide=true;p.wallDir=1;p.wjVx=0;p.fr=false}
+      } else if(_prevX<TL){
+        if(p.x>=TL-_wm-2){p.x=TL-_wm;p.wallSlide=true;p.wallDir=1;p.wjVx=0;p.fr=false}
+      } else {
+        if(p.x<=TR+_wm+2){p.x=TR+_wm;p.wallSlide=true;p.wallDir=-1;p.wjVx=0;p.fr=true}
+      }
+    }
     p.onF=false;
-    for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&S.buildout[f.level].stage<1&&f.level!==_abf2)continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false}break}}
-    if(p.y>TB){p.y=TB;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=0;p.flipCommitted=false}
+    for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&S.buildout[f.level].stage<1&&f.level!==_abf2)continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false;p.wallSlide=false}break}}
+    if(p.y>TB){p.y=TB;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=0;p.flipCommitted=false;p.wallSlide=false}
   }
   } // end movement guard
   if(S.elevOpen){
@@ -393,6 +448,9 @@ export function initGame(saveData){
   if(saveData&&loadGame()){
     showMsg('SAVE LOADED','Welcome back, builder.');
   }
+  // Test mode: jump straight to reckoning
+  const _testFlag=localStorage.getItem('spacetower_testReckoning');
+  if(_testFlag){localStorage.removeItem('spacetower_testReckoning');setupTestMode()}
   // Always enter through the elevator doors
   S.player.x=ELEV_X;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
   // Finalize arrivals for already-completed floors (post-load)

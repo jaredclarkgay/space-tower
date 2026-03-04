@@ -93,3 +93,25 @@ export const CWM_INDOOR=[
   [n=>`${n} is eating a sandwich on an upturned bucket.`,n=>`"Break time. Fifteen minutes. Then we gotta get that duct finished."`,n=>`"Best part of this job? Every floor's different. Worst part? Every floor's different."`],
   [n=>`"You the new inspector?" ${n} asks.`,n=>`"No? Good. Last one wanted us to redo the whole fire suppression system."`,n=>`"He wasn't wrong. But still."`],
 ];
+
+// ═══ FLOOR LEADERS (Reckoning event) ═══
+export const FLOOR_LEADERS=[
+  {name:'Rodriguez',floor:0,line:n=>`${n} cracks knuckles. "Floor's ours."`},
+  {name:'Kim',      floor:1,line:n=>`${n} checks the numbers. "We hold this one."`},
+  {name:'Paz',      floor:2,line:n=>`${n} looks at the garden. "They're not taking this."`},
+  {name:'Murphy',   floor:3,line:n=>`${n} nods. "Wherever builders are losing."`},
+  {name:'Okafor',   floor:5,line:n=>`${n} stares down the tower. "Interesting fight."`},
+  {name:'Tanaka',   floor:6,line:n=>`${n} moves slow but steady. "Every block counts."`},
+];
+
+// ═══ GENE (recurring NPC) ═══
+export const GENE_DATA={
+  name:'Gene',type:'b',
+  pal:{b:'#2a1810',h:'#e8c898',cl:'#2e3c4a',sh:'#1e2c3a'},
+  floors:[1,3,5,7],
+  convo:[
+    n=>`${n} is typing something. "One second."`,
+    n=>`"Do you know how many forms it takes to approve a floor? Seventeen."`,
+    n=>`"I'm not the enemy, builder. I'm the guy who makes sure the lights stay on."`,
+  ],
+};

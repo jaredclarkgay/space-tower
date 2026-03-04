@@ -2,11 +2,11 @@
 import { S, syncLitFloors } from './state.js';
 import { NF, BPF } from './constants.js';
 import { FD } from './floors.js';
-import { F8_ALL_MODS } from './floor8-game.js';
+import { F8_ALL_MODS } from './reckoning.js';
 
 // ═══ SAVE / LOAD ═══
-const SAVE_KEY='spacetower_v12';
-const OLD_KEYS=['spacetower_v11'];
+const SAVE_KEY='spacetower_v13';
+const OLD_KEYS=['spacetower_v12','spacetower_v11'];
 function _getRaw(){
   let raw=localStorage.getItem(SAVE_KEY);
   if(raw)return raw;
@@ -32,7 +32,7 @@ export function saveGame(){
       modules:mods,
       credits:S.credits,
       sat:S.sat,
-      floor8:{played:S.floor8.played,outcome:S.floor8.outcome,bellX:S.floor8.bellX},
+      reckoning:{played:S.reckoning.played,outcome:S.reckoning.outcome,bellX:S.reckoning.bellX,map:S.reckoning.map,builderColor:S.reckoning.builderColor},
       keeper:{spoken:S.keeper.spoken,exchange:S.keeper.exchange},
       ts:Date.now()
     };localStorage.setItem(SAVE_KEY,JSON.stringify(d));return true}catch(e){return false}
@@ -60,10 +60,17 @@ export function loadGame(){
         }
       }
     }
-    if(d.floor8){
-      S.floor8.played=!!d.floor8.played;S.floor8.outcome=d.floor8.outcome||null;
-      S.floor8.bellX=d.floor8.bellX||0;
-      if(S.floor8.played)S.floor8.phase='DONE';
+    if(d.reckoning){
+      S.reckoning.played=!!d.reckoning.played;S.reckoning.outcome=d.reckoning.outcome||null;
+      S.reckoning.bellX=d.reckoning.bellX||0;
+      if(d.reckoning.map)S.reckoning.map=d.reckoning.map;
+      if(d.reckoning.builderColor)S.reckoning.builderColor=d.reckoning.builderColor;
+      if(S.reckoning.played)S.reckoning.phase='DONE';
+    } else if(d.floor8){
+      // Backward compat: migrate old floor8 saves
+      S.reckoning.played=!!d.floor8.played;S.reckoning.outcome=d.floor8.outcome||null;
+      S.reckoning.bellX=d.floor8.bellX||0;
+      if(S.reckoning.played)S.reckoning.phase='DONE';
     }
     if(d.keeper){S.keeper.spoken=!!d.keeper.spoken;S.keeper.exchange=d.keeper.exchange||0}
     syncLitFloors();return true}catch(e){return false}

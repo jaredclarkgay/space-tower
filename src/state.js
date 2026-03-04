@@ -17,9 +17,18 @@ export const S={
   compendium:{entries:{}},
   fx:{shake:0,flash:0,flashColor:'#fff',tint:null,tintAlpha:0},
   particles:[],
-  door:{open:0},
+  door:{open:0,openR:0},
   arrivalQueue:[],
-  floor8:{phase:'IDLE',timer:0,played:false,outcome:null,bScore:0,sScore:0,suitNpcs:[],bellX:0},
+  reckoning:{
+    phase:'IDLE',timer:0,played:false,outcome:null,
+    map:Array.from({length:NF},()=>Array(BPF).fill(0)),
+    bScore:0,sScore:0,suitWave:0,
+    claimBi:-1,claimFi:-1,claimTimer:0,
+    builders:[],suits:[],floorLeaders:[],floodNpcs:[],
+    bellX:0,geneAbsent:false,
+    builderColor:null, // custom color picked after reckoning (null = default #FF6600)
+    colorPick:false, // true when color picker is active
+  },
   keeper:{active:false,zoom:0,spoken:false,exchange:0,twText:'',twIdx:0,twDone:false,twTimer:0},
   rgbDoor:{particles:[],textTimer:0},
   modules:Array.from({length:NF},()=>Array(BPF).fill(null)),

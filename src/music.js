@@ -307,8 +307,8 @@ You're Beautiful=James Blunt`.trim();
 const ARTISTS = {};
 _AD.split('\n').forEach(l => { const i = l.indexOf('='); if (i > 0) ARTISTS[l.slice(0, i)] = l.slice(i + 1); });
 
-// ── Build playlist from MIDI files ──
-const PLAYLIST = MIDI_FILES.map(f => {
+// ── Build playlist from MIDI files (filtered by skip.txt at init) ──
+let PLAYLIST = MIDI_FILES.map(f => {
   const name = f.replace(/\.mid$/, '');
   return { file: f, name, artist: ARTISTS[name] || 'Tower Radio', duration: 0 };
 });
@@ -352,10 +352,22 @@ function _restoreMusicState() {
   } catch (_) { return null; }
 }
 
+// ── Load skip list (public/assets/music/skip.txt) ──
+async function _loadSkipList() {
+  try {
+    const res = await fetch(`${BASE}assets/music/skip.txt`);
+    if (!res.ok) return;
+    const text = await res.text();
+    const skips = new Set(text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')));
+    if (skips.size) PLAYLIST = PLAYLIST.filter(t => !skips.has(t.file));
+  } catch (_) {}
+}
+
 // ── Init ──
 export async function initMusic(existingAudioCtx) {
   if (initialized) return;
   try {
+    await _loadSkipList();
     Tone.setContext(existingAudioCtx);
     await Tone.start();
     musicGain = new Tone.Gain(0).toDestination();

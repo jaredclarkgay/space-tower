@@ -34,6 +34,7 @@ const craneParts = [];
 let cableMesh = null;
 let elevMesh = null, elevTrack = null;
 let elevFloor = 5, elevTarget = 5, elevWait = 3;
+let doorLeft = null, doorRight = null;
 const elevSpeed = 8;
 const sats = [];
 
@@ -85,6 +86,7 @@ export function buildCityScene(scene, buildout) {
   craneParts.length = 0;
   cableMesh = null;
   elevMesh = null; elevTrack = null;
+  doorLeft = null; doorRight = null;
   sats.length = 0;
   starPoints = null;
   starData.length = 0;
@@ -114,8 +116,11 @@ export function buildCityScene(scene, buildout) {
   buildTowerGlow(scene);
 
   // Exterior: player character + construction site
-  const exteriorPlayer = buildPlayer(scene);
-  const exteriorSite = buildConstructionSite(scene);
+  buildPlayer(scene);
+  buildConstructionSite(scene);
+
+  // Earth globe (visible from orbital view)
+  buildEarth(scene);
 
   function updateCity(t, cameraPos) {
     const dt = 1 / 60;
@@ -132,6 +137,7 @@ export function buildCityScene(scene, buildout) {
     }
     updateElevator(dt);
     updateSats(scene, dt);
+    if (earthMesh) earthMesh.rotation.y = t * 0.03;
   }
 
   return {
@@ -152,10 +158,10 @@ export function buildCityScene(scene, buildout) {
     restoreAllTowerFloors,
     applyPlayerLighting,
     getStarPoints() { return starPoints; },
-    exteriorPlayer,
-    exteriorSite,
     semiWorkers: vehicleState.semiWorkers,
     bizPeople: vehicleState.bizPeople,
+    doorLeft,
+    doorRight,
   };
 }
 
@@ -208,27 +214,105 @@ function buildTower(scene) {
     }
   }
 
-  // Foundation — flush with tower footprint (ground-level first floor, not a pedestal)
-  const base = new THREE.Mesh(new THREE.BoxGeometry(tw, baseH, td), new THREE.MeshBasicMaterial({ color: 0x1a1e28 }));
-  base.position.y = baseH / 2; TC.group.add(base);
+  // ── Foundation with vestibule interior ──
+  const vestW = 20, vestD = 15;
+  const doorH = baseH * 0.75, doorW = 6;
+  const baseMat = new THREE.MeshBasicMaterial({ color: 0x1a1e28 });
+  const vestMat = new THREE.MeshBasicMaterial({ color: 0x0e1218 });
 
-  // Ground-level entrance doors (+Z face) — double doors with warm glow
-  const doorH = baseH * 0.8, doorW = 8;
+  // Back section: full width, stops before vestibule
+  const backD = td - vestD;
+  const backSec = new THREE.Mesh(new THREE.BoxGeometry(tw, baseH, backD), baseMat);
+  backSec.position.set(0, baseH / 2, -vestD / 2); TC.group.add(backSec);
+
+  // Left section: fills +Z zone left of vestibule opening
+  const sideW = (tw - vestW) / 2;
+  const leftSec = new THREE.Mesh(new THREE.BoxGeometry(sideW, baseH, vestD), baseMat);
+  leftSec.position.set(-(vestW / 2 + sideW / 2), baseH / 2, td / 2 - vestD / 2); TC.group.add(leftSec);
+
+  // Right section
+  const rightSec = new THREE.Mesh(new THREE.BoxGeometry(sideW, baseH, vestD), baseMat);
+  rightSec.position.set(vestW / 2 + sideW / 2, baseH / 2, td / 2 - vestD / 2); TC.group.add(rightSec);
+
+  // Top section: above vestibule opening
+  const topH = baseH - doorH;
+  const topSec = new THREE.Mesh(new THREE.BoxGeometry(vestW, topH, vestD), baseMat);
+  topSec.position.set(0, doorH + topH / 2, td / 2 - vestD / 2); TC.group.add(topSec);
+
+  // ── Vestibule interior walls (slightly different shade for depth) ──
+  const vBack = new THREE.Mesh(new THREE.PlaneGeometry(vestW, doorH), vestMat);
+  vBack.position.set(0, doorH / 2, td / 2 - vestD + 0.05); TC.group.add(vBack);
+
+  const vLeftWall = new THREE.Mesh(new THREE.PlaneGeometry(vestD, doorH), vestMat);
+  vLeftWall.rotation.y = Math.PI / 2;
+  vLeftWall.position.set(-vestW / 2 + 0.05, doorH / 2, td / 2 - vestD / 2); TC.group.add(vLeftWall);
+
+  const vRightWall = new THREE.Mesh(new THREE.PlaneGeometry(vestD, doorH), vestMat);
+  vRightWall.rotation.y = -Math.PI / 2;
+  vRightWall.position.set(vestW / 2 - 0.05, doorH / 2, td / 2 - vestD / 2); TC.group.add(vRightWall);
+
+  const vCeil = new THREE.Mesh(new THREE.PlaneGeometry(vestW, vestD), vestMat);
+  vCeil.rotation.x = Math.PI / 2;
+  vCeil.position.set(0, doorH - 0.05, td / 2 - vestD / 2); TC.group.add(vCeil);
+
+  const vFloorMat = new THREE.MeshBasicMaterial({ color: 0x151a22 });
+  const vFloor = new THREE.Mesh(new THREE.PlaneGeometry(vestW, vestD), vFloorMat);
+  vFloor.rotation.x = -Math.PI / 2;
+  vFloor.position.set(0, 0.05, td / 2 - vestD / 2); TC.group.add(vFloor);
+
+  // ── Industrial pendant lights (work-zone feel) ──
+  const lightFixMat = new THREE.MeshBasicMaterial({ color: 0xffe8b0 });
+  const lightWireMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+  const lightGlowFloor = new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.25 });
+  const lightCeilGlow = new THREE.MeshBasicMaterial({ color: 0xffe0a0, transparent: true, opacity: 0.15 });
+  const nLights = 4, lightSpace = vestD / (nLights + 1);
+  for (let li = 0; li < nLights; li++) {
+    const lz = td / 2 - vestD + lightSpace * (li + 1);
+    // Wire
+    const wire = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), lightWireMat);
+    wire.position.set(0, doorH - 0.3, lz); TC.group.add(wire);
+    // Fixture housing
+    const fix = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.35, 1.4), lightFixMat);
+    fix.position.set(0, doorH - 0.8, lz); TC.group.add(fix);
+    // Ceiling glow halo
+    const cGlow = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), lightCeilGlow.clone());
+    cGlow.rotation.x = Math.PI / 2;
+    cGlow.position.set(0, doorH - 0.06, lz); TC.group.add(cGlow);
+    // Floor glow patch
+    const fGlow = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), lightGlowFloor.clone());
+    fGlow.rotation.x = -Math.PI / 2;
+    fGlow.position.set(0, 0.06, lz); TC.group.add(fGlow);
+  }
+
+  // ── Doors (narrower, more door-like) ──
   const doorMat = new THREE.MeshBasicMaterial({ color: 0x2a2e3a });
-  const doorGlowMat = new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.2 });
+  const doorGlowMat = new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.15 });
   const doorFrameMat = new THREE.MeshBasicMaterial({ color: 0x323846 });
-  for (const side of [-5, 5]) {
+  const doorHandleMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+  for (const side of [-4.5, 4.5]) {
     const door = new THREE.Mesh(new THREE.PlaneGeometry(doorW, doorH), doorMat);
     door.position.set(side, doorH / 2, td / 2 + 0.2); TC.group.add(door);
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 0.85, doorH * 0.9), doorGlowMat);
-    glow.position.set(side, doorH / 2, td / 2 + 0.3); TC.group.add(glow);
+    // Subtle glow behind each door
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 0.85, doorH * 0.9), doorGlowMat.clone());
+    glow.position.set(side, doorH / 2, td / 2 + 0.15); TC.group.add(glow);
+    // Door handle
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), doorHandleMat);
+    handle.position.set(side + (side < 0 ? doorW / 2 - 0.8 : -doorW / 2 + 0.8), doorH * 0.45, td / 2 + 0.35);
+    TC.group.add(handle);
+    if (side < 0) doorLeft = door; else doorRight = door;
   }
-  // Door frame top
-  const frameTop = new THREE.Mesh(new THREE.BoxGeometry(doorW * 2 + 8, 1.5, 1), doorFrameMat);
-  frameTop.position.set(0, doorH + 0.75, td / 2 + 0.2); TC.group.add(frameTop);
+  // Door frame
+  const frameW = doorW * 2 + 5;
+  const frameTop = new THREE.Mesh(new THREE.BoxGeometry(frameW, 1.2, 0.8), doorFrameMat);
+  frameTop.position.set(0, doorH + 0.6, td / 2 + 0.2); TC.group.add(frameTop);
+  // Frame sides
+  for (const sx of [-(frameW / 2 - 0.4), frameW / 2 - 0.4]) {
+    const frameSide = new THREE.Mesh(new THREE.BoxGeometry(0.8, doorH, 0.8), doorFrameMat);
+    frameSide.position.set(sx, doorH / 2, td / 2 + 0.2); TC.group.add(frameSide);
+  }
   // Transom window above doors
-  const transom = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 2 + 4, 4), new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.3 }));
-  transom.position.set(0, doorH + 3.5, td / 2 + 0.3); TC.group.add(transom);
+  const transom = new THREE.Mesh(new THREE.PlaneGeometry(frameW - 2, 3), new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.25 }));
+  transom.position.set(0, doorH + 3, td / 2 + 0.3); TC.group.add(transom);
 
   // Corner columns
   const colThick = 3.125; // 0.25 × S
@@ -1205,4 +1289,159 @@ export function updateTowerHover(camera, mouseX, mouseY) {
     wd.wasHovered = isHovered;
   }
   if (changed) towerWinMesh.instanceColor.needsUpdate = true;
+}
+
+// ═══ EARTH GLOBE ═══
+let earthMesh = null;
+let earthAtmos = null;
+const EARTH_Y = -10000;
+const EARTH_R = 3000;
+
+function buildEarth(scene) {
+  // Procedural Earth texture on a 1024×512 canvas (equirectangular)
+  const w = 1024, h = 512;
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d');
+
+  // Ocean base
+  cx.fillStyle = '#1a3a5c';
+  cx.fillRect(0, 0, w, h);
+
+  // Subtle ocean variation
+  for (let i = 0; i < 60; i++) {
+    cx.fillStyle = `rgba(${20 + sr() * 15|0},${55 + sr() * 20|0},${85 + sr() * 20|0},0.3)`;
+    cx.beginPath();
+    cx.ellipse(sr() * w, sr() * h, sr() * 120 + 40, sr() * 60 + 20, sr() * Math.PI, 0, Math.PI * 2);
+    cx.fill();
+  }
+
+  // Simplified continents in equirectangular projection
+  // North America
+  cx.fillStyle = '#2d5e2d';
+  cx.beginPath();
+  cx.moveTo(w * 0.12, h * 0.18);
+  cx.quadraticCurveTo(w * 0.18, h * 0.12, w * 0.28, h * 0.15);
+  cx.quadraticCurveTo(w * 0.32, h * 0.2, w * 0.3, h * 0.28);
+  cx.quadraticCurveTo(w * 0.27, h * 0.35, w * 0.22, h * 0.4);
+  cx.quadraticCurveTo(w * 0.18, h * 0.42, w * 0.17, h * 0.48);
+  cx.quadraticCurveTo(w * 0.14, h * 0.46, w * 0.12, h * 0.38);
+  cx.quadraticCurveTo(w * 0.08, h * 0.3, w * 0.1, h * 0.22);
+  cx.closePath();
+  cx.fill();
+
+  // South America
+  cx.beginPath();
+  cx.moveTo(w * 0.22, h * 0.52);
+  cx.quadraticCurveTo(w * 0.27, h * 0.5, w * 0.28, h * 0.55);
+  cx.quadraticCurveTo(w * 0.3, h * 0.62, w * 0.28, h * 0.7);
+  cx.quadraticCurveTo(w * 0.26, h * 0.78, w * 0.24, h * 0.85);
+  cx.quadraticCurveTo(w * 0.22, h * 0.88, w * 0.21, h * 0.82);
+  cx.quadraticCurveTo(w * 0.19, h * 0.72, w * 0.2, h * 0.6);
+  cx.closePath();
+  cx.fill();
+
+  // Europe
+  cx.fillStyle = '#2b5c2b';
+  cx.beginPath();
+  cx.moveTo(w * 0.44, h * 0.15);
+  cx.quadraticCurveTo(w * 0.48, h * 0.12, w * 0.52, h * 0.14);
+  cx.quadraticCurveTo(w * 0.55, h * 0.17, w * 0.52, h * 0.22);
+  cx.quadraticCurveTo(w * 0.5, h * 0.28, w * 0.47, h * 0.32);
+  cx.quadraticCurveTo(w * 0.44, h * 0.3, w * 0.43, h * 0.24);
+  cx.quadraticCurveTo(w * 0.42, h * 0.18, w * 0.44, h * 0.15);
+  cx.closePath();
+  cx.fill();
+
+  // Africa
+  cx.fillStyle = '#3a6a2a';
+  cx.beginPath();
+  cx.moveTo(w * 0.45, h * 0.35);
+  cx.quadraticCurveTo(w * 0.5, h * 0.32, w * 0.55, h * 0.35);
+  cx.quadraticCurveTo(w * 0.58, h * 0.45, w * 0.56, h * 0.55);
+  cx.quadraticCurveTo(w * 0.54, h * 0.65, w * 0.52, h * 0.72);
+  cx.quadraticCurveTo(w * 0.5, h * 0.75, w * 0.48, h * 0.7);
+  cx.quadraticCurveTo(w * 0.44, h * 0.6, w * 0.43, h * 0.48);
+  cx.quadraticCurveTo(w * 0.43, h * 0.4, w * 0.45, h * 0.35);
+  cx.closePath();
+  cx.fill();
+
+  // Asia
+  cx.fillStyle = '#2e5e2e';
+  cx.beginPath();
+  cx.moveTo(w * 0.55, h * 0.12);
+  cx.quadraticCurveTo(w * 0.65, h * 0.08, w * 0.78, h * 0.12);
+  cx.quadraticCurveTo(w * 0.85, h * 0.15, w * 0.82, h * 0.22);
+  cx.quadraticCurveTo(w * 0.78, h * 0.3, w * 0.72, h * 0.35);
+  cx.quadraticCurveTo(w * 0.68, h * 0.38, w * 0.65, h * 0.35);
+  cx.quadraticCurveTo(w * 0.6, h * 0.32, w * 0.58, h * 0.28);
+  cx.quadraticCurveTo(w * 0.55, h * 0.2, w * 0.55, h * 0.12);
+  cx.closePath();
+  cx.fill();
+
+  // India
+  cx.beginPath();
+  cx.moveTo(w * 0.62, h * 0.35);
+  cx.quadraticCurveTo(w * 0.66, h * 0.34, w * 0.67, h * 0.38);
+  cx.quadraticCurveTo(w * 0.66, h * 0.46, w * 0.64, h * 0.5);
+  cx.quadraticCurveTo(w * 0.62, h * 0.48, w * 0.61, h * 0.42);
+  cx.closePath();
+  cx.fill();
+
+  // Australia
+  cx.fillStyle = '#4a6a3a';
+  cx.beginPath();
+  cx.moveTo(w * 0.78, h * 0.58);
+  cx.quadraticCurveTo(w * 0.84, h * 0.55, w * 0.88, h * 0.58);
+  cx.quadraticCurveTo(w * 0.9, h * 0.64, w * 0.88, h * 0.7);
+  cx.quadraticCurveTo(w * 0.84, h * 0.72, w * 0.8, h * 0.7);
+  cx.quadraticCurveTo(w * 0.77, h * 0.66, w * 0.78, h * 0.58);
+  cx.closePath();
+  cx.fill();
+
+  // Greenland
+  cx.fillStyle = '#4a7a5a';
+  cx.beginPath();
+  cx.moveTo(w * 0.3, h * 0.06);
+  cx.quadraticCurveTo(w * 0.35, h * 0.04, w * 0.37, h * 0.08);
+  cx.quadraticCurveTo(w * 0.36, h * 0.14, w * 0.33, h * 0.16);
+  cx.quadraticCurveTo(w * 0.3, h * 0.14, w * 0.29, h * 0.1);
+  cx.closePath();
+  cx.fill();
+
+  // Ice caps
+  cx.fillStyle = 'rgba(200,220,240,0.25)';
+  cx.fillRect(0, 0, w, h * 0.04);
+  cx.fillRect(0, h * 0.94, w, h * 0.06);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = THREE.RepeatWrapping;
+
+  const geo = new THREE.SphereGeometry(EARTH_R, 64, 48);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, fog: false });
+  earthMesh = new THREE.Mesh(geo, mat);
+  earthMesh.position.set(0, EARTH_Y, 0);
+  earthMesh.visible = false;
+  scene.add(earthMesh);
+
+  // Atmosphere halo
+  const atmosGeo = new THREE.SphereGeometry(EARTH_R * 1.015, 48, 32);
+  const atmosMat = new THREE.MeshBasicMaterial({
+    color: 0x4488cc, transparent: true, opacity: 0.12, side: THREE.BackSide, fog: false,
+  });
+  earthAtmos = new THREE.Mesh(atmosGeo, atmosMat);
+  earthAtmos.position.set(0, EARTH_Y, 0);
+  earthAtmos.visible = false;
+  scene.add(earthAtmos);
+
+  return earthMesh;
+}
+
+export function getEarthParams() {
+  return { y: EARTH_Y, r: EARTH_R };
+}
+
+export function setEarthVisible(v) {
+  if (earthMesh) earthMesh.visible = v;
+  if (earthAtmos) earthAtmos.visible = v;
 }

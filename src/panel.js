@@ -2,6 +2,7 @@
 import { S, getActiveBuildFloor, placeModule, sellModule, canAfford, isBuildable } from './state.js';
 import { FD, STAGES } from './floors.js';
 import { NF, BPF, isWinBlock, isElevBlock } from './constants.js';
+import { isReckoningActive } from './reckoning.js';
 
 // ═══ BUILD PANEL ═══
 let bpTitle, bpContent;
@@ -24,6 +25,7 @@ export function setupPanel(){
     // Module placement
     const modCard=e.target.closest('.mod-card');
     if(modCard){
+      if(isReckoningActive())return;
       const mfi=parseInt(modCard.dataset.fi),mid=modCard.dataset.id;
       const mod=FD[mfi].mods.find(m=>m.id===mid);
       if(!mod||!canAfford(mod.cost))return;

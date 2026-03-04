@@ -55,6 +55,15 @@ export function createTitleUI(saveData, onContinue, onNewGame) {
     menu.appendChild(cont);
   }
 
+  // Test Reckoning button
+  const testBtn = _makeSlot('Test Reckoning', 'Skip to land grab event', true);
+  testBtn.style.opacity = '0.5';
+  testBtn.addEventListener('click', () => {
+    localStorage.setItem('spacetower_testReckoning', '1');
+    onNewGame();
+  });
+  menu.appendChild(testBtn);
+
   overlay.appendChild(menu);
 
   // Version

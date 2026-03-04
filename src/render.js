@@ -1,8 +1,8 @@
 'use strict';
 import { S, cZoom, keeperZoom, getActiveBuildFloor } from './state.js';
-import { getFloor8State, isFloor8Active } from './floor8-game.js';
+import { getReckoningState, isReckoningActive, getReckoningBriefing, RK_FLOOR_MIN, RK_FLOOR_MAX, getColorPickState, getColorWheelPos, checkColorWheel, RK_COLORS } from './reckoning.js';
 import { drawKeeper, drawKeeperDesk, drawKeeperGlow, drawKeeperOverlay } from './keeper.js';
-import { TW, FH, FT, NF, TL, TR, TB, TT, PG, BPF, UW, ROOF_Y, MOB, PH, CHG_MX, DROP_MX, lerpColor, isWinBlock, isElevBlock, ELEV_X } from './constants.js';
+import { TW, FH, FT, NF, TL, TR, TB, TT, PG, BPF, UW, ROOF_Y, MOB, PH, CHG_MX, DROP_MX, lerpColor, isWinBlock, isElevBlock, ELEV_X, RK_ACTIVE_T } from './constants.js';
 import { FTHEME, FD, STAGES } from './floors.js';
 import { updateAmbient } from './sound.js';
 
@@ -169,7 +169,8 @@ function drawWorker(w){
 function drawPlayerWorker(p){
   const bob=Math.abs(Math.sin(p.bob))*3,mv=p.st==='walk'||p.st==='climb';
   X.save();X.translate(p.x,p.y);X.scale(1.25,1.25);X.translate(0,-26-bob);if(!p.fr)X.scale(-1,1);
-  if(p.flipCommitted&&p.st==='jump'){const ft=(p.flipInitVel-p.vy)/(2*p.flipInitVel),fc=Math.max(0,Math.min(1,ft)),fe=fc<0.5?4*fc*fc*fc:1-Math.pow(-2*fc+2,3)/2;X.translate(0,5);X.rotate(fe*Math.PI*2);X.translate(0,-5)}
+  if(p.wallSlide){X.translate(0,5);X.rotate(p.wallDir*0.15);X.translate(0,-5)}
+  else if(p.flipCommitted&&p.st==='jump'){const ft=(p.flipInitVel-p.vy)/(2*p.flipInitVel),fc=Math.max(0,Math.min(1,ft)),fe=fc<0.5?4*fc*fc*fc:1-Math.pow(-2*fc+2,3)/2;X.translate(0,5);X.rotate(fe*Math.PI*2);X.translate(0,-5)}
   X.fillStyle='#3a5070';X.fillRect(-5,12,4,12);X.fillRect(2,12,4,12);
   X.fillStyle='#5a4030';X.fillRect(-6,22,6,4);X.fillRect(1,22,6,4);
   X.fillStyle='#606060';X.fillRect(-7,-2,14,16);
@@ -687,7 +688,40 @@ function drawFloorLife(i,stage,fy){
   if(stage<2)return;
   const t=_now*0.001;
   switch(i){
-    case 0: // LOBBY — reception divider, glass doors, warm glow, clock, open doors
+    case 0: // LOBBY — vestibules, reception divider, glass doors, warm glow, clock
+      // Entry vestibules — dark industrial corridors at both ends
+      if(stage>=1){
+        const _vw=180;
+        // Left vestibule
+        X.fillStyle='#08080e';X.fillRect(TL,fy-FH+FT,_vw,FH-FT);
+        // Right vestibule
+        X.fillStyle='#08080e';X.fillRect(TR-_vw,fy-FH+FT,_vw,FH-FT);
+        // Industrial overhead lights (both sides)
+        for(let side=0;side<2;side++){
+          const baseX=side===0?TL:TR-_vw;
+          for(let li=0;li<4;li++){
+            const lx=baseX+25+li*42,ly=fy-FH+FT+8;
+            // Wire
+            X.strokeStyle='#252530';X.lineWidth=1;X.beginPath();X.moveTo(lx,fy-FH+FT);X.lineTo(lx,ly);X.stroke();
+            // Fixture housing
+            X.fillStyle='#303038';X.fillRect(lx-7,ly,14,3);
+            // Light cone
+            const gc=X.createLinearGradient(lx,ly+3,lx,fy);
+            gc.addColorStop(0,'rgba(255,210,120,0.10)');gc.addColorStop(1,'rgba(255,210,120,0)');
+            X.fillStyle=gc;X.beginPath();X.moveTo(lx-3,ly+3);X.lineTo(lx-22,fy);X.lineTo(lx+22,fy);X.lineTo(lx+3,ly+3);X.closePath();X.fill();
+            // Bulb
+            X.fillStyle='rgba(255,210,120,0.5)';X.beginPath();X.arc(lx,ly+2,1.5,0,Math.PI*2);X.fill();
+          }
+        }
+        // Caution stripes on floor (both sides)
+        for(let side=0;side<2;side++){
+          const baseX=side===0?TL:TR-_vw;
+          for(let sx=0;sx<_vw;sx+=12){
+            X.fillStyle=(Math.floor(sx/12)%2)?'rgba(255,180,0,0.06)':'rgba(20,20,20,0.04)';
+            X.fillRect(baseX+sx,fy-3,6,3);
+          }
+        }
+      }
       if(stage>=2){
         // Reception divider wall
         X.fillStyle='#b8b0a0';X.fillRect(TL+TW*0.35,fy-70,8,70);
@@ -1047,57 +1081,119 @@ function drawRGBDoorText(cx,cy,_now2){
   X.restore();
 }
 
-// ═══ FLOOR 8 OVERLAY ═══
-function drawFloor8Overlay(W,H,_now2){
-  const f8=getFloor8State();
-  if(f8.phase==='IDLE'||f8.phase==='DONE')return;
+// ═══ RECKONING OVERLAY ═══
+function drawReckoningOverlay(W,H,_now2){
+  const rk=getReckoningState();
+  if(rk.phase==='IDLE'||rk.phase==='DONE')return;
   const t=_now2*0.001;
-  switch(f8.phase){
+  switch(rk.phase){
     case 'INTRO':{
-      X.fillStyle='rgba(0,0,0,0.6)';X.fillRect(0,0,W,H);
-      X.fillStyle='#FF6600';X.font='bold 48px monospace';X.textAlign='center';
-      X.fillText('THE RECKONING',W/2,H/2);
-      X.fillStyle='rgba(255,255,255,0.4)';X.font='14px monospace';
-      X.fillText('Builders vs. Suits — claim the floor!',W/2,H/2+40);
+      X.fillStyle='rgba(0,0,0,0.7)';X.fillRect(0,0,W,H);
+      // Title
+      X.fillStyle='#FF6600';X.font='bold 36px monospace';X.textAlign='center';
+      X.fillText('THE RECKONING',W/2,H*0.18);
+      // Typewriter briefing
+      const br=getReckoningBriefing();
+      const visText=br.text.substring(0,br.idx);
+      X.fillStyle='rgba(255,255,255,0.7)';X.font='13px monospace';X.textAlign='left';
+      const boxX=W*0.15,boxW=W*0.7;
+      const words=visText.split(' ');
+      let line='',ly=H*0.32;
+      for(const w of words){
+        const test=line+w+' ';
+        if(X.measureText(test).width>boxW&&line){X.fillText(line.trim(),boxX,ly);ly+=20;line=w+' ';}
+        else line=test;
+      }
+      if(line)X.fillText(line.trim(),boxX,ly);
+      // Blinking cursor while typing
+      if(!br.done){
+        const blink=Math.sin(_now2*0.008)>0;
+        if(blink){X.fillStyle='rgba(255,255,255,0.6)';X.fillText('\u2588',boxX+X.measureText(line).width,ly)}
+        // Skip hint
+        X.fillStyle='rgba(255,255,255,0.2)';X.font='10px monospace';X.textAlign='center';
+        X.fillText('[E] skip',W/2,H*0.85);
+      } else {
+        // BEGIN prompt
+        const pulse=0.5+Math.sin(_now2*0.005)*0.3;
+        X.fillStyle=`rgba(255,102,0,${pulse})`;X.font='bold 18px monospace';X.textAlign='center';
+        X.fillText('[E] BEGIN',W/2,H*0.82);
+      }
       break;
     }
     case 'COUNTDOWN':{
       X.fillStyle='rgba(0,0,0,0.4)';X.fillRect(0,0,W,H);
-      const sec=Math.ceil(f8.timer/60);
-      const pulse=1+Math.sin(f8.timer*0.3)*0.1;
+      const sec=Math.ceil(rk.timer/60);
+      const pulse=1+Math.sin(rk.timer*0.3)*0.1;
       X.save();X.translate(W/2,H/2);X.scale(pulse,pulse);
       X.fillStyle='#FFD700';X.font='bold 120px monospace';X.textAlign='center';X.textBaseline='middle';
       X.fillText(String(sec),0,0);
       X.restore();
       break;
     }
-    case 'PLAYING':{
+    case 'ACTIVE':{
       // Timer bar
       const barW=300,barH=12,barX=(W-barW)/2,barY=20;
-      const frac=f8.timer/3600;
+      const frac=rk.timer/RK_ACTIVE_T;
       X.fillStyle='rgba(0,0,0,0.4)';X.beginPath();X.roundRect(barX-2,barY-2,barW+4,barH+4,4);X.fill();
       X.fillStyle=frac>0.25?'#FF6600':'#ff3030';X.beginPath();X.roundRect(barX,barY,barW*frac,barH,3);X.fill();
       // Time text
-      const secLeft=Math.ceil(f8.timer/60);
+      const secLeft=Math.ceil(rk.timer/60);
       X.fillStyle='#fff';X.font='bold 10px monospace';X.textAlign='center';
       X.fillText(`${secLeft}s`,W/2,barY+barH+14);
-      // Scores
-      X.fillStyle='#FF6600';X.font='bold 16px monospace';X.textAlign='left';
-      X.fillText(`BUILDERS: ${f8.bScore}`,barX-120,barY+barH);
-      X.fillStyle='#4060a0';X.textAlign='right';
-      X.fillText(`SUITS: ${f8.sScore}`,barX+barW+120,barY+barH);
-      // Instructions
+      // Scores — 3 contested floors × 12 blocks = 36 total
+      const total=3*BPF;
+      const open=total-rk.bScore-rk.sScore;
+      X.fillStyle=rk.builderColor||'#FF6600';X.font='bold 16px monospace';X.textAlign='left';
+      X.fillText(`BUILDERS: ${rk.bScore}`,barX-140,barY+barH);
+      X.fillStyle='#3355cc';X.textAlign='right';
+      X.fillText(`SUITS: ${rk.sScore}`,barX+barW+140,barY+barH);
+      // Wave indicator + open blocks
+      const waveNames=['Observation','Storage','Observatory'];
+      const _wIdx=rk.suitWave-RK_FLOOR_MIN;
+      const waveLabel=_wIdx>=0&&_wIdx<waveNames.length?waveNames[_wIdx]:'all floors';
       X.fillStyle='rgba(255,255,255,0.3)';X.font='10px monospace';X.textAlign='center';
-      X.fillText('Walk to empty blocks and press [E] to claim!',W/2,barY+barH+28);
+      X.fillText(`Suit wave: ${waveLabel} | Open: ${open}`,W/2,barY+barH+28);
+      break;
+    }
+    case 'FLOOD':{
+      const pulse=0.15+Math.sin(t*3)*0.08;
+      X.fillStyle=`rgba(255,170,40,${pulse})`;X.fillRect(0,0,W,H);
+      X.fillStyle='#FFD700';X.font='bold 36px monospace';X.textAlign='center';
+      X.fillText('THE TOWER FILLS',W/2,H/2);
+      X.fillStyle='rgba(255,255,255,0.3)';X.font='14px monospace';
+      X.fillText(`${getReckoningState().floodNpcs.length} new residents arriving...`,W/2,H/2+35);
       break;
     }
     case 'RESULT':{
       X.fillStyle='rgba(0,0,0,0.5)';X.fillRect(0,0,W,H);
-      const winner=f8.outcome==='builders';
-      X.fillStyle=winner?'#FF6600':'#4060a0';X.font='bold 42px monospace';X.textAlign='center';
+      const winner=rk.outcome==='builders';
+      X.fillStyle=winner?'#FF6600':'#3355cc';X.font='bold 42px monospace';X.textAlign='center';
       X.fillText(winner?'BUILDERS WIN!':'SUITS WIN!',W/2,H/2-10);
       X.fillStyle='rgba(255,255,255,0.5)';X.font='16px monospace';
-      X.fillText(`${f8.bScore} - ${f8.sScore}`,W/2,H/2+30);
+      X.fillText(`${rk.bScore} - ${rk.sScore}`,W/2,H/2+30);
+      break;
+    }
+    case 'COLOR_PICK':{
+      X.fillStyle='rgba(0,0,0,0.6)';X.fillRect(0,0,W,H);
+      X.fillStyle='#fff';X.font='bold 22px monospace';X.textAlign='center';
+      X.fillText('CHOOSE YOUR COLOR',W/2,H*0.28);
+      X.fillStyle='rgba(255,255,255,0.4)';X.font='13px monospace';
+      X.fillText('This is how your territory looks on the tower.',W/2,H*0.34);
+      // Color swatches
+      const cp=getColorPickState();
+      const swSize=36,swGap=12,totalW=cp.colors.length*(swSize+swGap)-swGap;
+      const swStartX=(W-totalW)/2;
+      for(let ci=0;ci<cp.colors.length;ci++){
+        const sx=swStartX+ci*(swSize+swGap),sy=H*0.44;
+        const sel=ci===cp.idx;
+        if(sel){X.fillStyle='#fff';X.beginPath();X.roundRect(sx-4,sy-4,swSize+8,swSize+8,6);X.fill()}
+        X.fillStyle=cp.colors[ci];X.beginPath();X.roundRect(sx,sy,swSize,swSize,4);X.fill();
+        if(sel){X.strokeStyle='#000';X.lineWidth=2;X.beginPath();X.roundRect(sx,sy,swSize,swSize,4);X.stroke()}
+      }
+      // Navigation hint
+      const pulse2=0.5+Math.sin(_now2*0.005)*0.3;
+      X.fillStyle=`rgba(255,255,255,${pulse2})`;X.font='bold 14px monospace';X.textAlign='center';
+      X.fillText('\u25C0 A/D \u25B6       [E] CONFIRM',W/2,H*0.62);
       break;
     }
   }
@@ -1117,6 +1213,29 @@ function drawRematchBell(f8){
   X.beginPath();X.moveTo(-8,0);X.quadraticCurveTo(-10,16,-12,20);X.lineTo(12,20);X.quadraticCurveTo(10,16,8,0);X.closePath();X.fill();
   // Clapper
   X.fillStyle='#806020';X.beginPath();X.arc(0,18,3,0,Math.PI*2);X.fill();
+  X.restore();
+}
+
+// ═══ COLOR WHEEL STATION (world space) ═══
+function drawColorWheel(){
+  const rk=getReckoningState();
+  if(!rk.played||rk.phase!=='DONE')return;
+  const cw=getColorWheelPos();
+  const wx=cw.x,wy=TB-cw.fi*FH;
+  const t=_now*0.001;
+  // Easel/stand
+  X.fillStyle='#505050';X.fillRect(wx-1,wy-42,2,42);
+  X.fillStyle='#505050';X.fillRect(wx-8,wy-2,16,2);
+  // Color wheel disc (rotating)
+  const r=14,cx=wx,cy=wy-42;
+  X.save();X.translate(cx,cy);X.rotate(t*0.4);
+  for(let ci=0;ci<RK_COLORS.length;ci++){
+    const a0=(ci/RK_COLORS.length)*Math.PI*2,a1=((ci+1)/RK_COLORS.length)*Math.PI*2;
+    X.fillStyle=RK_COLORS[ci];X.beginPath();X.moveTo(0,0);X.arc(0,0,r,a0,a1);X.closePath();X.fill();
+  }
+  // Center dot (current color)
+  X.fillStyle=rk.builderColor||'#FF6600';X.beginPath();X.arc(0,0,5,0,Math.PI*2);X.fill();
+  X.strokeStyle='rgba(0,0,0,0.3)';X.lineWidth=1;X.beginPath();X.arc(0,0,r,0,Math.PI*2);X.stroke();
   X.restore();
 }
 
@@ -1341,6 +1460,23 @@ export function draw(){
         X.fillRect(bx,fy-FH,PG,FH);
       }
       X.globalAlpha=1;
+      // Reckoning block ownership tint
+      const _rkState=getReckoningState();
+      if(_rkState.played||isReckoningActive()){
+        const _claim=_rkState.map[i]?.[bi];
+        const _rkDuring=isReckoningActive();
+        const _bCol=_rkState.builderColor||'#FF6600';
+        if(_claim===1){
+          // Builder claim — use custom color if set
+          const _r=parseInt(_bCol.slice(1,3),16),_g=parseInt(_bCol.slice(3,5),16),_b=parseInt(_bCol.slice(5,7),16);
+          X.fillStyle=`rgba(${_r},${_g},${_b},${_rkDuring?0.35:0.25})`;X.fillRect(bx,fy-FH,PG,FH);
+          // Border accent on claimed blocks
+          X.fillStyle=`rgba(${_r},${_g},${_b},${_rkDuring?0.5:0.35})`;X.fillRect(bx,fy-FH,PG,2);X.fillRect(bx,fy-2,PG,2);
+        } else if(_claim===2){
+          X.fillStyle=`rgba(51,85,204,${_rkDuring?0.4:0.3})`;X.fillRect(bx,fy-FH,PG,FH);
+          X.fillStyle=`rgba(51,85,204,${_rkDuring?0.55:0.4})`;X.fillRect(bx,fy-FH,PG,2);X.fillRect(bx,fy-2,PG,2);
+        }
+      }
     }
     // Ceiling & edge depth — makes floors feel enclosed
     if(stage>=1){
@@ -1423,6 +1559,10 @@ export function draw(){
         if(mod)drawMod(mod,TL+bi*PG,fy,bi,i);
       }
     }
+    // Reckoning: darken non-contested floors to spotlight the action
+    if(isReckoningActive()&&(i<RK_FLOOR_MIN||i>RK_FLOOR_MAX)&&stage>=1){
+      X.fillStyle='rgba(0,0,0,0.55)';X.fillRect(TL,fy-FH,TW,FH);
+    }
   });
 
   // Side walls — per-floor, stage 1+ only (steel finish)
@@ -1431,23 +1571,48 @@ export function draw(){
     const sfy=TB-(si*FH);
     if(sfy-FH>_vBot||sfy<_vTop)continue;
     if(si===0){
-      // Floor 0 left wall with front door
-      const doorH=90,doorW=FT,doorY=sfy-doorH;
-      const wallAbove=sfy-FH-doorY+doorH; // wall above door
-      if(sfy-FH<doorY) {X.fillStyle='rgba(130,140,155,0.25)';X.fillRect(TL-FT,sfy-FH,FT,doorY-(sfy-FH));X.fillStyle='rgba(90,100,120,0.45)';X.fillRect(TL-3,sfy-FH,3,doorY-(sfy-FH))}
-      // Door frame — steel
-      X.fillStyle='#707880';X.fillRect(TL-FT-2,doorY-4,FT+6,doorH+4);
-      // Door panel — slides up when open
-      const openAmt=S.door.open*doorH;
-      X.fillStyle='#606870';X.fillRect(TL-FT,doorY,FT,doorH-openAmt);
-      // Handle — brushed steel
-      if(doorH-openAmt>20){X.fillStyle='#909498';X.beginPath();X.arc(TL-FT/2,doorY+doorH-openAmt-15,3,0,Math.PI*2);X.fill()}
-      // Left wall edge accent for door area
-      X.fillStyle='rgba(90,100,120,0.45)';X.fillRect(TL-3,sfy-FH,3,FH-doorH);
+      // Floor 0 — industrial doors on both sides
+      const doorH=75,doorFW=20;
+      const doorYL=sfy-doorH,doorYR=sfy-doorH;
+      // Wall above each door
+      const wallAboveH=FH-doorH;
+      // Left wall above door
+      X.fillStyle='rgba(130,140,155,0.25)';X.fillRect(TL-FT,sfy-FH,FT,wallAboveH);
+      X.fillStyle='rgba(90,100,120,0.45)';X.fillRect(TL-3,sfy-FH,3,wallAboveH);
+      // Right wall above door
+      X.fillStyle='rgba(130,140,155,0.25)';X.fillRect(TR,sfy-FH,FT,wallAboveH);
+      X.fillStyle='rgba(90,100,120,0.45)';X.fillRect(TR,sfy-FH,3,wallAboveH);
+      // ── Left door ──
+      const openL=S.door.open*doorH;
+      // Frame
+      X.fillStyle='#505860';X.fillRect(TL-doorFW/2-1,doorYL-3,doorFW+2,doorH+3);
+      // Panel (slides up)
+      const panelHL=doorH-openL;
+      if(panelHL>1){
+        X.fillStyle='#404850';X.fillRect(TL-doorFW/2,doorYL,doorFW,panelHL);
+        // Center seam (double-door look)
+        X.fillStyle='#353d45';X.fillRect(TL-1,doorYL,2,panelHL);
+        // Warning stripe at bottom
+        const stripeY=doorYL+panelHL-6;
+        if(panelHL>10){for(let sx=0;sx<doorFW;sx+=6){X.fillStyle=(Math.floor(sx/6)%2)?'rgba(255,180,0,0.25)':'rgba(0,0,0,0.15)';X.fillRect(TL-doorFW/2+sx,stripeY,3,4)}}
+        // Handle
+        if(panelHL>20){X.fillStyle='#808890';X.fillRect(TL+doorFW/2-4,doorYL+panelHL-18,3,10)}
+      }
+      // ── Right door ──
+      const openR=S.door.openR*doorH;
+      X.fillStyle='#505860';X.fillRect(TR-doorFW/2-1,doorYR-3,doorFW+2,doorH+3);
+      const panelHR=doorH-openR;
+      if(panelHR>1){
+        X.fillStyle='#404850';X.fillRect(TR-doorFW/2,doorYR,doorFW,panelHR);
+        X.fillStyle='#353d45';X.fillRect(TR-1,doorYR,2,panelHR);
+        const stripeYR=doorYR+panelHR-6;
+        if(panelHR>10){for(let sx=0;sx<doorFW;sx+=6){X.fillStyle=(Math.floor(sx/6)%2)?'rgba(255,180,0,0.25)':'rgba(0,0,0,0.15)';X.fillRect(TR-doorFW/2+sx,stripeYR,3,4)}}
+        if(panelHR>20){X.fillStyle='#808890';X.fillRect(TR-doorFW/2-1,doorYR+panelHR-18,3,10)}
+      }
     } else {
       X.fillStyle='rgba(130,140,155,0.25)';X.fillRect(TL-FT,sfy-FH,FT,FH);X.fillStyle='rgba(90,100,120,0.45)';X.fillRect(TL-3,sfy-FH,3,FH);
+      X.fillStyle='rgba(130,140,155,0.25)';X.fillRect(TR,sfy-FH,FT,FH);X.fillStyle='rgba(90,100,120,0.45)';X.fillRect(TR,sfy-FH,3,FH);
     }
-    X.fillStyle='rgba(130,140,155,0.25)';X.fillRect(TR,sfy-FH,FT,FH);X.fillStyle='rgba(90,100,120,0.45)';X.fillRect(TR,sfy-FH,3,FH);
   }
 
   // Rooftop — rendered at dynamic height
@@ -1543,6 +1708,7 @@ export function draw(){
   const npcsOn=abf>=3||abf===-1;
   const al=[],ca=[],bz=[],cw=[];
   S.npcs.forEach(n=>{
+    if(n._hidden)return; // Gene hidden during reckoning
     if(n.arrState==='queue'||n.arrState==='riding')return; // invisible
     if(n.arrived&&S.buildout[n.floor].stage<5)return;       // normal gate
     if(!npcsOn)return;
@@ -1557,20 +1723,55 @@ export function draw(){
   cw.forEach(n=>drawWorker(n));
   S.workers.forEach(w=>drawWorker(w));
 
-  // Floor 8 suit NPCs
-  const _f8=getFloor8State();
-  if(_f8.phase!=='IDLE')_f8.suitNpcs.forEach(n=>drawBiz(n));
+  // Reckoning NPCs
+  const _rk=getReckoningState();
+  if(isReckoningActive()){
+    _rk.builders.forEach(n=>{if(!n.travelTimer)drawWorker(n)});
+    _rk.suits.forEach(n=>{if(!n.travelTimer)drawBiz(n)});
+    // Floor leaders — workers with gold star
+    _rk.floorLeaders.forEach(n=>{
+      drawWorker(n);
+      X.fillStyle='#FFD700';X.font='bold 10px monospace';X.textAlign='center';
+      X.fillText('\u2605',n.x,n.y-56);
+    });
+    // Flood NPCs (fade-in)
+    _rk.floodNpcs.forEach(n=>{
+      X.save();X.globalAlpha=n.alpha||0;
+      if(n.type==='b')drawBiz(n);else drawWorker(n);
+      X.restore();
+    });
+  }
 
   // Keeper character
   drawKeeper(X,_now);
 
-  // Rematch bell
-  drawRematchBell(_f8);
+  // Rematch bell + color wheel
+  drawRematchBell(_rk);
+  drawColorWheel();
 
   // Player (fade during elevator door animation)
   const p=S.player;if(S.elevAnim!=='idle')X.globalAlpha=Math.max(0,S.elevDoors);
   if(p.suit)drawBlob({...p,color:p.suitC},true,true);else drawPlayerWorker(p);
   X.globalAlpha=1;
+  // Wall slide dust (use player position to find nearest wall)
+  if(p.wallSlide){
+    const wx=p.x<0?TL:TR,wside=p.x<0?-1:1;
+    for(let di=0;di<3;di++){
+      const dy=p.y-Math.random()*40,dx=wx+wside*(Math.random()*6);
+      const da=0.15+Math.random()*0.15;
+      X.fillStyle=`rgba(180,170,150,${da})`;X.beginPath();X.arc(dx,dy,1.5+Math.random()*2,0,Math.PI*2);X.fill();
+    }
+  }
+
+  // Player claiming ring (reckoning)
+  if(_rk.phase==='ACTIVE'&&_rk.claimTimer>0&&_rk.claimBi>=0){
+    const _cx=TL+_rk.claimBi*PG+PG/2,_cy=TB-(_rk.claimFi*FH)-FH/2;
+    const _prog=_rk.claimTimer/150;
+    const _ringCol=_rk.builderColor||'#FF6600';
+    const _rr=parseInt(_ringCol.slice(1,3),16),_rg=parseInt(_ringCol.slice(3,5),16),_rb=parseInt(_ringCol.slice(5,7),16);
+    X.strokeStyle=`rgba(${_rr},${_rg},${_rb},0.8)`;X.lineWidth=6;
+    X.beginPath();X.arc(p.x,p.y-24,22,-Math.PI/2,-Math.PI/2+_prog*Math.PI*2);X.stroke();
+  }
 
   // Charge bars
   if(p.isChg&&p.chgT>0){const t=p.chgT/CHG_MX,bh=40,bw=6,bx2=p.x+18,by2=p.y-60;X.fillStyle='rgba(0,0,0,0.35)';X.beginPath();X.roundRect(bx2-1,by2-1,bw+2,bh+2,3);X.fill();X.fillStyle=`rgb(255,${Math.round(255-t*100)},${Math.round(Math.max(0,255-t*200))})`;X.beginPath();X.roundRect(bx2,by2+bh-bh*t,bw,bh*t,2);X.fill();X.fillStyle='#fff';X.font='bold 10px monospace';X.textAlign='center';X.fillText(`${1+Math.floor(t*2)}F\u25B2`,bx2+bw/2,by2-6)}
@@ -1587,6 +1788,22 @@ export function draw(){
     X.fillStyle='rgba(0,0,0,0.55)';X.beginPath();X.roundRect(px2-tw/2-8,py2-12,tw+16,20,4);X.fill();X.fillStyle='#ffee88';X.fillText(pt,px2,py2+2)}}
   const ns=nearSuit();if(ns&&!p.suit){X.font='bold 12px Segoe UI,sans-serif';X.textAlign='center';X.fillStyle='rgba(0,0,0,0.5)';const stxt='[F] Suit',stw=X.measureText(stxt).width;X.beginPath();X.roundRect(ns.x-stw/2-6,ns.y-66,stw+12,18,4);X.fill();X.fillStyle='#ffd870';X.fillText(stxt,ns.x,ns.y-54)}
 
+  // [E] Go Outside prompt — ground floor doors or frame edges
+  if(!isReckoningActive()){
+    const _xMin2=TL-UW+p.w/2+50,_xMax2=TR+UW-p.w/2-50;
+    const _atDoorL=p.y>=TB-100&&p.x<TL+50;
+    const _atDoorR=p.y>=TB-100&&p.x>TR-50;
+    const _atEdge=p.x<=_xMin2||p.x>=_xMax2;
+    if(_atDoorL||_atDoorR||_atEdge){
+      const dtxt='[E] Go Outside';
+      const dx=_atEdge?p.x:(_atDoorL?TL+20:TR-20),dy=p.y-70;
+      X.font='bold 13px Segoe UI,sans-serif';X.textAlign='center';
+      const dw=X.measureText(dtxt).width;
+      X.fillStyle='rgba(0,0,0,0.55)';X.beginPath();X.roundRect(dx-dw/2-8,dy-12,dw+16,20,4);X.fill();
+      X.fillStyle='#ffee88';X.fillText(dtxt,dx,dy+2);
+    }
+  }
+
   // RGB door proximity text (world space)
   if(p.cf===4&&S.buildout[4].stage>=5){
     const doorCX=TL+2*PG+PG/2;
@@ -1594,12 +1811,23 @@ export function draw(){
   }
 
   // Rematch bell interaction prompt
-  if(_f8.phase==='DONE'&&_f8.played&&_f8.bellX&&p.cf===7&&Math.abs(p.x-_f8.bellX)<60){
+  if(_rk.phase==='DONE'&&_rk.played&&_rk.bellX&&p.cf===7&&Math.abs(p.x-_rk.bellX)<60){
     const btxt='[E] Rematch';
     X.font='bold 12px Segoe UI,sans-serif';X.textAlign='center';
     const btw=X.measureText(btxt).width;
-    X.fillStyle='rgba(0,0,0,0.5)';X.beginPath();X.roundRect(_f8.bellX-btw/2-6,TB-7*FH-68,btw+12,18,4);X.fill();
-    X.fillStyle='#ffd870';X.fillText(btxt,_f8.bellX,TB-7*FH-56);
+    X.fillStyle='rgba(0,0,0,0.5)';X.beginPath();X.roundRect(_rk.bellX-btw/2-6,TB-7*FH-68,btw+12,18,4);X.fill();
+    X.fillStyle='#ffd870';X.fillText(btxt,_rk.bellX,TB-7*FH-56);
+  }
+
+  // Color wheel interaction prompt
+  if(checkColorWheel()){
+    const cwp=getColorWheelPos();
+    const ctxt='[E] Change Color';
+    X.font='bold 12px Segoe UI,sans-serif';X.textAlign='center';
+    const ctw=X.measureText(ctxt).width;
+    const cwy=TB-cwp.fi*FH-68;
+    X.fillStyle='rgba(0,0,0,0.5)';X.beginPath();X.roundRect(cwp.x-ctw/2-6,cwy,ctw+12,18,4);X.fill();
+    X.fillStyle='#ffd870';X.fillText(ctxt,cwp.x,cwy+12);
   }
 
   // Particles (world space)
@@ -1607,8 +1835,30 @@ export function draw(){
 
   X.restore();
 
-  // Floor 8 overlay (screen space)
-  drawFloor8Overlay(W,H,_now);
+  // Reckoning overlay (screen space)
+  drawReckoningOverlay(W,H,_now);
+
+  // Free-roam color picker overlay (screen space, same UI as post-reckoning)
+  if(_rk.phase==='DONE'&&_rk.colorPick){
+    const cp=getColorPickState();
+    X.fillStyle='rgba(0,0,0,0.5)';X.fillRect(0,0,W,H);
+    X.fillStyle='#fff';X.font='bold 22px monospace';X.textAlign='center';
+    X.fillText('CHOOSE YOUR COLOR',W/2,H*0.28);
+    X.fillStyle='rgba(255,255,255,0.4)';X.font='13px monospace';
+    X.fillText('A/D to browse, E to confirm, Esc to cancel',W/2,H*0.34);
+    const swSize=36,swGap=12,totalSW=cp.colors.length*(swSize+swGap)-swGap;
+    const swStart=(W-totalSW)/2;
+    for(let ci=0;ci<cp.colors.length;ci++){
+      const sx=swStart+ci*(swSize+swGap),sy=H*0.44;
+      const sel=ci===cp.idx;
+      if(sel){X.fillStyle='#fff';X.beginPath();X.roundRect(sx-4,sy-4,swSize+8,swSize+8,6);X.fill()}
+      X.fillStyle=cp.colors[ci];X.beginPath();X.roundRect(sx,sy,swSize,swSize,4);X.fill();
+      if(sel){X.strokeStyle='#000';X.lineWidth=2;X.beginPath();X.roundRect(sx,sy,swSize,swSize,4);X.stroke()}
+    }
+    const pulse3=0.5+Math.sin(_now*0.005)*0.3;
+    X.fillStyle=`rgba(255,255,255,${pulse3})`;X.font='bold 14px monospace';X.textAlign='center';
+    X.fillText('\u25C0 A/D \u25B6       [E] CONFIRM',W/2,H*0.62);
+  }
 
   // Keeper overlay (screen space)
   drawKeeperOverlay(X,W,H,_now);

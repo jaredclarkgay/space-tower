@@ -32,3 +32,9 @@ export function lerpColor(a,b,t){
   const bl=Math.round((pa&255)*(1-t)+(pb&255)*t);
   return`#${((1<<24)+(r<<16)+(g<<8)+bl).toString(16).slice(1)}`;
 }
+
+// ═══ RECKONING CONSTANTS ═══
+export const RK_INTRO_T=180,RK_COUNTDOWN_T=180,RK_ACTIVE_T=5400,RK_FLOOD_T=600;
+export const RK_PLAYER_CLAIM=150,RK_BUILDER_CLAIM=210,RK_SUIT_CLAIM=45;
+export const RK_QUORUM=3,RK_PROX=80;
+export const RK_BUILDER_COL='#FF6600',RK_SUIT_COL='#3355cc';

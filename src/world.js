@@ -2,7 +2,7 @@
 import { S } from './state.js';
 import { TW, TL, TR, TB, FH, NF, ROOF_Y, PG, BPF, ELEV_X, sr, ri, pk } from './constants.js';
 import { FD, OD } from './floors.js';
-import { HN, AN, AC, BN2, BP2, HM, AM, BM, CWN, CWM, CWM_INDOOR, genAppearance } from './npcs.js';
+import { HN, AN, AC, BN2, BP2, HM, AM, BM, CWN, CWM, CWM_INDOOR, genAppearance, GENE_DATA } from './npcs.js';
 
 // ═══ PER-FLOOR NPC CONFIG ═══
 // [{t:type, mn:min, mx:max}] — 'c'=casual, 'b'=business, 'w'=worker, 'cb'=pick c or b
@@ -37,6 +37,14 @@ export function genWorld(){
       else if(tp==='w'){const convo=CWM_INDOOR[Math.floor(sr()*CWM_INDOOR.length)];const nx=TL+150+sr()*(TW-300);S.npcs.push({type:'w',x:nx,y:fy-48,w:24,h:48,vx:0,vy:0,spd:0.8+sr()*0.6,name:pk(CWN),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,floor:i,onF:true,convo,ci:0,arrived:false,destX:nx,arrState:'queue'})}
     }}
     if(sr()<0.45) S.suits.push({x:TL+200+sr()*(TW-400),y:fy,floor:i,taken:false});
+  }
+  // Gene — recurring business NPC on multiple floors
+  for(const gf of GENE_DATA.floors){
+    const nx=TL+300+sr()*(TW-600);
+    S.npcs.push({type:'b',x:nx,y:TB-gf*FH-48,w:24,h:48,vx:0,vy:0,spd:0.65,
+      pal:GENE_DATA.pal,name:GENE_DATA.name,fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,
+      floor:gf,lp:sr()*6,jt:180+Math.floor(sr()*180),onF:true,
+      convo:GENE_DATA.convo,ci:0,arrived:false,destX:nx,arrState:'queue',isGene:true});
   }
   // Convert up to 3 random casual NPCs to aliens (preserves compendium discoverability)
   let alienCount=0;

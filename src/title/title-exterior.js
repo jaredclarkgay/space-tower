@@ -43,6 +43,7 @@ const CHARGE_MAX = 80;
 const GRAVITY = 0.0035;
 
 // Tower geometry — must match TC/BEAM_DEPTH in title-city.js
+// (can't import directly: circular dependency with title-city.js)
 const TOWER_HALF = 37.5;            // TC.width / 2
 const FLOOR_H = 3.333;              // TC.floorH
 const BASE_H = FLOOR_H * 3;         // 10
@@ -51,7 +52,7 @@ const BEAM_DEPTH = 0.5;             // BEAM_DEPTH in title-city.js
 const BEAM_HALF = BEAM_DEPTH / 2;    // 0.25
 const OUTER_EDGE = TOWER_HALF + BEAM_HALF; // 37.75
 const INNER_EDGE = TOWER_HALF - BEAM_HALF; // 37.25
-const FOUNDATION_HALF = TOWER_HALF; // flush with tower footprint (no pedestal)
+const FOUNDATION_HALF = TOWER_HALF;
 
 // Column positions (the 4 corners)
 const COLUMNS = [
@@ -91,6 +92,13 @@ let promptEl = null;
 // ── Door enter callback ──
 let _enterDoorCallback = null;
 export function setEnterDoorCallback(fn) { _enterDoorCallback = fn; }
+
+// ── Door meshes (set from title-main after city build) ──
+let _doorLeft = null, _doorRight = null;
+export function setDoorMeshes(left, right) { _doorLeft = left; _doorRight = right; }
+export function isDoorAnimActive() { return _doorAnim.active; }
+
+const _doorAnim = { active: false, phase: 0, elapsed: 0, fadeEl: null, callback: null, leftX0: 0, rightX0: 0, doorsClosing: false };
 
 // ── Ground-level NPC list (semi workers, etc.) ──
 let _groundNPCs = [];
@@ -532,7 +540,7 @@ export function setupExteriorInput() {
     keys[e.code] = true;
     if (e.code === 'Space') e.preventDefault();
     if (e.code === 'KeyE') handleInteract();
-    if (e.code === 'Tab') { e.preventDefault(); if (_enterDoorCallback) _enterDoorCallback(); }
+    if (e.code === 'Tab') { e.preventDefault(); if (_enterDoorCallback && _isNearDoor()) _startDoorAnim(); }
   };
   _keyupHandler = (e) => {
     keys[e.code] = false;
@@ -585,7 +593,7 @@ function handleInteract() {
   }
   // Enter the tower through the front door
   if (_isNearDoor() && _enterDoorCallback) {
-    _enterDoorCallback();
+    _startDoorAnim();
     return;
   }
   // Pick up materials from the construction site
@@ -719,7 +727,7 @@ function _checkTowerWalls() {
   // Walls apply below the roof surface — on the roof the player walks freely and can fall off edges
   if (pp.y < 0 || pp.y >= activeRoofY - 0.3) return;
 
-  const doorHalfW = BLOCK_W * 1.5;
+  const doorHalfW = 10; // matches vestibule half-width in title-city.js
   const edge = OUTER_EDGE;
   const r = PLAYER_R + 0.15; // wider detection to prevent phase-through on fast falls
 
@@ -751,6 +759,113 @@ const BLOCK_W = 6.25; // local copy for wall collision
 function _isNearDoor() {
   const pp = PLAYER.pos;
   return pp.y < 1 && Math.abs(pp.x) < 12 && pp.z > TOWER_HALF - 3 && pp.z < TOWER_HALF + 5;
+}
+
+// ── Door entry animation ──
+function _startDoorAnim() {
+  if (_doorAnim.active || !_enterDoorCallback) return;
+  _doorAnim.active = true;
+  _doorAnim.phase = 0;
+  _doorAnim.elapsed = 0;
+  _doorAnim.callback = _enterDoorCallback;
+  _doorAnim.leftX0 = _doorLeft ? _doorLeft.position.x : -5;
+  _doorAnim.rightX0 = _doorRight ? _doorRight.position.x : 5;
+  keys = {};
+  // Hide prompt and dialogue
+  if (promptEl) { promptEl.style.opacity = '0'; }
+  if (dialogueEl) { dialogueEl.style.opacity = '0'; }
+  // Create fade overlay
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;inset:0;background:#000;opacity:0;z-index:9999;pointer-events:none';
+  document.body.appendChild(el);
+  _doorAnim.fadeEl = el;
+}
+
+function _setDoorGlow(opacity) {
+  for (const d of [_doorLeft, _doorRight]) {
+    if (!d || !d.parent) continue;
+    const gi = d.parent.children.indexOf(d);
+    if (gi >= 0 && d.parent.children[gi + 1]) {
+      d.parent.children[gi + 1].material.opacity = opacity;
+    }
+  }
+}
+
+function _updateDoorAnim(dt) {
+  const a = _doorAnim;
+  a.elapsed += dt;
+  const slideDist = 7; // how far each door slides open
+
+  // Phase 0: Doors open (0–0.6s)
+  if (a.phase === 0) {
+    const dur = 0.6;
+    const t = Math.min(a.elapsed / dur, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    if (_doorLeft) _doorLeft.position.x = a.leftX0 - ease * slideDist;
+    if (_doorRight) _doorRight.position.x = a.rightX0 + ease * slideDist;
+    _setDoorGlow(0.15 + ease * 0.35);
+    // Rotate player to face -Z (into tower)
+    if (playerGroup) {
+      const targetRot = Math.PI;
+      let delta = targetRot - playerGroup.rotation.y;
+      while (delta > Math.PI) delta -= 2 * Math.PI;
+      while (delta < -Math.PI) delta += 2 * Math.PI;
+      playerGroup.rotation.y += delta * Math.min(t * 3, 1);
+    }
+    if (t >= 1) { a.phase = 1; a.elapsed = 0; a.doorsClosing = false; }
+  }
+  // Phase 1: Walk in + doors close behind (0–1.6s)
+  else if (a.phase === 1) {
+    const dur = 1.6;
+    const t = Math.min(a.elapsed / dur, 1);
+    const ease = t * t * (3 - 2 * t);
+    // Move player into vestibule
+    const startZ = TOWER_HALF + 2;
+    const endZ = TOWER_HALF - 12; // deep inside vestibule
+    PLAYER.pos.z = startZ + (endZ - startZ) * ease;
+    PLAYER.pos.x += (0 - PLAYER.pos.x) * 0.05;
+    PLAYER.vel.z = -0.05;
+    // Walk animation
+    PLAYER.walkCycle += dt * 4;
+    if (playerGroup) {
+      const ud = playerGroup.userData;
+      if (ud.leftLeg) {
+        const sw = Math.sin(PLAYER.walkCycle * 3) * 0.3;
+        ud.leftLeg.rotation.x = sw;
+        ud.rightLeg.rotation.x = -sw;
+        ud.leftArm.rotation.x = -sw * 0.6;
+        ud.rightArm.rotation.x = sw * 0.6;
+        ud.torso.rotation.z = Math.sin(PLAYER.walkCycle * 3) * 0.02;
+      }
+    }
+    // Doors close behind player once they're past the threshold (t > 0.3)
+    if (t > 0.3) {
+      const closeT = Math.min((t - 0.3) / 0.4, 1);
+      const closeEase = closeT * closeT * (3 - 2 * closeT);
+      if (_doorLeft) _doorLeft.position.x = (a.leftX0 - slideDist) + closeEase * slideDist;
+      if (_doorRight) _doorRight.position.x = (a.rightX0 + slideDist) - closeEase * slideDist;
+    }
+    // Glow dims as doors close
+    const glowFade = t > 0.3 ? 0.5 * (1 - Math.min((t - 0.3) / 0.5, 1)) : 0.5;
+    _setDoorGlow(glowFade);
+    if (t >= 1) { a.phase = 2; a.elapsed = 0; }
+  }
+  // Phase 2: Fade to black (0–0.7s)
+  else if (a.phase === 2) {
+    const dur = 0.7;
+    const t = Math.min(a.elapsed / dur, 1);
+    if (a.fadeEl) a.fadeEl.style.opacity = String(t);
+    if (t >= 1) {
+      // Reset doors
+      if (_doorLeft) _doorLeft.position.x = a.leftX0;
+      if (_doorRight) _doorRight.position.x = a.rightX0;
+      _setDoorGlow(0.15);
+      if (a.fadeEl) { a.fadeEl.remove(); a.fadeEl = null; }
+      const cb = a.callback;
+      a.active = false; a.phase = 0; a.elapsed = 0; a.callback = null; a.doorsClosing = false;
+      if (cb) cb();
+    }
+  }
 }
 
 // Site object collision — push player out of construction site objects
@@ -1020,6 +1135,11 @@ function _updatePrompt() {
 
 // ═══ UPDATE ═══
 export function updateExterior(dt, camFwdX, camFwdZ) {
+  if (_doorAnim.active) {
+    _updateDoorAnim(dt);
+    if (playerGroup) playerGroup.position.copy(PLAYER.pos);
+    return;
+  }
   if (!PLAYER.active || !playerGroup) return;
 
   const pp = PLAYER.pos;
@@ -1301,7 +1421,6 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
 export function getPlayerPos() { return PLAYER.pos; }
 export function getPlayerVel() { return PLAYER.vel; }
 export function getActiveRoofY() { return activeRoofY; }
-export function getTowerHalf() { return OUTER_EDGE; }
 
 export function activateExterior() {
   PLAYER.active = true;
@@ -1315,6 +1434,8 @@ export function deactivateExterior() {
   keys = {};
   if (promptEl) { promptEl.remove(); promptEl = null; }
   if (dialogueEl) { dialogueEl.remove(); dialogueEl = null; }
+  if (_doorAnim.fadeEl) { _doorAnim.fadeEl.remove(); _doorAnim.fadeEl = null; }
+  _doorAnim.active = false; _doorAnim.phase = 0; _doorAnim.elapsed = 0; _doorAnim.callback = null;
 }
 
 export function setBuiltHeight(topBuilt) {
@@ -1338,4 +1459,3 @@ export function setBuiltHeight(topBuilt) {
 
 export function isExteriorActive() { return PLAYER.active; }
 export function isWalkingBackward() { return walkingBackward; }
-export function getPlayerGroup() { return playerGroup; }
