@@ -574,7 +574,7 @@ function buildVehicles(scene) {
     { name: 'Delphine Glass', color: 0x1a2030, carColor: 0x1a1a2a,
       dialogue: ['I represent seventeen venture capital firms and they ALL want in.', 'We\'re calling it SpaceTowerCoin. No, wait — TowerDAO. No — BOTH.', 'Every floor is a startup incubator. Every window is a billboard. I can SMELL the revenue.'] },
     { name: 'Chester Beaumont III', color: 0x40444a, carColor: 0x4a4a5a,
-      dialogue: ['My family has invested in every great structure. The Pyramids. The Chunnel. This is NEXT.', 'I\'ve already trademarked "Goodbye Earth" for a perfume line. And a sandwich.', 'The penthouse suite will have a butler who is also a rocket scientist. I\'ve placed the ad.'] },
+      dialogue: ['My family has invested in every great structure. The Pyramids. The Chunnel. This is NEXT.', 'I\'ve already trademarked "Space Tower" for a perfume line. And a sandwich.', 'The penthouse suite will have a butler who is also a rocket scientist. I\'ve placed the ad.'] },
     { name: 'Suki Neon', color: 0x303848, carColor: 0x2a3040,
       dialogue: ['Pop-up nightclub. Floor 8. Zero gravity dance floor. Are you HEARING me?', 'The DJ booth will literally be in space. The bass drops will cause ORBITAL DECAY.', 'I need 40,000 square feet of LED panels and a liquor license that works in the mesosphere.'] },
     { name: 'Reginald Flux', color: 0x2e3240, carColor: 0x404050,

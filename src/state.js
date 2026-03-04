@@ -7,7 +7,7 @@ export const S={
   floors:[],stairs:[],objs:[],npcs:[],suits:[],cranes:[],workers:[],
   player:{x:0,y:TB-FH,w:24,h:48,vx:0,vy:0,spd:5,color:'#FF5722',
     fr:true,cf:0,st:'idle',onF:true,clT:null,clP:0,bob:0,alien:false,suit:false,suitC:'#506070',
-    chgT:0,isChg:false,drpT:0,isDrp:false,drpPhase:0,baseZoom:0,
+    chgT:0,isChg:false,drpT:0,isDrp:false,drpPhase:0,baseZoom:0,crane:-1,
   },
   keys:{},jp:{},iLock:false,msgTmr:null,
   litFloors:new Set(),
@@ -30,6 +30,13 @@ export const S={
     colorPick:false, // true when color picker is active
   },
   keeper:{active:false,zoom:0,spoken:false,exchange:0,twText:'',twIdx:0,twDone:false,twTimer:0},
+  cr:{
+    active:false,phase:0,phaseT:0,
+    doorOpen:0,screenBoot:0,screenOn:false,
+    px:0,pz:0,walking:false,walkDir:0,
+    nearElev:false,introWalkDone:false,
+    selectedFloor:-1,fullScreen:false,fsPanX:0,fsPanY:0,
+  },
   rgbDoor:{particles:[],textTimer:0},
   modules:Array.from({length:NF},()=>Array(BPF).fill(null)),
   credits:500,

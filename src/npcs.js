@@ -81,7 +81,7 @@ export const CWM=[
   [n=>`${n} wipes sweat. "Another floor, another miracle."`,n=>`"You know how heavy a steel beam is at this altitude? Same as ground level. But it FEELS heavier."`,n=>`"My grandpa built bridges. I build towers to space. He'd lose his mind."`],
   [n=>`"Watch your step up here," ${n} says.`,n=>`"We had a guy drop a wrench from floor eight last week. Took four seconds to hit ground."`,n=>`"Four seconds. That's how high we are. Four seconds of falling."`],
   [n=>`${n}: "Crane's acting up again."`,n=>`"Everything works different up here. Wind, temperature, the bolts expand weird."`,n=>`"But we figure it out. That's the job. Figure it out, bolt it down, move up."`],
-  [n=>`"Ten floors," ${n} says. "Then they want ten more."`,n=>`"I signed on for the first segment. 'Goodbye Earth,' they call it."`,n=>`"Funny name for a construction project. But I get it. I look down less now."`],
+  [n=>`"Ten floors," ${n} says. "Then they want ten more."`,n=>`"I signed on for the first segment. Ten floors, then we see what's next."`,n=>`"Funny thing about building up. You stop looking down after a while."`],
 ];
 
 // ═══ DIALOGUE: CONSTRUCTION WORKERS (INDOOR) ═══

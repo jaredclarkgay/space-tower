@@ -5,6 +5,7 @@ import { drawKeeper, drawKeeperDesk, drawKeeperGlow, drawKeeperOverlay } from '.
 import { TW, FH, FT, NF, TL, TR, TB, TT, PG, BPF, UW, ROOF_Y, MOB, PH, CHG_MX, DROP_MX, lerpColor, isWinBlock, isElevBlock, ELEV_X, RK_ACTIVE_T } from './constants.js';
 import { FTHEME, FD, STAGES } from './floors.js';
 import { updateAmbient } from './sound.js';
+import { drawControlRoom, drawCRDetailPanel, crClick, crMouseDown, crMouseMove, crMouseUp } from './control-room.js';
 
 let C,X;
 const msgEl=()=>document.getElementById('msg');
@@ -35,6 +36,27 @@ export function initCanvas(){
   genCity();
   _buildCityCache();
   _buildTreeCache();
+
+  // Control room click + drag handlers
+  C.addEventListener('click',e=>{
+    if(!S.cr.active)return;
+    const rect=C.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(C.width/rect.width);
+    const my=(e.clientY-rect.top)*(C.height/rect.height);
+    crClick(mx,my);
+  });
+  C.addEventListener('mousedown',e=>{
+    if(!S.cr.active)return;
+    const rect=C.getBoundingClientRect();
+    crMouseDown((e.clientX-rect.left)*(C.width/rect.width),(e.clientY-rect.top)*(C.height/rect.height));
+  });
+  C.addEventListener('mousemove',e=>{
+    if(!S.cr.active)return;
+    const rect=C.getBoundingClientRect();
+    crMouseMove((e.clientX-rect.left)*(C.width/rect.width),(e.clientY-rect.top)*(C.height/rect.height));
+  });
+  C.addEventListener('mouseup',()=>{crMouseUp()});
+  C.addEventListener('mouseleave',()=>{crMouseUp()});
 }
 
 // ═══ MESSAGING ═══
@@ -187,16 +209,25 @@ function drawPlayerWorker(p){
   X.fillStyle='#E8C020';X.fillRect(-8,-12,16,2);
   X.restore();
 }
-function drawCrane(cx,cy){
+function drawCrane(cx,cy,angle){
+  // Static: base + mast + cab
   X.fillStyle='#8a8580';X.fillRect(cx-16,cy-20,32,20);X.fillStyle='#9a9590';X.fillRect(cx-14,cy-18,28,4);
   const mh=180;X.fillStyle='#e8a020';X.fillRect(cx-4,cy-20-mh,8,mh);
   X.strokeStyle='#c08010';X.lineWidth=1.5;for(let my=0;my<mh;my+=18){const yy=cy-20-my;X.beginPath();X.moveTo(cx-4,yy);X.lineTo(cx+4,yy-18);X.stroke();X.beginPath();X.moveTo(cx+4,yy);X.lineTo(cx-4,yy-18);X.stroke()}
-  const jL=160,topY=cy-20-mh;X.fillStyle='#e8a020';X.fillRect(cx-20,topY,jL,6);X.fillRect(cx-60,topY,44,6);
-  X.fillStyle='#606060';X.fillRect(cx-58,topY+6,18,14);X.fillStyle='#506880';X.fillRect(cx-8,topY+6,16,14);X.fillStyle='rgba(140,200,230,0.5)';X.fillRect(cx-6,topY+8,12,6);
-  const hx=cx+jL-24;X.strokeStyle='#404040';X.lineWidth=1;X.beginPath();X.moveTo(hx,topY+6);X.lineTo(hx,topY+70);X.stroke();
-  X.fillStyle='#505050';X.beginPath();X.arc(hx,topY+72,4,0,Math.PI*2);X.fill();X.strokeStyle='#505050';X.lineWidth=2;X.beginPath();X.arc(hx,topY+78,5,0.5,Math.PI-0.5);X.stroke();
-  X.strokeStyle='#404040';X.lineWidth=1;X.beginPath();X.moveTo(cx,topY-12);X.lineTo(hx+4,topY);X.stroke();X.beginPath();X.moveTo(cx,topY-12);X.lineTo(cx-56,topY);X.stroke();
-  X.fillStyle='#e8a020';X.fillRect(cx-3,topY-16,6,16);X.fillStyle='#ff3030';X.beginPath();X.arc(cx,topY-18,3,0,Math.PI*2);X.fill();
+  const topY=cy-20-mh;
+  // Static cab (sits at top of mast, doesn't rotate)
+  X.fillStyle='#506880';X.fillRect(cx-8,topY+6,16,14);X.fillStyle='rgba(140,200,230,0.5)';X.fillRect(cx-6,topY+8,12,6);
+  // Rotating: boom jib, counter-jib, counterweight, hook, rigging, hoist top
+  const a=angle||0;
+  X.save();X.translate(cx,topY);X.rotate(a);
+  const jL=160;
+  X.fillStyle='#e8a020';X.fillRect(-20,0,jL,6);X.fillRect(-60,0,44,6);
+  X.fillStyle='#606060';X.fillRect(-58,6,18,14);
+  const hx=jL-44;X.strokeStyle='#404040';X.lineWidth=1;X.beginPath();X.moveTo(hx,6);X.lineTo(hx,70);X.stroke();
+  X.fillStyle='#505050';X.beginPath();X.arc(hx,72,4,0,Math.PI*2);X.fill();X.strokeStyle='#505050';X.lineWidth=2;X.beginPath();X.arc(hx,78,5,0.5,Math.PI-0.5);X.stroke();
+  X.strokeStyle='#404040';X.lineWidth=1;X.beginPath();X.moveTo(0,-12);X.lineTo(hx+4,0);X.stroke();X.beginPath();X.moveTo(0,-12);X.lineTo(-56,0);X.stroke();
+  X.fillStyle='#e8a020';X.fillRect(-3,-16,6,16);X.fillStyle='#ff3030';X.beginPath();X.arc(0,-18,3,0,Math.PI*2);X.fill();
+  X.restore();
 }
 
 // ═══ WALL BLOCK TEXTURE (per-block detail by stage) ═══
@@ -1243,6 +1274,16 @@ function drawColorWheel(){
 export function draw(){
   const W=C.width,H=C.height;
   _now=performance.now();
+
+  // Control room — completely replace the world render
+  if(S.cr.active){
+    X.save();
+    drawControlRoom(X,W,H);
+    drawCRDetailPanel(X,W,H);
+    X.restore();
+    return;
+  }
+
   const eZoom=cZoom*(1+keeperZoom);
   const altFrac=Math.max(0,Math.min(1,(TB-S.cam.y)/(TB-TT)));
   updateAmbient(altFrac);
@@ -1621,7 +1662,7 @@ export function draw(){
   X.strokeStyle='rgba(200,180,80,0.3)';X.lineWidth=2;X.beginPath();X.moveTo(TL,dynRoofY-15);X.lineTo(TR,dynRoofY-15);X.stroke();
   for(let rx=TL;rx<=TR;rx+=120){X.fillStyle='rgba(180,160,60,0.4)';X.fillRect(rx-2,dynRoofY-30,4,30)}
   X.fillStyle='#a09880';X.fillRect(TL+80,dynRoofY-12,50,12);X.fillStyle='#708090';X.fillRect(TL+160,dynRoofY-18,30,18);
-  S.cranes.forEach(c=>drawCrane(c.x,c.y));
+  S.cranes.forEach(c=>drawCrane(c.x,c.y,c.angle||0));
   X.fillStyle='rgba(255,200,40,0.7)';X.beginPath();X.roundRect(TL+TW/2-80,dynRoofY-50,160,28,4);X.fill();
   X.fillStyle='#2a2010';X.font='bold 11px monospace';X.textAlign='center';X.fillText('\u26A0 UNDER CONSTRUCTION \u26A0',TL+TW/2,dynRoofY-32);
   X.fillStyle='#2c2e33';X.fillRect(TL-FT,dynRoofY-FT,TW+FT*2,FT);
@@ -1776,6 +1817,21 @@ export function draw(){
   // Charge bars
   if(p.isChg&&p.chgT>0){const t=p.chgT/CHG_MX,bh=40,bw=6,bx2=p.x+18,by2=p.y-60;X.fillStyle='rgba(0,0,0,0.35)';X.beginPath();X.roundRect(bx2-1,by2-1,bw+2,bh+2,3);X.fill();X.fillStyle=`rgb(255,${Math.round(255-t*100)},${Math.round(Math.max(0,255-t*200))})`;X.beginPath();X.roundRect(bx2,by2+bh-bh*t,bw,bh*t,2);X.fill();X.fillStyle='#fff';X.font='bold 10px monospace';X.textAlign='center';X.fillText(`${1+Math.floor(t*2)}F\u25B2`,bx2+bw/2,by2-6)}
   if(p.isDrp&&p.drpT>0){const t=p.drpT/DROP_MX,bh=35,bw=6,bx2=p.x+18,by2=p.y+8;X.fillStyle='rgba(0,0,0,0.35)';X.beginPath();X.roundRect(bx2-1,by2-1,bw+2,bh+2,3);X.fill();X.fillStyle=`rgb(${Math.round(100+t*155)},${Math.round(180-t*130)},255)`;X.beginPath();X.roundRect(bx2,by2,bw,bh*t,2);X.fill();X.fillStyle='#fff';X.font='bold 10px monospace';X.textAlign='center';X.fillText(`${1+Math.floor(t*3)}F\u25BC`,bx2+bw/2,by2+bh+12)}
+
+  // Crane prompt — on cab but not driving
+  if(p.crane<0&&p.onF){
+    for(let ci=0;ci<S.cranes.length;ci++){
+      const c=S.cranes[ci];const cabY=c.y-200;
+      if(Math.abs(p.y-cabY)<10&&Math.abs(p.x-c.x)<60){
+        const ctxt='[E] Drive Crane';
+        X.font='bold 13px Segoe UI,sans-serif';X.textAlign='center';
+        const cw2=X.measureText(ctxt).width;
+        X.fillStyle='rgba(0,0,0,0.55)';X.beginPath();X.roundRect(c.x-cw2/2-8,cabY-p.h-32,cw2+16,20,4);X.fill();
+        X.fillStyle='#ffee88';X.fillText(ctxt,c.x,cabY-p.h-18);
+        break;
+      }
+    }
+  }
 
   // Interaction prompts
   const inter=getInter();

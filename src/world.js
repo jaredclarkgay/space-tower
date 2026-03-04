@@ -56,7 +56,7 @@ export function genWorld(){
     }
   }
   S.floors.sort((a,b)=>a.y-b.y);
-  for(let b=2;b<BPF;b+=5) S.cranes.push({x:TL+b*PG+PG/2,y:ROOF_Y});
+  for(let b=2;b<BPF;b+=5) S.cranes.push({x:TL+b*PG+PG/2,y:ROOF_Y,angle:0});
   // Construction workers on rooftop
   for(let w=0;w<4;w++){const convo=CWM[w%CWM.length];S.workers.push({x:TL+200+sr()*(TW-400),y:ROOF_Y,w:24,h:48,vx:0,vy:0,spd:0.8+sr()*0.6,name:pk(CWN),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,onF:true,convo,ci:0})}
 }

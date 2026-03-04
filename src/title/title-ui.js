@@ -19,7 +19,7 @@ export function createTitleUI(saveData, onContinue, onNewGame) {
   // Subtitle
   const sub = document.createElement('div');
   sub.className = 'title-sub';
-  sub.textContent = 'Goodbye Earth';
+  sub.textContent = 'Segment 1';
   overlay.appendChild(sub);
 
   // Menu (vertical save slots)
@@ -163,7 +163,7 @@ export function showArrivalText(onEnter) {
   const el = document.createElement('div');
   el.className = 'title-arrival';
   el.id = 'arrival-text';
-  el.innerHTML = '<div class="title-arrival-main">Floors 1\u201310</div><div class="title-arrival-sub">Goodbye Earth</div>';
+  el.innerHTML = '<div class="title-arrival-main">Floors 1\u201310</div><div class="title-arrival-sub">Segment 1</div>';
   document.body.appendChild(el);
   requestAnimationFrame(() => { el.style.opacity = '1'; });
 

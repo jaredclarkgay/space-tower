@@ -53,7 +53,22 @@ export function setupPanel(){
   });
 }
 
+let _crHidden=false;
+const _crHideIds=['build-panel','hud-top','zoom-wrap'];
 export function renderPanel(){
+  if(S.cr.active){
+    if(!_crHidden){
+      _crHideIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none'});
+      _crHidden=true;
+      dispatchEvent(new Event('resize'));
+    }
+    return;
+  } else if(_crHidden){
+    _crHideIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=''});
+    _crHidden=false;
+    S.panelDirty=true;
+    dispatchEvent(new Event('resize'));
+  }
   if(!S.panelDirty)return;S.panelDirty=false;
   const fi=S.panelFloor,fd=FD[fi],stg=S.buildout[fi].stage;
   const abf=getActiveBuildFloor();
@@ -142,10 +157,12 @@ export function renderPanel(){
   // Divider
   h+=`<div style="border-top:1px solid rgba(255,255,255,0.08);margin:10px 0"></div>`;
 
-  // Floor overview
+  // Floor overview — descending so numbers ascend bottom-to-top (matches tower)
   h+=`<div style="font-size:8px;opacity:0.3;letter-spacing:2px;margin-bottom:6px;text-align:center">ALL FLOORS</div>`;
-  for(let i=0;i<NF;i++){
-    const s=S.buildout[i].stage,isCur=i===fi;
+  for(let i=NF-1;i>=0;i--){
+    const s=S.buildout[i].stage;
+    if(s<1)continue; // hide unreached floors
+    const isCur=i===fi;
     const c=s>=5?'#00ff88':s>0?'#ffd700':'rgba(255,255,255,0.2)';
     h+=`<div class="fp-row" data-fi="${i}" style="display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:3px;cursor:pointer;${isCur?'background:rgba(255,255,255,0.06);':''}margin-bottom:1px">`;
     h+=`<div style="font-size:9px;opacity:0.4;width:20px">F${i+1}</div>`;
@@ -158,6 +175,11 @@ export function renderPanel(){
     h+=`<div style="font-size:8px;opacity:0.3;width:30px;text-align:right">${s>=5?'★':s>0?s+'/5':''}</div>`;
     h+=`</div>`;
   }
+  // Control Room (basement)
+  h+=`<div style="display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:3px;margin-bottom:1px;opacity:0.5">`;
+  h+=`<div style="font-size:9px;opacity:0.4;width:20px">B</div>`;
+  h+=`<div style="font-size:10px;flex:1">CONTROL ROOM</div>`;
+  h+=`</div>`;
 
   bpContent.innerHTML=h;
 }

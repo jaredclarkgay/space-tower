@@ -14,6 +14,7 @@ import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js
 import { setupRadio } from './radio-ui.js';
 import { checkReckoningTrigger, updateReckoning, checkReckoningBell, startRematch, isReckoningFrozen, isReckoningActive, setupTestMode, handleReckoningIntroE, handleReckoningColorLeft, handleReckoningColorRight, handleReckoningColorConfirm, checkColorWheel, openColorWheel } from './reckoning.js';
 import { isKeeperProximity, startKeeperZoom, endKeeperZoom, updateKeeper, advanceKeeperDialogue, getZoomState } from './keeper.js';
+import { enterControlRoom, exitControlRoom, updateControlRoom } from './control-room.js';
 
 // ═══ REAL-TIME ACCUMULATORS (frame-rate independent) ═══
 let _lastFrameTime = 0;
@@ -42,6 +43,14 @@ function openElev(){
     if(!cur){div.addEventListener('click',()=>rideElev(fi))}
     elevFloors.appendChild(div);
   }
+  // Basement: Control Room
+  const bDiv=document.createElement('div');
+  bDiv.className='elev-floor'+(S.elevSelected===-1?' selected':'');
+  bDiv.dataset.fi='-1';
+  bDiv.innerHTML='<span style="opacity:0.6">CONTROL ROOM</span><span class="ef-num">B</span>';
+  bDiv.addEventListener('click',()=>{closeElev();enterControlRoom()});
+  elevFloors.appendChild(bDiv);
+
   elevPanel.classList.add('open');
 }
 function closeElev(){
@@ -227,6 +236,24 @@ function processArrivals(){
 
 // ═══ UPDATE ═══
 function update(){
+  // Control room — completely separate scene
+  if(S.cr.active){
+    const _crNow=performance.now();
+    const _crDt=Math.min((_crNow-(_lastFrameTime||_crNow))/1000,0.05);
+    _lastFrameTime=_crNow;
+    updateControlRoom(_crDt);
+    // E to exit
+    if(S.cr.nearElev&&S.jp.KeyE){exitControlRoom();S.jp.KeyE=false}
+    // Escape to leave full-screen / deselect
+    if(S.jp.Escape){
+      if(S.cr.fullScreen){S.cr.fullScreen=false;S.cr.fsPanX=0;S.cr.fsPanY=0}
+      else if(S.cr.selectedFloor>=0)S.cr.selectedFloor=-1;
+    }
+    // F to toggle full-screen monitor
+    if(S.jp.KeyF&&S.cr.phase===3){S.cr.fullScreen=!S.cr.fullScreen;S.cr.fsPanX=0;S.cr.fsPanY=0}
+    S.jp={};
+    return;
+  }
   processArrivals();
   // Dynamic rooftop — keep floor entry in sync for collision
   const _abf2=getActiveBuildFloor();
@@ -293,6 +320,14 @@ function update(){
   if(p.cf===4&&S.buildout[4].stage>=5&&Math.abs(p.x-(TL+2*PG+PG/2))<200){sndDoorHumStart()}else{sndDoorHumStop()}
   const _f8frozen=isReckoningFrozen()||S.keeper.active;
   if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()&&!_f8frozen){
+  // Crane driving mode
+  if(p.crane>=0){
+    const _cc=S.cranes[p.crane],_cabY=_cc.y-200;
+    p.x=_cc.x;p.y=_cabY;p.vx=0;p.vy=0;p.onF=true;p.st='idle';
+    if(k['ArrowLeft']||k['KeyA'])_cc.angle-=1.5*(frameDt/16);
+    if(k['ArrowRight']||k['KeyD'])_cc.angle+=1.5*(frameDt/16);
+    if(S.jp['KeyE']||S.jp['Escape']){p.crane=-1;S.iLock=true}
+  } else {
   const jk=k['ArrowUp']||k['KeyW'],dk=k['ArrowDown']||k['KeyS'];
   const stUp=inter&&inter.t==='up',stDn=inter&&inter.t==='dn';
   if(p.st!=='climb'){
@@ -325,7 +360,15 @@ function update(){
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
     if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=5)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
       else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
-      }S.iLock=true}}else S.iLock=false;
+      }S.iLock=true}}
+    // E to enter crane — on cab platform, no other interaction
+    if(k['KeyE']&&!S.iLock&&p.onF&&p.crane<0){
+      for(let ci=0;ci<S.cranes.length;ci++){
+        const _cr=S.cranes[ci],_cabY=_cr.y-200;
+        if(Math.abs(p.y-_cabY)<10&&Math.abs(p.x-_cr.x)<60){p.crane=ci;S.iLock=true;break}
+      }
+    }
+    if(!k['KeyE'])S.iLock=false;
   } else {
     const st=p.clT;if(jk){p.clP+=0.018;p.fr=st.tx>st.bx}else if(dk){p.clP-=0.018;p.fr=st.bx>st.tx}
     if(p.clP>=1){p.clP=1;p.st='idle';p.clT=null;p.x=st.tx;p.y=st.ty;p.vy=0}
@@ -362,12 +405,27 @@ function update(){
     p.onF=false;
     for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&S.buildout[f.level].stage<1&&f.level!==_abf2)continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false;p.wallSlide=false}break}}
     if(p.y>TB){p.y=TB;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=0;p.flipCommitted=false;p.wallSlide=false}
+    // Crane cab collision (wide platform — 120px across)
+    if(!p.onF&&p.vy>=0){
+      for(let ci=0;ci<S.cranes.length;ci++){
+        const _cr=S.cranes[ci],_cabY=_cr.y-200;
+        if(p.y<=_cabY&&p.y+p.vy>=_cabY&&Math.abs(p.x-_cr.x)<60){
+          p.y=_cabY;p.vy=0;p.onF=true;p.cf=-1;
+          p.st=p.vx===0?'idle':'walk';p.flipCommitted=false;p.wallSlide=false;
+          break;
+        }
+      }
+    }
   }
+  } // end crane else
   } // end movement guard
   if(S.elevOpen){
-    if(S.jp['ArrowUp']||S.jp['KeyW']){let ns=S.elevSelected+1;while(ns<NF&&S.buildout[ns].stage<1&&ns!==p.cf)ns++;if(ns<NF){S.elevSelected=ns;updateElevHighlight()}}
-    if(S.jp['ArrowDown']||S.jp['KeyS']){let ns=S.elevSelected-1;while(ns>=0&&S.buildout[ns].stage<1&&ns!==p.cf)ns--;if(ns>=0){S.elevSelected=ns;updateElevHighlight()}}
-    if(S.jp['Enter']||S.jp['KeyE']){if(S.elevSelected!==p.cf&&S.buildout[S.elevSelected].stage>=1)rideElev(S.elevSelected)}
+    if(S.jp['ArrowUp']||S.jp['KeyW']){let ns=S.elevSelected+1;while(ns<NF&&ns>=0&&S.buildout[ns].stage<1&&ns!==p.cf)ns++;if(ns<NF){S.elevSelected=ns;updateElevHighlight()}}
+    if(S.jp['ArrowDown']||S.jp['KeyS']){let ns=S.elevSelected-1;while(ns>=0&&S.buildout[ns].stage<1&&ns!==p.cf)ns--;if(ns>=-1){S.elevSelected=ns;updateElevHighlight()}}
+    if(S.jp['Enter']||S.jp['KeyE']){
+      if(S.elevSelected===-1){closeElev();enterControlRoom()}
+      else if(S.elevSelected!==p.cf&&S.buildout[S.elevSelected].stage>=1)rideElev(S.elevSelected);
+    }
   }
   S.npcs.forEach(n=>{
     if(!n.arrived)return; // arrival system handles unarrived NPCs
@@ -383,7 +441,7 @@ function update(){
   });
   if(p.st==='walk'||p.st==='climb')p.bob+=0.2;else p.bob*=0.9;
   if(p.st==='walk'&&S.frame%12===0)sndStep();
-  fpElRef.textContent=p.cf<0?'ROOFTOP · UNDER CONSTRUCTION':`FLOOR ${p.cf+1} · ${FD[p.cf]?.name||''}`;
+  fpElRef.textContent=p.crane>=0?'CRANE · \u2190 \u2192 ROTATE · E EXIT':p.cf<0?'ROOFTOP · UNDER CONSTRUCTION':`FLOOR ${p.cf+1} · ${FD[p.cf]?.name||''}`;
   if(!S.keeper.active){S.cam.tx=p.x;S.cam.ty=p.y-60}
   S.cam.x+=(S.cam.tx-S.cam.x)*0.08;S.cam.y+=(S.cam.ty-S.cam.y)*0.08;
   S.jp={};
