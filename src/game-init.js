@@ -259,6 +259,8 @@ function update(){
   _saveAcc+=frameDt;if(_saveAcc>=SAVE_INTERVAL){_saveAcc-=SAVE_INTERVAL;autoSave()}
   // Reckoning intro E handler (skip typewriter / begin)
   if(S.reckoning.phase==='INTRO'){if(k['KeyE']&&!S.iLock){handleReckoningIntroE();S.iLock=true}if(!k['KeyE'])S.iLock=false}
+  // Reset iLock during non-interactive reckoning phases so it doesn't stay stuck
+  if(S.reckoning.phase==='COUNTDOWN'||S.reckoning.phase==='ACTIVE'||S.reckoning.phase==='FLOOD'||S.reckoning.phase==='RESULT'){if(!k['KeyE'])S.iLock=false}
   // Reckoning color pick handler (post-reckoning or free-roam recolor)
   if(S.reckoning.phase==='COLOR_PICK'||S.reckoning.colorPick){
     if(S.jp['ArrowLeft']||S.jp['KeyA'])handleReckoningColorLeft();

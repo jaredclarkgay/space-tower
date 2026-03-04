@@ -1650,33 +1650,33 @@ export function draw(){
       const cR=Math.round(60+195*osc),cG=Math.round(140+75*osc),cB=Math.round(255-255*osc);
 
       // Vertical beam — floor to ceiling
-      const beamW=6+pulse2*4;
+      const beamW=8+pulse2*6;
       const beamGrad=X.createLinearGradient(ipx,ipy-FH,ipx,ipy);
       beamGrad.addColorStop(0,`rgba(${cR},${cG},${cB},0)`);
-      beamGrad.addColorStop(0.3,`rgba(${cR},${cG},${cB},${0.15*pulse})`);
-      beamGrad.addColorStop(0.5,`rgba(${cR},${cG},${cB},${0.25*pulse})`);
-      beamGrad.addColorStop(0.7,`rgba(${cR},${cG},${cB},${0.15*pulse})`);
+      beamGrad.addColorStop(0.3,`rgba(${cR},${cG},${cB},${0.35*pulse})`);
+      beamGrad.addColorStop(0.5,`rgba(${cR},${cG},${cB},${0.55*pulse})`);
+      beamGrad.addColorStop(0.7,`rgba(${cR},${cG},${cB},${0.35*pulse})`);
       beamGrad.addColorStop(1,`rgba(${cR},${cG},${cB},0)`);
       X.fillStyle=beamGrad;X.fillRect(ipx-beamW/2,ipy-FH,beamW,FH);
 
       // Large radial glow
       const glow=X.createRadialGradient(ipx,cy,0,ipx,cy,100);
-      glow.addColorStop(0,`rgba(${cR},${cG},${cB},${0.5*pulse})`);
-      glow.addColorStop(0.4,`rgba(${cR},${cG},${cB},${0.2*pulse})`);
+      glow.addColorStop(0,`rgba(${cR},${cG},${cB},${0.8*pulse})`);
+      glow.addColorStop(0.4,`rgba(${cR},${cG},${cB},${0.4*pulse})`);
       glow.addColorStop(1,`rgba(${cR},${cG},${cB},0)`);
       X.fillStyle=glow;X.fillRect(ipx-100,cy-100,200,200);
 
       // Pulsing ring at center
-      X.strokeStyle=`rgba(${cR},${cG},${cB},${0.45*pulse})`;X.lineWidth=2;
+      X.strokeStyle=`rgba(${cR},${cG},${cB},${0.8*pulse})`;X.lineWidth=3;
       X.beginPath();X.arc(ipx,cy,20+pulse2*10,0,Math.PI*2);X.stroke();
 
       // Diamond marker
-      X.fillStyle=`rgba(${cR},${cG},${cB},${0.85*pulse})`;
-      X.beginPath();X.moveTo(ipx,cy-14);X.lineTo(ipx+8,cy);X.lineTo(ipx,cy+14);X.lineTo(ipx-8,cy);X.closePath();X.fill();
+      X.fillStyle=`rgba(${cR},${cG},${cB},${1.0})`;
+      X.beginPath();X.moveTo(ipx,cy-16);X.lineTo(ipx+10,cy);X.lineTo(ipx,cy+16);X.lineTo(ipx-10,cy);X.closePath();X.fill();
 
       // Label
-      X.fillStyle=`rgba(${cR},${cG},${cB},${0.9*pulse})`;X.font='bold 11px monospace';X.textAlign='center';
-      X.fillText(sd.label,ipx,cy+30);
+      X.fillStyle=`rgba(${cR},${cG},${cB},${1.0})`;X.font='bold 12px monospace';X.textAlign='center';
+      X.fillText(sd.label,ipx,cy+32);
 
       // Directional arrow — show when player is on the active floor but far from point
       const p2=S.player;
@@ -1685,12 +1685,12 @@ export function draw(){
         const ax=p2.x+dir*50;
         const ay=p2.y-p2.h-30;
         const aw=14,ah=10;
-        X.fillStyle=`rgba(${cR},${cG},${cB},${0.7*pulse})`;
+        X.fillStyle=`rgba(${cR},${cG},${cB},${0.9})`;
         X.beginPath();
         if(dir>0){X.moveTo(ax+aw,ay);X.lineTo(ax,ay-ah/2);X.lineTo(ax,ay+ah/2)}
         else{X.moveTo(ax-aw,ay);X.lineTo(ax,ay-ah/2);X.lineTo(ax,ay+ah/2)}
         X.closePath();X.fill();
-        X.font='9px monospace';X.textAlign='center';
+        X.font='bold 10px monospace';X.textAlign='center';
         X.fillText(sd.label,ax+(dir>0?-5:5),ay-12);
       }
     }
