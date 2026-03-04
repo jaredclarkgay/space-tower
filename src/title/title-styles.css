@@ -98,7 +98,7 @@
 
 /* ── Home button ── */
 #home-btn {
-  position: fixed; top: 12px; left: 12px; z-index: 70;
+  position: fixed; top: 12px; left: 12px; z-index: 90;
   font-family: 'Century Gothic', 'Futura', 'Avenir', 'Gill Sans', sans-serif;
   font-size: 13px; letter-spacing: 0.12em;
   color: rgba(240,232,220,0.5); cursor: pointer;

@@ -55,12 +55,12 @@ export function createTitleUI(saveData, onContinue, onNewGame) {
     menu.appendChild(cont);
   }
 
-  // Test Reckoning button
+  // Test Reckoning button — skips exterior, goes straight into the sim
   const testBtn = _makeSlot('Test Reckoning', 'Skip to land grab event', true);
   testBtn.style.opacity = '0.5';
   testBtn.addEventListener('click', () => {
     localStorage.setItem('spacetower_testReckoning', '1');
-    onNewGame();
+    document.dispatchEvent(new CustomEvent('enter-game', { detail: { isNew: true } }));
   });
   menu.appendChild(testBtn);
 
@@ -262,7 +262,7 @@ export function showMovementHints() {
   if (_camDistGetter && _camDistSetter) {
     const slider = document.createElement('div');
     slider.id = 'ext-cam-slider';
-    slider.style.cssText = 'position:fixed;bottom:80px;left:14px;z-index:60;color:rgba(255,255,255,0.4);font-family:monospace;font-size:9px;line-height:1.4;background:rgba(0,0,0,0.3);padding:6px 10px;border-radius:5px;backdrop-filter:blur(4px)';
+    slider.style.cssText = 'position:fixed;bottom:160px;left:14px;z-index:60;color:rgba(255,255,255,0.4);font-family:monospace;font-size:9px;line-height:1.4;background:rgba(0,0,0,0.3);padding:6px 10px;border-radius:5px;backdrop-filter:blur(4px)';
     const range = document.createElement('input');
     range.type = 'range'; range.min = '3'; range.max = '30'; range.step = '0.5';
     range.value = String(_camDistGetter());

@@ -160,6 +160,15 @@ export function updateTransition(dt, orbitAngle) {
   return true;
 }
 
+/**
+ * Set internal refs so reverse transition works even when playTransition was never called (e.g. skipToExterior).
+ */
+export function setTransitionRefs(scene, camera, renderer, cityData, setOrbitAngle, onEnterGame) {
+  _scene = scene; _camera = camera; _renderer = renderer; _cityData = cityData;
+  _orbitAngleFn = setOrbitAngle;
+  _onEnterGame = onEnterGame;
+}
+
 // ── Reverse transition (game entry → back to menu) ──
 const REVERSE = { active: false, elapsed: 0, dur: 5, startR: 1000, startH: 150, targetR: 3250, targetH: 687 };
 

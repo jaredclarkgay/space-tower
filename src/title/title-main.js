@@ -4,7 +4,7 @@ import './title-styles.css';
 import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlend, getEarthParams, setEarthVisible, updateMoon } from './title-city.js';
 import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistCallbacks } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
-import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY } from './title-transition.js';
+import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY, setTransitionRefs } from './title-transition.js';
 import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive } from './title-exterior.js';
 import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
 import { ensureAudioCtx, getAudioCtx } from '../sound.js';
@@ -417,6 +417,10 @@ export function skipToExterior() {
     c.scale.y = visH / fullH;
     c.position.y = visH / 2;
   });
+
+  // Wire transition refs so reverse transition can access scene/camera/cityData
+  const setOrbitAngle = (fn) => { orbitAngle = fn(orbitAngle); };
+  setTransitionRefs(scene, camera, renderer, cityData, setOrbitAngle, null);
 
   // Set transition state so isTransitionActive() returns true at phase 4
   TRANSITION.active = true;
