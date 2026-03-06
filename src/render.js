@@ -1,6 +1,6 @@
 'use strict';
 import { S, cZoom, keeperZoom, getActiveBuildFloor } from './state.js';
-import { getReckoningState, isReckoningActive, getReckoningBriefing, RK_FLOOR_MIN, RK_FLOOR_MAX, getColorPickState, getColorWheelPos, checkColorWheel, RK_COLORS } from './reckoning.js';
+import { getReckoningState, isReckoningActive, getReckoningBriefing, RK_FLOOR_MIN, RK_FLOOR_MAX, getColorPickState, getColorWheelPos, checkColorWheel, RK_COLORS, getIntroBlackout, getBlockFlash, getScorePulse, getSuitClaimProgress } from './reckoning.js';
 import { drawKeeper, drawKeeperDesk, drawKeeperGlow, drawKeeperOverlay } from './keeper.js';
 import { TW, FH, FT, NF, TL, TR, TB, TT, PG, BPF, UW, ROOF_Y, MOB, PH, CHG_MX, DROP_MX, lerpColor, isWinBlock, isElevBlock, ELEV_X, RK_ACTIVE_T } from './constants.js';
 import { FTHEME, FD, STAGES } from './floors.js';
@@ -1119,6 +1119,7 @@ function drawReckoningOverlay(W,H,_now2){
   const t=_now2*0.001;
   switch(rk.phase){
     case 'INTRO':{
+      if(getIntroBlackout()>0){X.fillStyle='#000';X.fillRect(0,0,W,H);break}
       X.fillStyle='rgba(0,0,0,0.7)';X.fillRect(0,0,W,H);
       // Title
       X.fillStyle='#FF6600';X.font='bold 36px monospace';X.textAlign='center';
@@ -1165,25 +1166,42 @@ function drawReckoningOverlay(W,H,_now2){
       // Timer bar
       const barW=300,barH=12,barX=(W-barW)/2,barY=20;
       const frac=rk.timer/RK_ACTIVE_T;
+      const urgent15=rk.timer<900,urgent5=rk.timer<300;
       X.fillStyle='rgba(0,0,0,0.4)';X.beginPath();X.roundRect(barX-2,barY-2,barW+4,barH+4,4);X.fill();
-      X.fillStyle=frac>0.25?'#FF6600':'#ff3030';X.beginPath();X.roundRect(barX,barY,barW*frac,barH,3);X.fill();
-      // Time text
+      const barCol=urgent5?'#ff0000':urgent15?'#ff3030':frac>0.25?'#FF6600':'#ff3030';
+      X.fillStyle=barCol;X.beginPath();X.roundRect(barX,barY,barW*frac,barH,3);X.fill();
+      // Time text — red + pulse in last 15s
       const secLeft=Math.ceil(rk.timer/60);
-      X.fillStyle='#fff';X.font='bold 10px monospace';X.textAlign='center';
+      if(urgent15){
+        const tp=urgent5?0.6+Math.sin(t*8)*0.4:0.8+Math.sin(t*4)*0.2;
+        X.fillStyle=`rgba(255,${urgent5?'50':'120'},${urgent5?'50':'80'},${tp})`;
+        X.font=urgent5?'bold 13px monospace':'bold 11px monospace';
+      } else {
+        X.fillStyle='#fff';X.font='bold 10px monospace';
+      }
+      X.textAlign='center';
       X.fillText(`${secLeft}s`,W/2,barY+barH+14);
-      // Scores — 3 contested floors × 12 blocks = 36 total
+      // Scores — pulsing on change
       const total=3*BPF;
       const open=total-rk.bScore-rk.sScore;
-      X.fillStyle=rk.builderColor||'#FF6600';X.font='bold 16px monospace';X.textAlign='left';
-      X.fillText(`BUILDERS: ${rk.bScore}`,barX-140,barY+barH);
-      X.fillStyle='#3355cc';X.textAlign='right';
-      X.fillText(`SUITS: ${rk.sScore}`,barX+barW+140,barY+barH);
-      // Wave indicator + open blocks
-      const waveNames=['Observation','Storage','Observatory'];
-      const _wIdx=rk.suitWave-RK_FLOOR_MIN;
-      const waveLabel=_wIdx>=0&&_wIdx<waveNames.length?waveNames[_wIdx]:'all floors';
-      X.fillStyle='rgba(255,255,255,0.3)';X.font='10px monospace';X.textAlign='center';
-      X.fillText(`Suit wave: ${waveLabel} | Open: ${open}`,W/2,barY+barH+28);
+      const sp=getScorePulse();
+      const bScale=1+(sp.b/15)*0.3,sScale=1+(sp.s/15)*0.3;
+      // Builder score
+      X.save();
+      X.translate(barX-80,barY+barH);X.scale(bScale,bScale);
+      X.fillStyle=rk.builderColor||'#FF6600';X.font='bold 16px monospace';X.textAlign='center';
+      X.fillText(`BUILDERS: ${rk.bScore}`,0,0);
+      X.restore();
+      // Suit score
+      X.save();
+      X.translate(barX+barW+80,barY+barH);X.scale(sScale,sScale);
+      X.fillStyle='#3355cc';X.font='bold 16px monospace';X.textAlign='center';
+      X.fillText(`SUITS: ${rk.sScore}`,0,0);
+      X.restore();
+      // Open blocks counter — prominent
+      const openPulse=open<6?0.7+Math.sin(t*5)*0.3:0.5;
+      X.fillStyle=`rgba(255,255,255,${openPulse})`;X.font=open<6?'bold 14px monospace':'bold 14px monospace';X.textAlign='center';
+      X.fillText(`${open} OPEN`,W/2,barY+barH+30);
       break;
     }
     case 'FLOOD':{
@@ -1517,6 +1535,27 @@ export function draw(){
           X.fillStyle=`rgba(51,85,204,${_rkDuring?0.4:0.3})`;X.fillRect(bx,fy-FH,PG,FH);
           X.fillStyle=`rgba(51,85,204,${_rkDuring?0.55:0.4})`;X.fillRect(bx,fy-FH,PG,2);X.fillRect(bx,fy-2,PG,2);
         }
+        // Block flash on claim (white slam → team color)
+        if(_rkDuring){
+          const _fl=getBlockFlash(i,bi);
+          if(_fl){
+            const _ft=_fl.t/15; // 1→0
+            if(_ft>0.6){X.fillStyle=`rgba(255,255,255,${(_ft-0.6)*1.5})`;X.fillRect(bx,fy-FH,PG,FH)}
+            else{
+              const _fc=_fl.team===1?_bCol:'#3355cc';
+              const _fr2=parseInt(_fc.slice(1,3),16),_fg2=parseInt(_fc.slice(3,5),16),_fb2=parseInt(_fc.slice(5,7),16);
+              X.fillStyle=`rgba(${_fr2},${_fg2},${_fb2},${_ft*0.5})`;X.fillRect(bx,fy-FH,PG,FH);
+            }
+          }
+          // Suit claim warning — pulse blue border when >50% claimed
+          if(_claim===0){
+            const _scp=getSuitClaimProgress(i,bi);
+            if(_scp>0.5){
+              const _wp=0.2+Math.sin(_now*0.01)*0.15;
+              X.strokeStyle=`rgba(51,85,204,${_wp})`;X.lineWidth=2;X.strokeRect(bx+1,fy-FH+1,PG-2,FH-2);
+            }
+          }
+        }
       }
     }
     // Ceiling & edge depth — makes floors feel enclosed
@@ -1764,9 +1803,10 @@ export function draw(){
   cw.forEach(n=>drawWorker(n));
   S.workers.forEach(w=>drawWorker(w));
 
-  // Reckoning NPCs
+  // Reckoning NPCs — visible during INTRO (silhouettes through overlay) and ACTIVE+
   const _rk=getReckoningState();
-  if(isReckoningActive()){
+  const _rkShow=isReckoningActive()||_rk.phase==='INTRO';
+  if(_rkShow){
     _rk.builders.forEach(n=>{if(!n.travelTimer)drawWorker(n)});
     _rk.suits.forEach(n=>{if(!n.travelTimer)drawBiz(n)});
     // Floor leaders — workers with gold star
@@ -1775,6 +1815,17 @@ export function draw(){
       X.fillStyle='#FFD700';X.font='bold 10px monospace';X.textAlign='center';
       X.fillText('\u2605',n.x,n.y-56);
     });
+    // Suit targeting lines (ACTIVE only)
+    if(_rk.phase==='ACTIVE'){
+      X.save();X.setLineDash([4,6]);X.lineWidth=1;X.strokeStyle='rgba(51,85,204,0.15)';
+      _rk.suits.forEach(s=>{
+        if(s.travelTimer>0||s.targetBi<0)return;
+        const tx=TL+s.targetBi*PG+PG/2,ty=TB-(s.fi*FH)-FH/2;
+        const bob=Math.sin(s.bob)*2;
+        X.beginPath();X.moveTo(s.x,s.y-24+bob);X.lineTo(tx,ty);X.stroke();
+      });
+      X.setLineDash([]);X.restore();
+    }
     // Flood NPCs (fade-in)
     _rk.floodNpcs.forEach(n=>{
       X.save();X.globalAlpha=n.alpha||0;
@@ -1804,14 +1855,21 @@ export function draw(){
     }
   }
 
-  // Player claiming ring (reckoning)
+  // Player claiming ring + progress bar (reckoning)
   if(_rk.phase==='ACTIVE'&&_rk.claimTimer>0&&_rk.claimBi>=0){
-    const _cx=TL+_rk.claimBi*PG+PG/2,_cy=TB-(_rk.claimFi*FH)-FH/2;
+    const _cx=TL+_rk.claimBi*PG,_cy=TB-(_rk.claimFi*FH);
     const _prog=_rk.claimTimer/150;
     const _ringCol=_rk.builderColor||'#FF6600';
     const _rr=parseInt(_ringCol.slice(1,3),16),_rg=parseInt(_ringCol.slice(3,5),16),_rb=parseInt(_ringCol.slice(5,7),16);
-    X.strokeStyle=`rgba(${_rr},${_rg},${_rb},0.8)`;X.lineWidth=6;
+    // Thinner ring around player
+    X.strokeStyle=`rgba(${_rr},${_rg},${_rb},0.8)`;X.lineWidth=3;
     X.beginPath();X.arc(p.x,p.y-24,22,-Math.PI/2,-Math.PI/2+_prog*Math.PI*2);X.stroke();
+    // Progress bar at block bottom
+    X.save();
+    X.shadowColor=`rgba(${_rr},${_rg},${_rb},0.5)`;X.shadowBlur=6;
+    X.fillStyle=`rgba(${_rr},${_rg},${_rb},0.7)`;
+    X.fillRect(_cx,_cy-4,PG*_prog,4);
+    X.restore();
   }
 
   // Charge bars

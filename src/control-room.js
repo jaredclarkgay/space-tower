@@ -2,7 +2,7 @@
 import { S } from './state.js';
 import { NF, BPF, TB, FH, ELEV_X } from './constants.js';
 import { FD } from './floors.js';
-import { sndElev } from './sound.js';
+import { sndElev, sndCrAlarm, sndCrChunk, sndCrThud } from './sound.js';
 
 // ═══ CONTROL ROOM ═══
 // Basement scene below Floor 1. Elevator doors → dark room → screen boots → interactive.
@@ -54,6 +54,71 @@ const FLOOR_DESC=[
 // ── Internal time accumulator ──
 let _t=0;
 
+// ── Module-local state (features 1–5) ──
+let _logLines=[],_logTimer=0,_logIdx=0;
+let _nearConsole=false,_redAlertT=0,_goldUsed=false,_pressedBtn=null,_pressedBtnT=0;
+let _wasJumping=false,_shakeT=0,_shakeIntensity=0,_consoleLandIdx=0;
+let _glitchT=0,_glitchRng=5,_flickerT=2,_pendingSatLog=false;
+let _lastSatBoost=0; // persists across visits (60s cooldown)
+let _screenAlpha=1; // current frame screen alpha (for flicker)
+
+const LOG_INTERVAL=6; // seconds between quips
+const LOG_FADE=18; // seconds before fade-out
+
+const LOG_QUIPS=[
+  // Contextual (with cond)
+  {text:s=>'Population: '+s.population+'. The tower is technically a house.',cond:s=>s.population<=15},
+  {text:'Satisfaction critical. Consider doing literally anything.',cond:s=>s.satisfaction<20},
+  {text:s=>'Credits: '+s.credits+'. Poverty is a feature, not a bug.',cond:s=>s.credits===0},
+  {text:'Floor 5 restaurant still empty. Your stomach knows.',cond:(_,c)=>c.floors[4].stage<5},
+  {text:'Someone rang a bell on Floor 8. The reverberations continue.',cond:()=>S.reckoning.played},
+  {text:'10 floors. All by hand. Your chiropractor is waiting.',cond:(_,c)=>c.doneCount>=10},
+  {text:s=>'Satisfaction at '+s.satisfaction+'%. Morale is a concept.',cond:s=>s.satisfaction>=80},
+  {text:'Half the tower is dark. The other half is also mostly dark.',cond:(_,c)=>c.active<=5},
+  {text:s=>'Population '+s.population+'. Standing room only.',cond:s=>s.population>40},
+  {text:'Research floor offline. Science waits for no one. Except you.',cond:(_,c)=>c.floors[3].stage<5},
+  // Generic (no cond, rotate in order)
+  {text:'Note: the red button does nothing useful.'},
+  {text:'Elevator maintenance overdue by 47 visits.'},
+  {text:'Ambient temperature: cold. Morale: also cold.'},
+  {text:'System log: everything is nominal. Suspiciously nominal.'},
+  {text:'Reminder: you built this. All of it. With your hands.'},
+  {text:'Oxygen levels stable. Existential dread levels: unmeasured.'},
+  {text:'Warning: basement lighting budget was zero.'},
+  {text:'Console uptime: impressive. Console usefulness: debatable.'},
+  {text:'Next maintenance cycle: undefined.'},
+  {text:'Power draw: minimal. Ambiance draw: maximal.'},
+  {text:'No anomalies detected. That is the anomaly.'},
+  {text:'If you can read this, you are too close to the screen.'},
+  {text:'Status: operational. Purpose: unclear.'},
+  {text:'Floor count: 10. Complaint count: higher.'},
+  {text:'The hum you hear is normal. Probably.'},
+];
+
+const CONSOLE_LAND_QUIPS=[
+  'Please do not stand on the equipment.',
+  'That console cost more than Floor 3.',
+  'Structural integrity of operator station: concerning.',
+];
+
+function _pickQuip(){
+  const stats=_cache.stats,c=_cache;
+  const contextual=LOG_QUIPS.filter(q=>q.cond&&q.cond(stats,c));
+  const generic=LOG_QUIPS.filter(q=>!q.cond);
+  if(contextual.length>0&&Math.random()<0.6){
+    const q=contextual[Math.floor(Math.random()*contextual.length)];
+    return typeof q.text==='function'?q.text(stats):q.text;
+  }
+  const q=generic[_logIdx%generic.length];
+  _logIdx++;
+  return typeof q.text==='function'?q.text(stats):q.text;
+}
+
+function _pushLog(text){
+  _logLines.push({text,age:0});
+  if(_logLines.length>3)_logLines.shift();
+}
+
 // ── Per-frame cache (computed once at start of draw, reused everywhere) ──
 let _cache={stats:null,floors:null,nextTask:null,doneCount:0,active:0,building:0};
 function _refreshCache(){
@@ -85,6 +150,17 @@ export function enterControlRoom(){
   cr.nearElev=false;cr.introWalkDone=false;
   cr.selectedFloor=-1;cr.fullScreen=false;cr.fsPanX=0;cr.fsPanY=0;
   _t=0;
+  // Feature resets (per-visit)
+  _logLines=[];_logTimer=0;_logIdx=0;
+  _nearConsole=false;_redAlertT=0;_goldUsed=false;_pressedBtn=null;_pressedBtnT=0;
+  _wasJumping=false;_shakeT=0;_shakeIntensity=0;_consoleLandIdx=0;
+  _glitchT=0;_glitchRng=5;_flickerT=2;_pendingSatLog=false;
+  // SAT boost (60s cooldown persists across visits)
+  if(Date.now()-_lastSatBoost>=60000){
+    S.sat=Math.min(100,S.sat+2);
+    _lastSatBoost=Date.now();
+    _pendingSatLog=true;
+  }
 }
 
 export function exitControlRoom(){
@@ -98,6 +174,26 @@ export function exitControlRoom(){
   S.player.onF=true;S.player.st='idle';
   S.elevAnim='opening';S.elevDoorTarget=1;S.elevDoors=0;
   sndElev();
+}
+
+export function handleConsoleInteract(){
+  const cr=S.cr;
+  if(!_nearConsole||cr.phase!==3)return;
+  if(cr.px<0){
+    // Red button
+    _redAlertT=2.0;_pressedBtn='red';_pressedBtnT=0.3;
+    _pushLog('RED ALERT. RED ALE\u2014 false alarm. Carry on.');
+    sndCrAlarm();
+  } else {
+    // Gold button
+    if(!_goldUsed){
+      S.credits+=1;_goldUsed=true;_pressedBtn='gold';_pressedBtnT=0.3;
+      _pushLog('Emergency budget: 1 credit disbursed.');
+      sndCrChunk();
+    } else {
+      _pushLog('Emergency budget exhausted. Try again next visit.');
+    }
+  }
 }
 
 export function updateControlRoom(dt){
@@ -121,6 +217,31 @@ export function updateControlRoom(dt){
   if(cr.phase===3){
     cr.screenBoot=1;cr.screenOn=true;
     _handleInput(dt);
+    // Feature 1: Log timer
+    _logTimer+=dt;
+    if(_logTimer>=LOG_INTERVAL){_logTimer=0;_pushLog(_pickQuip())}
+    for(let i=_logLines.length-1;i>=0;i--){_logLines[i].age+=dt;if(_logLines[i].age>LOG_FADE)_logLines.splice(i,1)}
+    // Feature 3: Deferred SAT log
+    if(_pendingSatLog&&cr.screenOn){_pushLog('Management spotted in basement. Morale adjusting.');_pendingSatLog=false}
+    // Feature 4b: Zero-credit glitch
+    if(S.credits===0){_glitchRng-=dt;if(_glitchRng<=0){_glitchT=0.08+Math.random()*0.12;_glitchRng=3+Math.random()*5}}
+    if(_glitchT>0)_glitchT-=dt;
+    // Feature 4d: Low SAT flicker
+    if(S.sat<25){_flickerT-=dt;if(_flickerT<=0)_flickerT=1.5+Math.random()*3}
+    // Feature 2: Button press decay
+    if(_pressedBtnT>0)_pressedBtnT-=dt;
+    if(_redAlertT>0)_redAlertT-=dt;
+    // Feature 5: Jump gag detection
+    const justLanded=_wasJumping&&!cr.jumping&&(cr.jumpY||0)===0;
+    _wasJumping=cr.jumping;
+    if(justLanded&&cr.pz>=0.65&&cr.pz<=0.85){
+      _glitchT=0.5;_shakeT=0.3;_shakeIntensity=4;
+      _pushLog(CONSOLE_LAND_QUIPS[_consoleLandIdx%CONSOLE_LAND_QUIPS.length]);
+      _consoleLandIdx++;sndCrThud();
+    }
+    if(_shakeT>0)_shakeT-=dt;
+    // Feature 2: Console proximity
+    _nearConsole=cr.pz>=0.65&&cr.pz<=0.9&&Math.abs(cr.px)<250;
   }
 }
 
@@ -185,13 +306,28 @@ export function drawControlRoom(X,W,H){
     return;
   }
 
+  // Scene shake (Feature 5)
+  let _shaking=false;
+  if(_shakeT>0){
+    _shaking=true;X.save();
+    const mag=_shakeIntensity*(_shakeT/0.3);
+    X.translate((Math.random()-0.5)*mag*2,(Math.random()-0.5)*mag*2);
+  }
+
+  // Flicker alpha (Feature 4d)
+  _screenAlpha=1;
+  if(S.sat<25&&_flickerT>=0&&_flickerT<=0.1)_screenAlpha=0.3+Math.random()*0.4;
+
   _drawRoom(X,W,H);
   _drawScreen(X,W,H);
   _drawConsole(X,W,H);
   _drawPlayer(X,W,H);
   _drawElevDoors(X,W,H);
   _drawElevPrompt(X,W,H);
+  _drawConsolePrompt(X,W,H);
   _drawLighting(X,W,H);
+
+  if(_shaking)X.restore();
 }
 
 // ═══ ROOM ═══
@@ -226,10 +362,14 @@ function _drawRoom(X,W,H){
   X.fillRect(W*0.095,H*0.21,W*0.035,H*0.456);
   for(let i=0;i<9;i++){
     const ry=H*0.224+i*H*0.048;
-    const on=Math.sin(_t*1.5+i*1.3)>0.4;
-    X.fillStyle=on?'rgba(126,200,238,0.4)':'rgba(40,50,65,0.2)';
+    // Feature 4c: Blue LEDs track floor stage
+    const flrStg=i<NF?_cache.floors[i].stage:0;
+    const blueOn=flrStg>=5?true:(flrStg>0?Math.sin(_t*3+i*0.7)>0:false);
+    X.fillStyle=blueOn?'rgba(126,200,238,0.4)':'rgba(40,50,65,0.2)';
     X.fillRect(W*0.1025,ry,4,3);
-    X.fillStyle=on?'rgba(221,160,160,0.25)':'rgba(35,40,50,0.15)';
+    // Red LEDs keep decorative behavior
+    const redOn=Math.sin(_t*1.5+i*1.3)>0.4;
+    X.fillStyle=redOn?'rgba(221,160,160,0.25)':'rgba(35,40,50,0.15)';
     X.fillRect(W*0.115,ry,4,3);
   }
   X.fillStyle=`rgba(12,16,26,${0.5+amb})`;
@@ -278,7 +418,7 @@ function _drawScreen(X,W,H){
   X.fillStyle=`rgba(126,200,238,${0.003*alpha})`;
   X.fillRect(sx,sy,sw,sh);
 
-  X.globalAlpha=alpha;
+  X.globalAlpha=alpha*_screenAlpha;
   X.save();
   X.beginPath();X.rect(sx,sy,sw,sh);X.clip();
 
@@ -432,11 +572,44 @@ function _drawScreen(X,W,H){
     X.fillText(txt,nsX,ty);
   });
 
-  // Heartbeat line
+  // Feature 1: Log lines
+  if(_logLines.length>0){
+    X.font='8px monospace';X.textAlign='left';
+    for(let i=0;i<_logLines.length;i++){
+      const l=_logLines[i];
+      const fadeIn=Math.min(1,l.age/0.5);
+      const fadeOut=l.age>LOG_INTERVAL*3?Math.max(0,1-(l.age-LOG_INTERVAL*3)/2):1;
+      const a=0.6*fadeIn*fadeOut;
+      X.fillStyle=`rgba(144,160,180,${a})`;
+      X.fillText('> '+l.text,sx+10,sy+sh-28-((_logLines.length-1-i)*11));
+    }
+  }
+
+  // Feature 2: RED ALERT text
+  if(_redAlertT>1.0){
+    X.font='bold 14px monospace';X.textAlign='center';
+    const ra=Math.min(1,(_redAlertT-1.0)*2);
+    X.fillStyle=`rgba(221,100,100,${0.8*ra})`;
+    X.fillText('RED ALERT',sx+sw/2,sy+sh/2);
+    X.textAlign='left';
+  }
+
+  // Feature 4b: Glitch
+  if(_glitchT>0){
+    for(let gy=0;gy<sh;gy+=3){
+      if(Math.random()>0.4)continue;
+      const gx=(Math.random()-0.5)*20;
+      X.fillStyle=`rgba(126,200,238,${0.02+Math.random()*0.06})`;
+      X.fillRect(sx+gx,sy+gy,sw*0.6+Math.random()*sw*0.4,1);
+    }
+  }
+
+  // Heartbeat line (Feature 4a: speed tracks SAT)
+  const hbSpeed=1.0+(1-Math.min(Math.max(S.sat,0),100)/100)*2.0;
   X.strokeStyle=CR.blueFaint+'44';X.lineWidth=1;
   X.beginPath();
   for(let lx=0;lx<sw-16;lx++){
-    const ly=Math.sin(lx*0.018+_t*1.0)*4+Math.sin(lx*0.06+_t*2.2)*2;
+    const ly=Math.sin(lx*0.018+_t*hbSpeed)*4+Math.sin(lx*0.06+_t*hbSpeed*2.2)*2;
     if(lx===0)X.moveTo(sx+8+lx,sy+sh-8+ly);
     else X.lineTo(sx+8+lx,sy+sh-8+ly);
   }
@@ -476,6 +649,20 @@ function _drawConsole(X,W,H){
     X.fillStyle=b.c;X.fillRect(cx+b.x,cy+b.y,b.w,b.h);
     X.fillStyle='rgba(255,255,255,0.04)';X.fillRect(cx+b.x,cy+b.y,b.w,1);
   });
+
+  // Feature 2: Button highlight flash
+  if(_pressedBtnT>0){
+    const fa=_pressedBtnT/0.3;
+    if(_pressedBtn==='red'){
+      // Red glow on first button group
+      X.fillStyle=`rgba(220,80,80,${0.3*fa})`;
+      X.fillRect(cx+12,cy+3,80,6);
+    } else if(_pressedBtn==='gold'){
+      // Gold glow on gold buttons
+      X.fillStyle=`rgba(200,180,80,${0.3*fa})`;
+      X.fillRect(cx+270,cy+3,24,6);
+    }
+  }
 
   // Status LEDs on console
   X.fillStyle='#060810';X.fillRect(cx+320,cy+2,148,14);
@@ -602,12 +789,28 @@ function _drawElevPrompt(X,W,H){
   X.fillText('[ E ] USE ELEVATOR',W/2,H-30);
 }
 
+// ═══ CONSOLE PROMPT ═══
+function _drawConsolePrompt(X,W,H){
+  const cr=S.cr;
+  if(!_nearConsole||cr.phase<3||cr.nearElev)return;
+  const pulse=Math.sin(_t*3)*0.15+0.85;
+  X.font='bold 14px monospace';X.textAlign='center';
+  X.fillStyle=`rgba(126,200,238,${0.7*pulse})`;
+  X.fillText('[ E ] INTERACT',W/2,H*0.56);
+}
+
 // ═══ LIGHTING ═══
 function _drawLighting(X,W,H){
   const cr=S.cr;
   if(cr.screenOn){
     X.fillStyle=`rgba(126,200,238,${cr.screenBoot*0.015})`;
     X.fillRect(W*0.0875,H*0.18,W*0.825,H*0.5);
+  }
+  // Feature 2: Red alert overlay
+  if(_redAlertT>0){
+    const pulse=Math.sin(_t*8)*0.5+0.5;
+    X.fillStyle=`rgba(180,40,40,${0.08*pulse*Math.min(1,_redAlertT)})`;
+    X.fillRect(0,0,W,H);
   }
   const vg=X.createRadialGradient(W*0.475,H*0.6,60,W*0.5,H*0.64,W*0.6);
   vg.addColorStop(0,'rgba(0,0,0,0)');
@@ -769,11 +972,25 @@ function _drawFullScreen(X,W,H){
     X.fillText(`${done?'✓':isCurrent?'→':'·'}  F${i+1}  ${TASK_TEXT[i]}`,nsX,ty);
   }
 
-  // Heartbeat
+  // Feature 1: Log lines (full-screen)
+  if(_logLines.length>0){
+    X.font='14px monospace';X.textAlign='left';
+    for(let i=0;i<_logLines.length;i++){
+      const l=_logLines[i];
+      const fadeIn=Math.min(1,l.age/0.5);
+      const fadeOut=l.age>LOG_INTERVAL*3?Math.max(0,1-(l.age-LOG_INTERVAL*3)/2):1;
+      const a=0.6*fadeIn*fadeOut;
+      X.fillStyle=`rgba(144,160,180,${a})`;
+      X.fillText('> '+l.text,40,vH-70-((_logLines.length-1-i)*20));
+    }
+  }
+
+  // Heartbeat (Feature 4a: speed tracks SAT)
+  const hbSpeedFS=1.0+(1-Math.min(Math.max(S.sat,0),100)/100)*2.0;
   X.strokeStyle=CR.blueFaint+'33';X.lineWidth=1;
   X.beginPath();
   for(let lx=0;lx<vW-40;lx++){
-    const ly=Math.sin(lx*0.008+_t*0.8)*8+Math.sin(lx*0.03+_t*2)*3;
+    const ly=Math.sin(lx*0.008+_t*hbSpeedFS*0.8)*8+Math.sin(lx*0.03+_t*hbSpeedFS*2)*3;
     if(lx===0)X.moveTo(20+lx,vH-30+ly);else X.lineTo(20+lx,vH-30+ly);
   }
   X.stroke();
@@ -799,7 +1016,7 @@ export function crClick(mx,my){
     const sc=Math.min(scaleX,scaleY)*1.2;
     const vmx=(mx-cr.fsPanX)/sc;
     const vmy=(my-cr.fsPanY)/sc;
-    const twrX=80,twrW=200,twrBase=vH-60,flrH=72;
+    const twrX=80,twrW=200,twrTop=55,twrBase=vH-30,flrH=(vH-30-twrTop)/10;
     for(let i=9;i>=0;i--){
       const fy=twrBase-(i+1)*flrH;
       if(vmx>=twrX-10&&vmx<=twrX+twrW+100&&vmy>=fy&&vmy<=fy+flrH){

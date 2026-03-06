@@ -3,7 +3,7 @@ import { S, isBuildable } from './state.js';
 import { TL, TR, TW, TB, FH, NF, PG, BPF, ELEV_X, RK_COUNTDOWN_T, RK_ACTIVE_T, RK_FLOOD_T,
   RK_PLAYER_CLAIM, RK_BUILDER_CLAIM, RK_SUIT_CLAIM, RK_QUORUM, RK_PROX } from './constants.js';
 import { FLOOR_LEADERS, BP2 } from './npcs.js';
-import { sndTick, sndVictory, sndDefeat, sndBell, sndReckoningClaim, sndReckoningWave } from './sound.js';
+import { sndTick, sndVictory, sndDefeat, sndBell, sndReckoningClaim, sndReckoningWave, sndRumble, sndClaimTick, sndSuitClaim } from './sound.js';
 import { triggerShake, triggerFlash, spawnParticles, showMsg } from './render.js';
 import { autoSave } from './save.js';
 
@@ -35,8 +35,15 @@ const F8_FLOOR=7; // trigger floor (Storage)
 function isContested(fi){return fi>=RK_FLOOR_MIN&&fi<=RK_FLOOR_MAX}
 
 // ═══ BRIEFING (typewriter INTRO) ═══
-const BRIEFING_TEXT='You built ten floors with your bare hands. Now guys in briefcases are filing paperwork to claim the top three. Something about "corporate oversight of high-value assets." Sure.\n\nObservation, Storage, Observatory \u2014 stand on a block to claim it. Your crew follows your lead.\n\nThe suits are climbing from below, floor by floor. Show them whose name is on the hard hat.';
+const BRIEFING_TEXT='The suits want these floors.\nYour builders are ready.\nStand on empty blocks to claim them.';
 let _briefingIdx=0,_briefingDone=false;
+
+// ═══ POLISH STATE ═══
+let _blockFlashes=[];  // {fi, bi, team, t}
+let _bPulse=0,_sPulse=0;
+let _introBlackout=0;
+let _freezeT=0;
+let _prevB=0,_prevS=0;
 
 // ═══ HELPERS ═══
 function blockCX(bi){return TL+bi*PG+PG/2}
@@ -78,6 +85,7 @@ function startReckoning(){
   const rk=S.reckoning;
   rk.phase='INTRO';rk.timer=0;
   rk.bScore=0;rk.sScore=0;rk.suitWave=RK_FLOOR_MIN;
+  _introBlackout=30;_blockFlashes=[];_bPulse=0;_sPulse=0;_freezeT=0;_prevB=0;_prevS=0;
   rk.claimBi=-1;rk.claimFi=-1;rk.claimTimer=0;
   _briefingIdx=0;_briefingDone=false;
   // Reset map (only contested floors matter, but clear all for cleanliness)
@@ -142,6 +150,11 @@ export function updateReckoning(){
   if(rk.phase==='IDLE'||rk.phase==='DONE')return;
   switch(rk.phase){
     case 'INTRO':
+      if(_introBlackout>0){
+        _introBlackout--;
+        if(_introBlackout===0){triggerShake(12);sndRumble()}
+        break;
+      }
       // Typewriter — 1 char per frame
       if(!_briefingDone){
         _briefingIdx=Math.min(_briefingIdx+1,BRIEFING_TEXT.length);
@@ -155,16 +168,27 @@ export function updateReckoning(){
       if(rk.timer<=0){rk.phase='ACTIVE';rk.timer=RK_ACTIVE_T;}
       break;
     case 'ACTIVE':
+      // Freeze moment before transitioning to FLOOD
+      if(_freezeT>0){_freezeT--;if(_freezeT<=0){rk.phase='FLOOD';rk.timer=RK_FLOOD_T;spawnFloodNpcs()}break}
       rk.timer--;
+      // Timer urgency — last 5s heartbeat ticks
+      if(rk.timer<300&&rk.timer>0&&rk.timer%30===0)sndTick();
       updatePlayerClaim();
       updateBuilderAI();
       updateSuitAI();
       updateWave();
       recount();
+      // Score pulse tracking
+      if(rk.bScore!==_prevB){_bPulse=15;_prevB=rk.bScore}
+      if(rk.sScore!==_prevS){_sPulse=15;_prevS=rk.sScore}
+      if(_bPulse>0)_bPulse--;
+      if(_sPulse>0)_sPulse--;
+      // Block flash decay
+      for(let i=_blockFlashes.length-1;i>=0;i--){_blockFlashes[i].t--;if(_blockFlashes[i].t<=0)_blockFlashes.splice(i,1)}
+      _rebuildRenderMaps();
       if(rk.timer<=0||allClaimed()){
         fillUnclaimed();
-        rk.phase='FLOOD';rk.timer=RK_FLOOD_T;
-        spawnFloodNpcs();
+        _freezeT=30; // brief freeze before FLOOD
       }
       break;
     case 'FLOOD':
@@ -217,10 +241,12 @@ function updatePlayerClaim(){
   if(rk.map[pfi][pbi]!==0){rk.claimTimer=0;rk.claimBi=-1;rk.claimFi=-1;return}
   if(pbi===rk.claimBi&&pfi===rk.claimFi){
     rk.claimTimer++;
+    if(rk.claimTimer%15===0)sndClaimTick(rk.claimTimer/RK_PLAYER_CLAIM);
     if(rk.claimTimer>=RK_PLAYER_CLAIM){
       rk.map[pfi][pbi]=1;
       rk.claimTimer=0;rk.claimBi=-1;rk.claimFi=-1;
-      sndReckoningClaim();
+      sndReckoningClaim();triggerShake(3);
+      _blockFlashes.push({fi:pfi,bi:pbi,team:1,t:15});
       spawnParticles(blockCX(pbi),floorY(pfi)-FH/2,8,'rgba(255,102,0,0.6)',{speed:2.5,life:25,size:2,spread:Math.PI*2,dir:0,gravity:0});
     }
   } else {
@@ -273,7 +299,8 @@ function updateBuilderAI(){
         b.claimTimer++;b.st='idle';
         if(b.claimTimer>=RK_BUILDER_CLAIM){
           rk.map[b.fi][bbi]=1;b.claimTimer=0;
-          sndReckoningClaim();
+          sndReckoningClaim();triggerShake(2);
+          _blockFlashes.push({fi:b.fi,bi:bbi,team:1,t:15});
           spawnParticles(bx,floorY(b.fi)-FH/2,6,'rgba(255,102,0,0.5)',{speed:2,life:25,size:2,spread:Math.PI*2,dir:0,gravity:0});
           // Immediately retarget
           const nextBi=findNearestUnclaimed(b.fi,p.x);
@@ -382,6 +409,8 @@ function updateSuitAI(){
         s.claimTimer++;
         if(s.claimTimer>=RK_SUIT_CLAIM){
           rk.map[s.fi][s.targetBi]=2;s.claimTimer=0;
+          sndSuitClaim();triggerShake(1);
+          _blockFlashes.push({fi:s.fi,bi:s.targetBi,team:2,t:15});
           spawnParticles(tx,floorY(s.fi)-FH/2,6,'rgba(51,85,204,0.6)',{speed:2,life:25,size:2,spread:Math.PI*2,dir:0,gravity:0});
           // Immediately retarget — next unclaimed block
           const next=pickSquadTarget(s.squad,s.fi);
@@ -401,7 +430,10 @@ function updateWave(){
   let allDone=true;
   for(let bi=0;bi<BPF;bi++){if(rk.map[rk.suitWave][bi]===0){allDone=false;break}}
   if(allDone&&rk.suitWave<RK_FLOOR_MAX){
+    const waveNames=['Observation','Storage','Observatory'];
+    const newWave=rk.suitWave+1-RK_FLOOR_MIN;
     rk.suitWave++;sndReckoningWave();triggerFlash('#3355cc',0.2);
+    if(newWave>=0&&newWave<waveNames.length)showMsg('SUITS ADVANCING',waveNames[newWave]);
   }
 }
 
@@ -439,21 +471,25 @@ function spawnFloodNpcs(){
   for(let i=0;i<30;i++){
     const fi=RK_FLOOR_MIN+Math.floor(Math.random()*3);
     const fy=floorY(fi),side=Math.random()>0.5;
+    const spd=Math.random()<0.3?0.6:Math.random()<0.5?1.5:2.5; // slow walkers, normal, runners
     rk.floodNpcs.push({
       x:side?TL+20+Math.random()*200:TR-20-Math.random()*200,
       y:fy,fi,targetX:TL+100+Math.random()*(TW-200),
       vx:0,st:'idle',bob:Math.random()*10,fr:side,
       type:Math.random()<0.5?'c':(Math.random()<0.5?'b':'w'),
       alpha:0,pal:BP2[Math.floor(Math.random()*BP2.length)],
+      delay:Math.floor(Math.random()*180),spd,
     });
   }
 }
 
 function updateFlood(){
   for(const n of S.reckoning.floodNpcs){
+    if(n.delay>0){n.delay--;continue}
     n.alpha=Math.min(1,n.alpha+0.012);
     const dx=n.targetX-n.x;
-    if(Math.abs(dx)>20){const dir=dx>0?1:-1;n.x+=dir*1.5;n.fr=dir>0;n.st='walk';n.bob+=0.15}
+    const spd=n.spd||1.5;
+    if(Math.abs(dx)>20){const dir=dx>0?1:-1;n.x+=dir*spd;n.fr=dir>0;n.st='walk';n.bob+=0.15}
     else{n.st='idle';n.bob*=0.9}
   }
 }
@@ -497,7 +533,13 @@ export function handleReckoningColorConfirm(){
     rk.bellX=ELEV_X+180;
     showMsg('THE RECKONING',rk.outcome==='builders'?'The builders hold these rooms.':'The suits have taken over.');
     rk.geneAbsent=false;
-    S.npcs.forEach(n=>{if(n.isGene)n._hidden=false});
+    S.npcs.forEach(n=>{if(n.isGene){
+      n._hidden=false;
+      if(n.ci>0&&n.convo&&!n._rkNote){
+        n.convo.splice(1,0,n2=>`"Not seen since the Reckoning."`);
+        n._rkNote=true;
+      }
+    }});
     convertFloodToResidents();
     autoSave();
     return true;
@@ -563,6 +605,24 @@ export function setupTestMode(){
 // ═══ STATE QUERIES ═══
 export function getReckoningState(){return S.reckoning}
 export function getReckoningBriefing(){return{text:BRIEFING_TEXT,idx:_briefingIdx,done:_briefingDone}}
+export function getIntroBlackout(){return _introBlackout}
+// Precomputed per-frame maps (built in updateReckoning ACTIVE, consumed by render)
+let _flashMap=new Map(); // key: fi*BPF+bi → flash object
+let _suitClaimMap=new Map(); // key: fi*BPF+bi → max normalized progress 0-1
+function _rebuildRenderMaps(){
+  _flashMap.clear();
+  for(const fl of _blockFlashes){_flashMap.set(fl.fi*BPF+fl.bi,fl)}
+  _suitClaimMap.clear();
+  for(const s of S.reckoning.suits){
+    if(s.travelTimer>0||s.claimTimer<=0||s.targetBi<0)continue;
+    const k=s.fi*BPF+s.targetBi,p=s.claimTimer/RK_SUIT_CLAIM;
+    const cur=_suitClaimMap.get(k)||0;
+    if(p>cur)_suitClaimMap.set(k,p);
+  }
+}
+export function getBlockFlash(fi,bi){return _flashMap.get(fi*BPF+bi)||null}
+export function getScorePulse(){return{b:_bPulse,s:_sPulse}}
+export function getSuitClaimProgress(fi,bi){return _suitClaimMap.get(fi*BPF+bi)||0}
 export function isReckoningFrozen(){
   const p=S.reckoning.phase;
   return p==='INTRO'||p==='COUNTDOWN'||p==='RESULT'||p==='FLOOD'||p==='COLOR_PICK';

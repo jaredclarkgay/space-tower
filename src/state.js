@@ -29,7 +29,8 @@ export const S={
     builderColor:null, // custom color picked after reckoning (null = default #FF6600)
     colorPick:false, // true when color picker is active
   },
-  keeper:{active:false,zoom:0,spoken:false,exchange:0,twText:'',twIdx:0,twDone:false,twTimer:0},
+  keeper:{active:false,zoom:0,spoken:false,exchange:0,twText:'',twIdx:0,twDone:false,twTimer:0,
+    llmMode:false,llmHistory:[],llmLoading:false,resolved:false},
   cr:{
     active:false,phase:0,phaseT:0,
     doorOpen:0,screenBoot:0,screenOn:false,

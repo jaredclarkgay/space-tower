@@ -33,7 +33,7 @@ export function saveGame(){
       credits:S.credits,
       sat:S.sat,
       reckoning:{played:S.reckoning.played,outcome:S.reckoning.outcome,bellX:S.reckoning.bellX,map:S.reckoning.map,builderColor:S.reckoning.builderColor},
-      keeper:{spoken:S.keeper.spoken,exchange:S.keeper.exchange},
+      keeper:{spoken:S.keeper.spoken,exchange:S.keeper.exchange,resolved:S.keeper.resolved||false},
       ts:Date.now()
     };localStorage.setItem(SAVE_KEY,JSON.stringify(d));return true}catch(e){return false}
 }
@@ -72,7 +72,7 @@ export function loadGame(){
       S.reckoning.bellX=d.floor8.bellX||0;
       if(S.reckoning.played)S.reckoning.phase='DONE';
     }
-    if(d.keeper){S.keeper.spoken=!!d.keeper.spoken;S.keeper.exchange=d.keeper.exchange||0}
+    if(d.keeper){S.keeper.spoken=!!d.keeper.spoken;S.keeper.exchange=d.keeper.exchange||0;S.keeper.resolved=!!d.keeper.resolved}
     syncLitFloors();return true}catch(e){return false}
 }
 export function autoSave(){saveGame()}

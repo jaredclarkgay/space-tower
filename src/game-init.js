@@ -14,7 +14,7 @@ import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js
 import { setupRadio } from './radio-ui.js';
 import { checkReckoningTrigger, updateReckoning, checkReckoningBell, startRematch, isReckoningFrozen, isReckoningActive, setupTestMode, handleReckoningIntroE, handleReckoningColorLeft, handleReckoningColorRight, handleReckoningColorConfirm, checkColorWheel, openColorWheel } from './reckoning.js';
 import { isKeeperProximity, startKeeperZoom, endKeeperZoom, updateKeeper, advanceKeeperDialogue, getZoomState } from './keeper.js';
-import { enterControlRoom, exitControlRoom, updateControlRoom } from './control-room.js';
+import { enterControlRoom, exitControlRoom, updateControlRoom, handleConsoleInteract } from './control-room.js';
 
 // ═══ REAL-TIME ACCUMULATORS (frame-rate independent) ═══
 let _lastFrameTime = 0;
@@ -251,6 +251,8 @@ function update(){
     }
     // F to toggle full-screen monitor
     if(S.jp.KeyF&&S.cr.phase===3){S.cr.fullScreen=!S.cr.fullScreen;S.cr.fsPanX=0;S.cr.fsPanY=0}
+    // E to interact with console buttons
+    if(S.jp.KeyE&&S.cr.phase===3&&!S.cr.nearElev)handleConsoleInteract();
     S.jp={};
     return;
   }
@@ -302,9 +304,13 @@ function update(){
   if(k['KeyE']&&!S.iLock&&checkColorWheel()){openColorWheel();S.iLock=true}
   // Keeper E/Escape handler
   if(S.keeper.active){
-    if(k['KeyE']&&!S.iLock){advanceKeeperDialogue();S.iLock=true}
-    if(!k['KeyE'])S.iLock=false;
-    if(S.jp['Escape']){endKeeperZoom()}
+    if(S.keeper.llmMode){
+      if(S.jp['Escape'])endKeeperZoom();
+    } else {
+      if(k['KeyE']&&!S.iLock){advanceKeeperDialogue();S.iLock=true}
+      if(!k['KeyE'])S.iLock=false;
+      if(S.jp['Escape']){endKeeperZoom()}
+    }
   }
   // Keeper proximity auto-trigger (debounce: must leave proximity before re-triggering)
   if(!S.keeper.active&&isKeeperProximity()&&getZoomState()==='idle'&&!_keeperDebounce){startKeeperZoom();_keeperDebounce=true}

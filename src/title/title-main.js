@@ -6,6 +6,7 @@ import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistC
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY, setTransitionRefs } from './title-transition.js';
 import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive } from './title-exterior.js';
+import { ThirdPersonCamera } from './third-person-camera.js';
 import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
 import { ensureAudioCtx, getAudioCtx } from '../sound.js';
 import { setupRadio, disposeRadio } from '../radio-ui.js';
@@ -16,7 +17,7 @@ let cityData = null;
 
 // ── Orbit state ──
 let orbitAngle = 0;
-let isDragging = false, dragStartX = 0, lastMouseX = 0, dragMoved = false;
+let isDragging = false, dragStartX = 0, lastMouseX = 0, lastMouseY = 0, dragMoved = false;
 let autoRotate = true, autoRotateSpeed = 0.04, idleTimer = 0;
 let cameraLookY = 0;
 
@@ -30,15 +31,12 @@ let orbitalCamY = 0, orbitalCamR = 0, orbitalLookY = 0; // lerp targets
 // ── Mouse tracking ──
 let mouseScreenX = -9999, mouseScreenY = -9999;
 
-// ── Exterior camera ──
-let cameraLookTarget = new THREE.Vector3(0, 2, 0);
-let camBehindAngle = 0;       // angle-based trailing (orbits behind player velocity)
+// ── Third-person camera ──
+let tpCam = null;
 let wasExteriorActive = false; // detect activation edge
-const _camDir = new THREE.Vector3(); // reusable for camera direction
-let extCamDist = 8;            // adjustable via slider (default: close to character)
 
 // ── Listeners (stored for cleanup) ──
-let resizeHandler, mouseDownHandler, mouseMoveHandler, mouseUpHandler;
+let resizeHandler, mouseDownHandler, mouseMoveHandler, mouseUpHandler, wheelHandler;
 let touchStartHandler, touchMoveHandler, touchEndHandler;
 
 export function initTitle(canvas, saveData) {
@@ -58,13 +56,16 @@ export function initTitle(canvas, saveData) {
   cameraLookY = 200; // look at lower portion — tower extends off screen
   camera.lookAt(0, cameraLookY, 0);
 
+  // Third-person camera controller (used in exterior mode)
+  tpCam = new ThirdPersonCamera(camera);
+
   // Init orbital lerp values to city position
   orbitalCamR = DIMS.cameraOrbitR;
   orbitalCamY = DIMS.cameraHeight;
   orbitalLookY = cameraLookY;
 
   // Wire camera distance callbacks for UI slider
-  setCamDistCallbacks(() => extCamDist, (v) => { extCamDist = v; });
+  setCamDistCallbacks(() => tpCam.distance, (v) => { tpCam.distance = v; });
 
   // Build city
   const buildout = saveData?.buildout || [];
@@ -134,49 +135,63 @@ export function initTitle(canvas, saveData) {
   mouseDownHandler = (e) => {
     if (e.target.closest('#menu') || e.target.closest('#home-btn') || e.target.closest('.title-enter')) return;
     if (isTransitionActive() && TRANSITION.phase < 4) return;
-    isDragging = true; dragStartX = e.clientX; lastMouseX = e.clientX; dragMoved = false;
+    isDragging = true; dragStartX = e.clientX; lastMouseX = e.clientX; lastMouseY = e.clientY; dragMoved = false;
     autoRotate = false; idleTimer = 0;
+    if (isExteriorActive()) tpCam.onMouseDown();
   };
   mouseMoveHandler = (e) => {
     mouseScreenX = e.clientX; mouseScreenY = e.clientY;
-    if (!isDragging) return;
     const dx = e.clientX - lastMouseX;
-    if (Math.abs(e.clientX - dragStartX) > 5) dragMoved = true;
-    if (isExteriorActive()) {
-      // Drag rotates camera around player
-      camBehindAngle += dx * 0.005;
-    } else {
+    const dy = e.clientY - lastMouseY;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    if (!isDragging) return;
+    if ((isExteriorActive() || isDoorAnimActive()) && tpCam.onDrag(dx, dy)) {
+      dragMoved = true;
+    } else if (!isExteriorActive() && !isDoorAnimActive()) {
+      if (Math.abs(e.clientX - dragStartX) > 5) dragMoved = true;
       const sensitivity = 0.004 * (DIMS.cameraOrbitR / 3250);
       orbitAngle += dx * sensitivity;
     }
-    lastMouseX = e.clientX;
   };
   mouseUpHandler = (e) => {
     if (!dragMoved && !isTransitionActive()) handleStarClick(e.clientX, e.clientY);
     isDragging = false; dragMoved = false;
+    if (isExteriorActive()) tpCam.onMouseUp();
   };
   document.addEventListener('mousedown', mouseDownHandler);
   document.addEventListener('mousemove', mouseMoveHandler);
   document.addEventListener('mouseup', mouseUpHandler);
 
+  // ── Input: Wheel (exterior zoom) ──
+  wheelHandler = (e) => {
+    if (isExteriorActive() || isDoorAnimActive()) {
+      tpCam.onWheel(e.deltaY);
+      e.preventDefault();
+    }
+  };
+  document.addEventListener('wheel', wheelHandler, { passive: false });
+
   // ── Input: Touch ──
   touchStartHandler = (e) => {
     if (e.target.closest('#menu') || e.target.closest('#home-btn') || e.target.closest('.title-enter')) return;
     if (isTransitionActive() && TRANSITION.phase < 4) return;
-    isDragging = true; dragStartX = e.touches[0].clientX; lastMouseX = e.touches[0].clientX; dragMoved = false;
+    isDragging = true; dragStartX = e.touches[0].clientX; lastMouseX = e.touches[0].clientX; lastMouseY = e.touches[0].clientY; dragMoved = false;
     autoRotate = false; idleTimer = 0;
   };
   touchMoveHandler = (e) => {
     if (!isDragging) return;
     const dx = e.touches[0].clientX - lastMouseX;
+    const dy = e.touches[0].clientY - lastMouseY;
     if (Math.abs(e.touches[0].clientX - dragStartX) > 10) dragMoved = true;
-    if (isExteriorActive()) {
-      camBehindAngle += dx * 0.005;
-    } else {
+    if ((isExteriorActive() || isDoorAnimActive()) && tpCam.onDrag(dx, dy)) {
+      dragMoved = true;
+    } else if (!isExteriorActive() && !isDoorAnimActive()) {
       const sensitivity = 0.004 * (DIMS.cameraOrbitR / 3250);
       orbitAngle += dx * sensitivity;
     }
     lastMouseX = e.touches[0].clientX;
+    lastMouseY = e.touches[0].clientY;
   };
   touchEndHandler = (e) => {
     if (!dragMoved && !isTransitionActive()) {
@@ -228,57 +243,16 @@ export function initTitle(canvas, saveData) {
     // Update camera
     const extActive = isExteriorActive() || isDoorAnimActive();
 
-    // Detect exterior activation edge — initialize camera angle
+    // Detect exterior activation edge
     if (extActive && !wasExteriorActive) {
-      const pp = getPlayerPos();
-      camBehindAngle = Math.atan2(camera.position.x - pp.x, camera.position.z - pp.z);
-      cameraLookTarget.set(pp.x, pp.y + 0.5, pp.z);
+      tpCam.activate(getPlayerPos());
     }
     wasExteriorActive = extActive;
 
     if (extActive) {
-      // Get camera forward direction for camera-relative controls
-      camera.getWorldDirection(_camDir);
-      updateExterior(dt, _camDir.x, _camDir.z);
-
-      const pp = getPlayerPos();
-      const pv = getPlayerVel();
-      const camDist = extCamDist;
-      const camHeight = camDist * 0.15; // scales with distance — consistent angle
-      const lookAbove = camDist * 0.2;  // how far above player feet to look
-
-      // Angle-based trailing: camera orbits behind player's velocity direction
-      // Only updates when player is moving — stays put when idle
-      const speed = Math.sqrt(pv.x * pv.x + pv.z * pv.z);
-      if (speed > 0.01) {
-        // Forward: trail behind velocity. Backward: trail behind facing (negate velocity)
-        // Pure backward = camera stays put; strafing while backing up gently orbits
-        const bk = isWalkingBackward();
-        const targetAngle = Math.atan2(bk ? pv.x : -pv.x, bk ? pv.z : -pv.z);
-        // Shortest-path angle interpolation (never swings through player)
-        let delta = targetAngle - camBehindAngle;
-        while (delta > Math.PI) delta -= 2 * Math.PI;
-        while (delta < -Math.PI) delta += 2 * Math.PI;
-        // Flip strafe direction when backing up so L/R feel natural
-        camBehindAngle += delta * 0.014 * (bk ? -1 : 1);
-      }
-
-      // Camera position: behind player at camBehindAngle
-      const targetX = pp.x + Math.sin(camBehindAngle) * camDist;
-      const targetY = pp.y + camHeight;
-      const targetZ = pp.z + Math.cos(camBehindAngle) * camDist;
-
-      // Smooth position follow
-      camera.position.x += (targetX - camera.position.x) * 0.12;
-      camera.position.y += (targetY - camera.position.y) * 0.12;
-      camera.position.z += (targetZ - camera.position.z) * 0.12;
-
-      // Look above player — scales with distance so angle stays consistent
-      cameraLookTarget.x += (pp.x - cameraLookTarget.x) * 0.15;
-      cameraLookTarget.y += ((pp.y + lookAbove) - cameraLookTarget.y) * 0.15;
-      cameraLookTarget.z += (pp.z - cameraLookTarget.z) * 0.15;
-
-      camera.lookAt(cameraLookTarget);
+      const fwd = tpCam.getCameraForward();
+      updateExterior(dt, fwd.x, fwd.z);
+      tpCam.update(dt, getPlayerPos(), getPlayerVel(), isWalkingBackward());
     } else if (orbitalView) {
       // Orbital view — camera above Earth, bottom third of globe visible
       const ep = getEarthParams();
@@ -479,6 +453,7 @@ export function disposeTitle() {
   document.removeEventListener('mousedown', mouseDownHandler);
   document.removeEventListener('mousemove', mouseMoveHandler);
   document.removeEventListener('mouseup', mouseUpHandler);
+  document.removeEventListener('wheel', wheelHandler);
   document.removeEventListener('touchstart', touchStartHandler);
   document.removeEventListener('touchmove', touchMoveHandler);
   document.removeEventListener('touchend', touchEndHandler);
@@ -487,4 +462,5 @@ export function disposeTitle() {
   scene = null;
   camera = null;
   cityData = null;
+  tpCam = null;
 }

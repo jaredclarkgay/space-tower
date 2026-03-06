@@ -106,6 +106,24 @@
   .toggle-track.out .toggle-knob{left:16px}
   #menu-btn{position:fixed;bottom:calc(var(--ph) + 12px);right:68px;z-index:25;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.15);padding:4px 8px;border-radius:6px;font-size:14px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);transition:opacity 0.2s}
   #menu-btn:hover{opacity:0.9;color:rgba(255,255,255,0.9)}
+  #keeper-chat{display:none;position:fixed;bottom:calc(var(--ph) + 8px);left:50%;transform:translateX(-50%);width:min(480px,92vw);max-height:280px;background:rgba(10,14,30,0.95);border:1px solid rgba(255,215,0,0.25);border-radius:10px;z-index:32;font-family:'Courier New',monospace;color:#fff;backdrop-filter:blur(8px);flex-direction:column;overflow:hidden}
+  #keeper-chat.open{display:flex}
+  #kc-hdr{display:flex;justify-content:space-between;align-items:center;padding:8px 14px 6px;border-bottom:1px solid rgba(255,215,0,0.12)}
+  #kc-name{font-size:10px;letter-spacing:3px;color:rgba(255,215,0,0.7)}
+  #kc-hint{font-size:8px;opacity:0.25;letter-spacing:1px}
+  #kc-log{flex:1;overflow-y:auto;padding:8px 14px;max-height:200px;display:flex;flex-direction:column;gap:6px}
+  .kc-msg{font-size:11px;line-height:1.5;padding:4px 0;word-wrap:break-word}
+  .kc-msg.gene{color:rgba(255,215,0,0.8);font-style:italic}
+  .kc-msg.player{color:rgba(255,255,255,0.85);text-align:right}
+  .kc-msg.sys{color:rgba(255,255,255,0.3);font-style:italic;font-size:10px}
+  #kc-input-wrap{padding:6px 14px 10px;border-top:1px solid rgba(255,215,0,0.08)}
+  #kc-input{width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,215,0,0.15);border-radius:4px;padding:6px 10px;color:#fff;font-family:'Courier New',monospace;font-size:11px;outline:none}
+  #kc-input:focus{border-color:rgba(255,215,0,0.5)}
+  #kc-input:disabled{opacity:0.3}
+  #dev-nav{position:fixed;top:4px;right:4px;z-index:9999;display:flex;gap:2px;opacity:0.35;transition:opacity 0.2s}
+  #dev-nav:hover{opacity:1}
+  #dev-nav button{background:rgba(0,0,0,0.6);color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);padding:2px 6px;border-radius:3px;font-size:8px;cursor:pointer;font-family:monospace;letter-spacing:0.5px}
+  #dev-nav button:hover{color:#ffd700;border-color:rgba(255,215,0,0.4)}
   @media(pointer:coarse),(max-width:768px){
     #touch-ctrls{display:block;inset:0}#instr{display:none}
     #zoom-wrap{bottom:calc(var(--ph) + 12px);left:50%;transform:translateX(-50%)}
@@ -147,6 +165,13 @@
 <button id="snd-btn">🔊</button>
 <div id="msg"><div class="ml"></div><div class="mt2"></div></div>
 <div id="elev-panel"><div class="elev-title">ELEVATOR</div><div id="elev-floors"></div><div class="elev-hint">ESC TO CLOSE</div></div>
+<div id="keeper-chat">
+  <div id="kc-hdr"><span id="kc-name">THE KEEPER</span><span id="kc-hint">ESC to leave</span></div>
+  <div id="kc-log"></div>
+  <div id="kc-input-wrap">
+    <input type="text" id="kc-input" placeholder="Speak to the Keeper..." autocomplete="off" maxlength="500">
+  </div>
+</div>
 <div id="touch-ctrls"><div class="tb" id="tl">◀</div><div class="tb" id="tr">▶</div><div class="tb" id="tu">▲</div><div class="tb" id="td">▼</div><div class="tb sm" id="te">E</div><div class="tb sm" id="tf">F</div></div>
 <div id="build-panel">
   <div id="bp-fhdr"><div class="nav" id="fn-prev">◀</div><div id="bp-ftitle">FLOOR 1 · LOBBY</div><div class="nav" id="fn-next">▶</div></div>
@@ -179,6 +204,7 @@
 </div>
 <button id="menu-btn" title="Back to Title">⌂</button>
 </div>
+<div id="dev-nav"><button data-goto="exterior">EXT</button><button data-goto="interior">INT</button><button data-goto="control-room">CR</button></div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>
