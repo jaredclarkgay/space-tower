@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildPlayableCrane } from './playable-crane.js';
 import { buildPlayableBulldozer, buildTerrainMesh } from './playable-bulldozer.js';
+import { buildScaffoldingGame } from './scaffolding-game.js';
 
 // ── Vertex color helper (for merged geometry) ──
 function _colorGeo(geo, color) {
@@ -91,6 +92,9 @@ let keys = {};
 // ── Bulldozer + terrain ──
 let _bulldozer = null;
 let _terrainMesh = null;
+
+// ── Scaffolding game ──
+let _scaffolding = null;
 
 // ── Interaction prompt ──
 let promptEl = null;
@@ -335,29 +339,51 @@ export function buildConstructionSite(scene) {
     ladderGeos.forEach(g => g.dispose());
   }
 
-  // ── Entrance arrow: merge shaft+cone → 1, keep glow ring separate ──
-  const arrowGroup = new THREE.Group();
-  const arrowGeos = [];
-  const shaftGeo = _colorGeo(new THREE.BoxGeometry(0.8, 4, 0.8), 0xdcbe60);
-  shaftGeo.translate(0, 2, 0); arrowGeos.push(shaftGeo);
-  const headGeo = _colorGeo(new THREE.ConeGeometry(1.8, 3, 4), 0xdcbe60);
-  // Flip cone to point down: rotate geometry by PI around X
-  headGeo.rotateX(Math.PI);
-  headGeo.translate(0, -0.5, 0); arrowGeos.push(headGeo);
-  const arrowMerged = mergeGeometries(arrowGeos, false);
-  const arrowMesh = new THREE.Mesh(arrowMerged, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7 }));
-  arrowGroup.add(arrowMesh);
-  arrowGeos.forEach(g => g.dispose());
-  // Glow ring (transparent + DoubleSide — keep separate)
-  const glowRing = new THREE.Mesh(
-    new THREE.RingGeometry(2.2, 3, 32),
-    new THREE.MeshBasicMaterial({ color: 0xdcbe60, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
-  );
-  glowRing.rotation.x = Math.PI / 2;
-  glowRing.position.y = -1.5;
-  arrowGroup.add(glowRing);
+  // ── Arrow + label helper ──
+  function _makeArrow(labelText) {
+    const group = new THREE.Group();
+    const geos = [];
+    const sg = _colorGeo(new THREE.BoxGeometry(0.8, 4, 0.8), 0xdcbe60);
+    sg.translate(0, 2, 0); geos.push(sg);
+    const hg = _colorGeo(new THREE.ConeGeometry(1.8, 3, 4), 0xdcbe60);
+    hg.rotateX(Math.PI); hg.translate(0, -0.5, 0); geos.push(hg);
+    const merged = mergeGeometries(geos, false);
+    group.add(new THREE.Mesh(merged, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7 })));
+    geos.forEach(g => g.dispose());
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(2.2, 3, 32),
+      new THREE.MeshBasicMaterial({ color: 0xdcbe60, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = Math.PI / 2; ring.position.y = -1.5;
+    group.add(ring);
+    // Canvas text label
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#dcbe60';
+    ctx.font = 'bold 42px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(labelText, 128, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    const labelMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(8, 2),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+    );
+    labelMesh.position.set(0, 5.5, 0);
+    group.add(labelMesh);
+    group.userData.labelMesh = labelMesh;
+    return group;
+  }
+
+  // ── ENTER arrow (above tower entrance) ──
+  const arrowGroup = _makeArrow('ENTER');
   arrowGroup.position.set(0, BASE_H + 8, OUTER_EDGE + 2);
   siteGroup.add(arrowGroup);
+
+  // ── BUILD arrow (above launch pad — positioned later by scaffolding spawn) ──
+  const buildArrow = _makeArrow('BUILD');
+  buildArrow.position.set(50, 8, 80); // default near seesaw position
+  siteGroup.add(buildArrow);
 
   // ── Playable crane (replaces static crane) ──
   const crane = buildPlayableCrane(scene, ROOF_Y);
@@ -471,7 +497,7 @@ export function buildConstructionSite(scene) {
     });
   }
 
-  siteGroup.userData = { dropRing, roofPlate, crane, rooftopWorkers, arrowGroup, ladderMesh };
+  siteGroup.userData = { dropRing, roofPlate, crane, rooftopWorkers, arrowGroup, buildArrow, ladderMesh };
 
   scene.add(siteGroup);
   return siteGroup;
@@ -512,6 +538,18 @@ export function setupExteriorInput() {
       return; // bulldozer consumes all keys while operating
     }
 
+    if (_scaffolding?.isOperating) {
+      if (_scaffolding.handleKeyDown(e.code)) {
+        if (e.code === 'Escape') {
+          const exitPos = _scaffolding.exit();
+          PLAYER.pos.copy(exitPos);
+          PLAYER.vel.set(0, 0, 0);
+        }
+        return;
+      }
+      return;
+    }
+
     if (e.code === 'Space') e.preventDefault();
     if (e.code === 'KeyE') handleInteract();
     if (e.code === 'Tab') { e.preventDefault(); if (_enterDoorCallback && _isNearDoor()) _startDoorAnim(); }
@@ -527,6 +565,11 @@ export function setupExteriorInput() {
 
     if (_bulldozer?.isOperating) {
       _bulldozer.handleKeyUp(e.code);
+      return;
+    }
+
+    if (_scaffolding?.isOperating) {
+      _scaffolding.handleKeyUp(e.code);
       return;
     }
 
@@ -565,8 +608,17 @@ function handleInteract() {
   const pp = PLAYER.pos;
   const crane = siteGroup?.userData?.crane;
 
-  // Don't interact with anything while operating crane or bulldozer
-  if (crane?.isOperating || _bulldozer?.isOperating) return;
+  // Don't interact with anything while operating crane, bulldozer, or scaffolding
+  if (crane?.isOperating || _bulldozer?.isOperating || _scaffolding?.isOperating) return;
+
+  // Enter scaffolding game if near seesaw
+  if (_scaffolding && _scaffolding.isNear(pp)) {
+    _scaffolding.enter(playerGroup);
+    PLAYER.vel.set(0, 0, 0);
+    // Hide exterior prompt so it doesn't overlap scaffolding UI
+    if (promptEl) { promptEl.style.opacity = '0'; }
+    return;
+  }
 
   // Enter bulldozer if near
   if (_bulldozer && _bulldozer.isNear(pp)) {
@@ -604,16 +656,16 @@ function handleInteract() {
     _startDoorAnim();
     return;
   }
-  // Pick up materials from the construction site
-  if (!PLAYER.carrying && Math.abs(pp.x - 125) < 31.25 && Math.abs(pp.z) < 25) {
+  // Pick up materials from the construction site (disabled when scaffolding game exists)
+  if (!_scaffolding && !PLAYER.carrying && Math.abs(pp.x - 125) < 31.25 && Math.abs(pp.z) < 25) {
     PLAYER.carrying = true;
     if (carryBox) carryBox.visible = true;
     return;
   }
-  // If carrying, try to build at the tower — otherwise just drop it
+  // If carrying, try to build at the tower — otherwise just drop it (disabled when scaffolding exists)
   if (PLAYER.carrying) {
     const dropY = floorsBuilt * 3.333 + 5;
-    if (Math.abs(pp.x) < 50 && Math.abs(pp.z) < 50 && Math.abs(pp.y - dropY) < 18.75) {
+    if (!_scaffolding && Math.abs(pp.x) < 50 && Math.abs(pp.z) < 50 && Math.abs(pp.y - dropY) < 18.75) {
       PLAYER.carrying = false;
       if (carryBox) carryBox.visible = false;
       floorsBuilt++;
@@ -1066,12 +1118,24 @@ function _updateDialogue(dt) {
 
 function _updateRooftopWorkers(dt) {
   if (!siteGroup) return;
-  // Animate entrance arrow — bob up/down and rotate slowly
+  // Animate ENTER arrow — bob up/down and rotate slowly
   const arrow = siteGroup.userData.arrowGroup;
+  const bArrow = siteGroup.userData.buildArrow;
+  const t = performance.now() * 0.001;
+  const scaffOp = _scaffolding && _scaffolding.isOperating;
   if (arrow) {
-    const t = performance.now() * 0.001;
+    arrow.visible = !scaffOp;
     arrow.position.y = BASE_H + 8 + Math.sin(t * 1.5) * 1.5;
     arrow.rotation.y = t * 0.4;
+    // Label billboard: face camera
+    if (arrow.userData.labelMesh) arrow.userData.labelMesh.rotation.y = -arrow.rotation.y;
+  }
+  // Animate BUILD arrow — hide when operating scaffolding
+  if (bArrow) {
+    bArrow.visible = !scaffOp;
+    bArrow.position.y = 8 + Math.sin(t * 1.5 + 1) * 1.5; // offset phase
+    bArrow.rotation.y = t * 0.4;
+    if (bArrow.userData.labelMesh) bArrow.userData.labelMesh.rotation.y = -bArrow.rotation.y;
   }
   if (!siteGroup.userData.rooftopWorkers) return;
   const workers = siteGroup.userData.rooftopWorkers;
@@ -1152,7 +1216,9 @@ function _updatePrompt() {
   let text = '';
   const crane = siteGroup?.userData?.crane;
   const nearWorker = _getNearbyWorker();
-  if (_bulldozer && !_bulldozer.isOperating && _bulldozer.isNear(pp)) {
+  if (_scaffolding && !_scaffolding.isOperating && _scaffolding.isNear(pp)) {
+    text = `E \u2014 launch materials (Floor ${_scaffolding.currentFloor + 1})`;
+  } else if (_bulldozer && !_bulldozer.isOperating && _bulldozer.isNear(pp)) {
     text = 'E \u2014 operate bulldozer';
   } else if (crane && !crane.isOperating && crane.isNear(pp)) {
     text = 'E \u2014 operate crane';
@@ -1191,6 +1257,17 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   if (!PLAYER.active || !playerGroup) return;
 
   const crane = siteGroup?.userData?.crane;
+
+  // If operating scaffolding game, it controls the player
+  if (_scaffolding?.isOperating) {
+    _scaffolding.update(dt, keys);
+    // Player position is set by the scaffolding game
+    PLAYER.vel.set(0, 0, 0);
+    PLAYER.onGround = true;
+    if (crane) crane.update(dt, PLAYER.pos, keys);
+    if (_bulldozer && !_bulldozer.isOperating) _bulldozer.update(dt, PLAYER.pos, keys);
+    return;
+  }
 
   // If operating bulldozer, skip normal movement
   if (_bulldozer?.isOperating) {
@@ -1517,6 +1594,8 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   if (crane) crane.update(dt, PLAYER.pos, keys);
   // Update bulldozer even when not operating (idle vibration)
   if (_bulldozer && !_bulldozer.isOperating) _bulldozer.update(dt, PLAYER.pos, keys);
+  // Update scaffolding even when not operating (seesaw visual)
+  if (_scaffolding && !_scaffolding.isOperating) _scaffolding.update(dt, keys);
 
   if (PLAYER.carrying && carryBox) {
     carryBox.rotation.z = Math.sin(performance.now() * 0.003) * 0.04;
@@ -1568,6 +1647,33 @@ export function setBuiltHeight(topBuilt) {
 export function isExteriorActive() { return PLAYER.active; }
 export function isWalkingBackward() { return walkingBackward; }
 export function getBulldozer() { return _bulldozer; }
+export function getScaffolding() { return _scaffolding; }
+
+export function spawnScaffolding(scene) {
+  if (_scaffolding) return _scaffolding;
+  _scaffolding = buildScaffoldingGame(scene, activeRoofY, floorsBuilt, (completedFloor) => {
+    floorsBuilt = completedFloor + 1;
+    setBuiltHeight(floorsBuilt);
+    if (_onFloorBuiltCallback) _onFloorBuiltCallback(floorsBuilt);
+    _scaffolding.setRoofY(activeRoofY);
+  });
+  // Sync tower if scaffolding save is ahead — restore each intermediate floor
+  const prevBuilt = floorsBuilt;
+  if (_scaffolding.currentFloor > prevBuilt) {
+    for (let f = prevBuilt; f < _scaffolding.currentFloor; f++) {
+      floorsBuilt = f + 1;
+      setBuiltHeight(floorsBuilt);
+      if (_onFloorBuiltCallback) _onFloorBuiltCallback(floorsBuilt);
+    }
+    _scaffolding.setRoofY(activeRoofY);
+  }
+  // Position BUILD arrow above the launch pad
+  if (siteGroup?.userData?.buildArrow) {
+    siteGroup.userData.buildArrow.position.x = _scaffolding.worldX;
+    siteGroup.userData.buildArrow.position.z = _scaffolding.worldZ;
+  }
+  return _scaffolding;
+}
 
 export function spawnBulldozer(scene) {
   if (_bulldozer) return _bulldozer;

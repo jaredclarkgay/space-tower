@@ -5,7 +5,7 @@ import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlen
 import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistCallbacks } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY, setTransitionRefs } from './title-transition.js';
-import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setOnFloorBuilt, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive, getCrane, getBulldozer, spawnBulldozer } from './title-exterior.js';
+import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setOnFloorBuilt, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive, getCrane, getBulldozer, spawnBulldozer, getScaffolding, spawnScaffolding } from './title-exterior.js';
 import { ThirdPersonCamera } from './third-person-camera.js';
 import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
 import { ensureAudioCtx, getAudioCtx } from '../sound.js';
@@ -44,6 +44,7 @@ let mouseScreenX = -9999, mouseScreenY = -9999;
 
 // ── Third-person camera ──
 let tpCam = null;
+let _scaffLookSmooth = null; // lerped lookAt for scaffolding camera
 let wasExteriorActive = false; // detect activation edge
 
 // ── Listeners (stored for cleanup) ──
@@ -286,7 +287,45 @@ export function initTitle(canvas, saveData) {
           tpCam.yaw += delta * 0.04;
         }
       }
-      tpCam.update(dt, getPlayerPos(), getPlayerVel(), isWalkingBackward());
+      // Scaffolding game: cinematic camera from getCameraTarget()
+      const _scaff = getScaffolding();
+      const scaffCam = _scaff?.isOperating ? _scaff.getCameraTarget() : null;
+      if (scaffCam) {
+        const cam = camera;
+        const spd = scaffCam.lerp || 0.06;
+        if (spd >= 1.0) {
+          cam.position.copy(scaffCam.pos);
+        } else {
+          cam.position.x += (scaffCam.pos.x - cam.position.x) * spd;
+          cam.position.y += (scaffCam.pos.y - cam.position.y) * spd;
+          cam.position.z += (scaffCam.pos.z - cam.position.z) * spd;
+        }
+        // Screen shake on slam impact
+        const shake = _scaff.shakeAmount;
+        if (shake > 0) {
+          cam.position.x += (Math.random() - 0.5) * shake;
+          cam.position.y += (Math.random() - 0.5) * shake;
+        }
+        // Lerp the lookAt target — smooth transitions, snap when lerp is 1.0
+        if (!_scaffLookSmooth) {
+          _scaffLookSmooth = scaffCam.lookAt.clone();
+        } else if (spd >= 1.0) {
+          _scaffLookSmooth.copy(scaffCam.lookAt);
+        } else {
+          const lookSpd = Math.max(spd, 0.15);
+          _scaffLookSmooth.x += (scaffCam.lookAt.x - _scaffLookSmooth.x) * lookSpd;
+          _scaffLookSmooth.y += (scaffCam.lookAt.y - _scaffLookSmooth.y) * lookSpd;
+          _scaffLookSmooth.z += (scaffCam.lookAt.z - _scaffLookSmooth.z) * lookSpd;
+        }
+        cam.lookAt(_scaffLookSmooth);
+        // Keep tpCam synced for smooth handoff when exiting
+        tpCam._lookX = _scaffLookSmooth.x;
+        tpCam._lookY = _scaffLookSmooth.y;
+        tpCam._lookZ = _scaffLookSmooth.z;
+      } else {
+        _scaffLookSmooth = null;
+        tpCam.update(dt, getPlayerPos(), getPlayerVel(), isWalkingBackward());
+      }
     } else if (orbitalView) {
       // Orbital view — camera above Earth, bottom third of globe visible
       const ep = getEarthParams();
@@ -466,8 +505,9 @@ export function skipToExterior(placeAtDozer) {
     _syncBuildoutToSave(TC.buildout);
   });
 
-  // Spawn bulldozer in the exterior
+  // Spawn bulldozer and scaffolding game in the exterior
   const dozer = spawnBulldozer(scene);
+  spawnScaffolding(scene);
 
   // If dev dozer mode, place player next to the bulldozer
   if (placeAtDozer && dozer) {

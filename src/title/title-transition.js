@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { setSkyBlend } from './title-city.js';
 import { showArrivalText, hideArrivalText, showHomeBtn, hideHomeBtn, fadeOutUI, fadeInUI, hideExteriorRadio, hideMovementHints } from './title-ui.js';
-import { activateExterior, deactivateExterior, setBuiltHeight, setOnFloorBuilt, spawnBulldozer } from './title-exterior.js';
+import { activateExterior, deactivateExterior, setBuiltHeight, setOnFloorBuilt, spawnBulldozer, spawnScaffolding } from './title-exterior.js';
 import { setupRadio, disposeRadio } from '../radio-ui.js';
 
 /**
@@ -173,8 +173,9 @@ export function updateTransition(dt, orbitAngle) {
         } catch { /* non-critical */ }
       });
 
-      // Spawn bulldozer in the exterior
+      // Spawn bulldozer and scaffolding game in the exterior
       spawnBulldozer(_scene);
+      spawnScaffolding(_scene);
 
       // Activate exterior gameplay after a brief delay
       setTimeout(() => { activateExterior(); }, 500);
