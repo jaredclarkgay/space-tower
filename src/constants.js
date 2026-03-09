@@ -8,9 +8,13 @@ export const TL=-TW/2,TR=TW/2,TB=GY,TT=TB-(NF*FH);
 export const PG=300; // pillar gap = block width
 export const BPF=Math.floor(TW/PG); // 12 blocks per floor
 export const ROOF_Y=TT;
-export function isWinBlock(bi){return(bi+1)%4===0} // blocks 3,7,11 are windows
+export function isWinBlock(bi){return bi===3||bi===11} // blocks 3,11 are windows
 export function isElevBlock(bi){return bi===6} // block 6 is the elevator shaft
+export function isFlankBlock(bi){return bi===5||bi===7} // blocks 5,7 flank the elevator
 export const ELEV_X=150; // center of elevator shaft in world coords (TL + 6*PG + PG/2)
+export const TERRAIN_RES=800;
+export const TERRAIN_X_MIN=TL-UW; // -3200
+export const TERRAIN_X_MAX=TR+UW; // 3200
 
 export const MOB='ontouchstart'in window||navigator.maxTouchPoints>0||matchMedia('(pointer:coarse)').matches;
 export const PH=0.32;

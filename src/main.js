@@ -20,10 +20,10 @@ if (devGoto === 'interior' || devGoto === 'control-room') {
   initGame(null);
   startGameLoop();
   if (devGoto === 'control-room') enterControlRoom();
-} else if (devGoto === 'exterior') {
-  // Fresh exterior — no buildout
+} else if (devGoto === 'dozer' || devGoto === 'exterior') {
+  // Fresh exterior — no buildout (dozer mode places player near bulldozer)
   initTitle(document.getElementById('titleCanvas'), null);
-  requestAnimationFrame(() => { skipToExterior(); });
+  requestAnimationFrame(() => { skipToExterior(devGoto === 'dozer'); });
 } else {
   // Normal flow: launch title screen
   initTitle(document.getElementById('titleCanvas'), saveData);

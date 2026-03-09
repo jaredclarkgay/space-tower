@@ -13,7 +13,8 @@
       "Bash(npx vite:*)",
       "Bash(python3:*)",
       "Bash(do:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npm run build)"
     ]
   }
 }

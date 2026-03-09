@@ -2,61 +2,61 @@
 
 // ═══ FLOOR DEFINITIONS ═══
 export const FD=[
-  {name:'LOBBY',mods:[
-    {id:'reception',nm:'Reception Desk',ic:'\ud83d\udecf',col:'#b8a888',cost:60,sat:2,sell:30,desc:'Brass plate. "WELCOME."'},
-    {id:'seating',nm:'Seating Area',ic:'\ud83e\ude91',col:'#a09070',cost:50,sat:1,sell:25,desc:'Three chairs, one table.'},
-    {id:'kiosk',nm:'Directory Kiosk',ic:'\ud83d\udcbb',col:'#808890',cost:80,sat:2,sell:40,desc:'Touchscreen floor map.'},
-    {id:'plantcorner',nm:'Plant Corner',ic:'\ud83c\udf3f',col:'#6a9a5a',cost:70,sat:3,sell:35,desc:'Fern and ficus.'},
+  {name:'LOBBY',flanks:{left:'lobby-desk',right:'lobby-desk'},mods:[
+    {id:'generator',nm:'Generator',ic:'\u26a1',col:'#5a6a3a',cost:80,sat:1,sell:40,desc:'Diesel backup. Rumbles.'},
+    {id:'junction',nm:'Junction Box',ic:'\ud83d\udd0c',col:'#707880',cost:60,sat:1,sell:30,desc:'Twelve breakers. All labeled.'},
+    {id:'transformer',nm:'Transformer',ic:'\ud83d\udd0b',col:'#606068',cost:100,sat:2,sell:50,desc:'Steps it down. Hums at 60Hz.'},
+    {id:'cablerun',nm:'Cable Run',ic:'\ud83e\udea2',col:'#484850',cost:50,sat:1,sell:25,desc:'Copper and conduit. Tidy.'},
   ]},
-  {name:'QUARTERS',mods:[
+  {name:'QUARTERS',flanks:{left:'corner-store',right:'diner'},mods:[
     {id:'bunk',nm:'Bunk Module',ic:'\ud83d\udecf',col:'#9a8a70',cost:80,sat:2,sell:40,desc:'Two beds, privacy curtain.'},
     {id:'locker',nm:'Locker Unit',ic:'\ud83d\udd12',col:'#7a8a9a',cost:60,sat:1,sell:30,desc:'Steel. Combination lock.'},
     {id:'shower',nm:'Shower Stall',ic:'\ud83d\udebf',col:'#88a0aa',cost:100,sat:3,sell:50,desc:'Hot water, 5 min max.'},
     {id:'readnook',nm:'Reading Nook',ic:'\ud83d\udcda',col:'#a08860',cost:70,sat:2,sell:35,desc:'Lamp and a worn cushion.'},
   ]},
-  {name:'GARDEN',mods:[
+  {name:'GARDEN',flanks:{left:'seed-bank',right:'tool-shed'},mods:[
     {id:'planter',nm:'Planter Bed',ic:'\ud83c\udf31',col:'#6a8a3a',cost:80,sat:3,sell:40,desc:'Raised cedar. Tomatoes.'},
     {id:'irrigation',nm:'Irrigation Sys',ic:'\ud83d\udca7',col:'#5a8aaa',cost:120,sat:2,sell:60,desc:'Drip lines. Timer valve.'},
     {id:'compost',nm:'Compost Bin',ic:'\u267b\ufe0f',col:'#7a6a3a',cost:60,sat:1,sell:30,desc:'Worms do the work.'},
     {id:'growlight',nm:'Grow Light Array',ic:'\ud83d\udca1',col:'#aa80cc',cost:150,sat:4,sell:75,desc:'UV spectrum. Pink glow.'},
   ]},
-  {name:'RESEARCH',mods:[
+  {name:'RESEARCH',flanks:{left:'supply-closet',right:'whiteboard-room'},mods:[
     {id:'workstation',nm:'Workstation',ic:'\ud83d\udcbb',col:'#909898',cost:100,sat:2,sell:50,desc:'Dual monitors. Coffee ring.'},
     {id:'serverrack',nm:'Server Rack',ic:'\ud83d\uddbf',col:'#505868',cost:180,sat:3,sell:90,desc:'12U. Blinking forever.'},
     {id:'fumehood',nm:'Fume Hood',ic:'\ud83e\uddea',col:'#889090',cost:150,sat:2,sell:75,desc:'Ventilated. Safety glass.'},
     {id:'calibench',nm:'Calibration Bench',ic:'\ud83d\udd27',col:'#808080',cost:120,sat:2,sell:60,desc:'Precision tools. Steady hands.'},
   ]},
-  {name:'RESTAURANT',mods:[
+  {name:'RESTAURANT',flanks:{left:'host-stand',right:'bar'},mods:[
     {id:'kitchen',nm:'Kitchen Station',ic:'\ud83c\udf73',col:'#a09080',cost:150,sat:4,sell:75,desc:'Gas burners. Extraction fan.'},
     {id:'booth',nm:'Dining Booth',ic:'\ud83c\udf7d',col:'#8a7a60',cost:80,sat:2,sell:40,desc:'Red vinyl. Window seat.'},
     {id:'bartap',nm:'Bar Tap',ic:'\ud83c\udf7a',col:'#6a5a48',cost:100,sat:3,sell:50,desc:'Three on tap. Local stuff.'},
     {id:'pantry',nm:'Pantry Shelf',ic:'\ud83e\uddf1',col:'#7a6a50',cost:60,sat:1,sell:30,desc:'Canned goods. Dry stock.'},
   ]},
-  {name:'LOUNGE',mods:[
+  {name:'LOUNGE',flanks:{left:'vending',right:'newsstand'},mods:[
     {id:'sofa',nm:'Sofa Set',ic:'\ud83d\udecb',col:'#887868',cost:90,sat:3,sell:45,desc:'Leather. Broken in right.'},
     {id:'bookshelf',nm:'Bookshelf Unit',ic:'\ud83d\udcda',col:'#7a6a58',cost:70,sat:2,sell:35,desc:'Dog-eared everything.'},
     {id:'musiccorner',nm:'Music Corner',ic:'\ud83c\udfb5',col:'#6a6a78',cost:120,sat:4,sell:60,desc:'Speakers and a turntable.'},
     {id:'chess',nm:'Chess Table',ic:'\u265e',col:'#606058',cost:80,sat:2,sell:40,desc:'Board inlaid. Clock ticking.'},
   ]},
-  {name:'OBSERVATION',mods:[
+  {name:'OBSERVATION',flanks:{left:'pharmacy',right:'intake-desk'},mods:[
     {id:'viewbench',nm:'Viewing Bench',ic:'\ud83e\ude91',col:'#8090a0',cost:70,sat:2,sell:35,desc:'Best seat in the tower.'},
     {id:'telescope',nm:'Telescope Mount',ic:'\ud83d\udd2d',col:'#606878',cost:160,sat:4,sell:80,desc:'Coin-operated. Honor system.'},
     {id:'displaywall',nm:'Display Wall',ic:'\ud83d\udcfa',col:'#404858',cost:140,sat:3,sell:70,desc:'LED mosaic. Altitude feed.'},
     {id:'skymap',nm:'Sky Map',ic:'\ud83c\udf0c',col:'#383848',cost:100,sat:2,sell:50,desc:'Constellations. Touch to learn.'},
   ]},
-  {name:'STORAGE',mods:[
+  {name:'STORAGE',flanks:{left:'armory',right:'quartermaster'},mods:[
     {id:'cargorack',nm:'Cargo Rack',ic:'\ud83d\udce6',col:'#888078',cost:60,sat:1,sell:30,desc:'Steel shelving. 400kg rated.'},
     {id:'freezer',nm:'Freezer Unit',ic:'\u2744\ufe0f',col:'#88a0b8',cost:140,sat:3,sell:70,desc:'Sub-zero. Frost on the glass.'},
     {id:'conveyor',nm:'Conveyor',ic:'\u2699\ufe0f',col:'#707068',cost:120,sat:2,sell:60,desc:'Belt and rollers. Motorized.'},
     {id:'manifest',nm:'Manifest Terminal',ic:'\ud83d\udccb',col:'#607060',cost:100,sat:2,sell:50,desc:'Tracks every crate.'},
   ]},
-  {name:'OBSERVATORY',mods:[
+  {name:'OBSERVATORY',flanks:{left:'gift-shop',right:'telescope-booth'},mods:[
     {id:'startracker',nm:'Star Tracker',ic:'\u2b50',col:'#506070',cost:200,sat:5,sell:100,desc:'Locks on. Never loses it.'},
     {id:'dataterminal',nm:'Data Terminal',ic:'\ud83d\udcbb',col:'#404858',cost:120,sat:2,sell:60,desc:'Streams from the dish.'},
     {id:'lensarray',nm:'Lens Array',ic:'\ud83d\udd0d',col:'#586068',cost:180,sat:4,sell:90,desc:'Ground and polished by hand.'},
     {id:'chartdesk',nm:'Chart Desk',ic:'\ud83d\uddfa',col:'#505848',cost:90,sat:2,sell:45,desc:'Star charts in three languages.'},
   ]},
-  {name:'COMMAND',mods:[
+  {name:'COMMAND',flanks:{left:'comms-closet',right:'records-room'},mods:[
     {id:'commstation',nm:'Comm Station',ic:'\ud83d\udce1',col:'#505860',cost:160,sat:3,sell:80,desc:'"Ground to Tower One."'},
     {id:'radar',nm:'Radar Console',ic:'\ud83d\udce1',col:'#404850',cost:200,sat:4,sell:100,desc:'Sweep. Blip. Sweep.'},
     {id:'statuswall',nm:'Status Wall',ic:'\ud83d\udcca',col:'#384048',cost:150,sat:3,sell:75,desc:'Nine panels. One per floor.'},

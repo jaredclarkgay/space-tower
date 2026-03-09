@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { setSkyBlend } from './title-city.js';
 import { showArrivalText, hideArrivalText, showHomeBtn, hideHomeBtn, fadeOutUI, fadeInUI, hideExteriorRadio, hideMovementHints } from './title-ui.js';
-import { activateExterior, deactivateExterior, setBuiltHeight } from './title-exterior.js';
+import { activateExterior, deactivateExterior, setBuiltHeight, setOnFloorBuilt, spawnBulldozer } from './title-exterior.js';
 import { setupRadio, disposeRadio } from '../radio-ui.js';
 
 /**
@@ -150,6 +150,31 @@ export function updateTransition(dt, orbitAngle) {
       showArrivalText(_onEnterGame);
       showHomeBtn(() => { playReverseTransition(); });
       setupRadio('#ext-radio');
+
+      // Wire floor-built callback so exterior builds sync to sim save + 3D tower
+      setOnFloorBuilt((newTopBuilt) => {
+        const TC2 = _cityData.TC;
+        while (TC2.buildout.length < newTopBuilt) TC2.buildout.push(0);
+        const fi2 = newTopBuilt - 1;
+        if ((TC2.buildout[fi2] || 0) < 1) TC2.buildout[fi2] = 1;
+        _cityData.restoreTowerFloor(fi2);
+        TC2.playerFloor = Math.max(0, fi2);
+        const fhC = TC2.floorH, baseHC = fhC * 3, fullHC = baseHC + TC2.maxFloors * fhC;
+        const visHC = baseHC + Math.max(1, newTopBuilt) * fhC;
+        _cityData.structColumns.forEach(c => { c.scale.y = visHC / fullHC; c.position.y = visHC / 2; });
+        _cityData.applyPlayerLighting();
+        TRANSITION.dissolveFloor = Math.max(TRANSITION.dissolveFloor, fi2);
+        // Update sim save
+        try {
+          const raw = localStorage.getItem('spacetower_v14');
+          const d = raw ? JSON.parse(raw) : { ts: Date.now() };
+          d.buildout = TC2.buildout.slice(0, 10);
+          localStorage.setItem('spacetower_v14', JSON.stringify(d));
+        } catch { /* non-critical */ }
+      });
+
+      // Spawn bulldozer in the exterior
+      spawnBulldozer(_scene);
 
       // Activate exterior gameplay after a brief delay
       setTimeout(() => { activateExterior(); }, 500);

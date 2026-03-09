@@ -117,20 +117,30 @@ export function sndDoorHumStop(){
   _doorOsc=null;_doorGain=null;
 }
 
+// Bulldozer engine rumble
+let _dozerOsc=null,_dozerGain=null;
+export function sndDozerStart(){
+  if(!audioCtx||_dozerOsc)return;
+  _dozerOsc=audioCtx.createOscillator();_dozerGain=audioCtx.createGain();
+  _dozerOsc.type='sawtooth';_dozerOsc.frequency.value=80;
+  _dozerGain.gain.value=0;_dozerGain.connect(masterGain);_dozerOsc.connect(_dozerGain);
+  _dozerOsc.start();_dozerGain.gain.setTargetAtTime(0.08,audioCtx.currentTime,0.3);
+}
+export function sndDozerStop(){
+  if(!_dozerGain||!_dozerOsc)return;
+  _dozerGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.2);
+  const o=_dozerOsc;setTimeout(()=>{try{o.stop()}catch(e){}},800);
+  _dozerOsc=null;_dozerGain=null;
+}
+export function sndDozerUpdate(speed){
+  if(!_dozerOsc||!audioCtx)return;
+  const t=audioCtx.currentTime;
+  _dozerOsc.frequency.setTargetAtTime(70+Math.abs(speed)*3,t,0.1);
+  _dozerGain.gain.setTargetAtTime(0.05+Math.abs(speed)*0.005,t,0.1);
+}
+
 // Ambient drone — altitude-aware, continuous
 let ambOsc1=null,ambOsc2=null,ambGain=null,ambFilt=null;
-function startAmbient(){
-  if(!audioCtx||ambOsc1)return;
-  ambGain=audioCtx.createGain();ambGain.gain.value=0;
-  ambFilt=audioCtx.createBiquadFilter();ambFilt.type='lowpass';ambFilt.frequency.value=300;
-  ambOsc1=audioCtx.createOscillator();ambOsc1.type='sine';ambOsc1.frequency.value=55;
-  ambOsc2=audioCtx.createOscillator();ambOsc2.type='sine';ambOsc2.frequency.value=82.5;
-  const g2=audioCtx.createGain();g2.gain.value=0.4;
-  ambOsc1.connect(ambGain);ambOsc2.connect(g2);g2.connect(ambGain);
-  ambGain.connect(ambFilt);ambFilt.connect(masterGain);
-  ambOsc1.start();ambOsc2.start();
-  ambGain.gain.setTargetAtTime(0.15,audioCtx.currentTime,2);
-}
 export function updateAmbient(altFrac2){
   if(!ambOsc1||!audioCtx)return;
   const t=audioCtx.currentTime;

@@ -119,18 +119,21 @@ function _pushLog(text){
   if(_logLines.length>3)_logLines.shift();
 }
 
-// ── Per-frame cache (computed once at start of draw, reused everywhere) ──
+// ── Per-frame cache (refreshed every 30 frames or on panelDirty) ──
 let _cache={stats:null,floors:null,nextTask:null,doneCount:0,active:0,building:0};
+let _cacheFrame=0;
 function _refreshCache(){
+  if(_cache.stats&&!S.panelDirty&&++_cacheFrame<30)return;
+  _cacheFrame=0;
   let pop=0;
   for(let i=0;i<S.npcs.length;i++)if(S.npcs[i].arrived)pop++;
   _cache.stats={population:pop+S.workers.length,satisfaction:Math.round(S.sat),credits:S.credits};
-  _cache.floors=[];
+  if(!_cache.floors)_cache.floors=Array.from({length:NF},()=>({name:'',stage:0,mods:0}));
   let ac=0,bd=0,dc=0;
   for(let i=0;i<NF;i++){
     const stg=S.buildout[i].stage;
     let mc=0;for(let bi=0;bi<BPF;bi++)if(S.modules[i][bi])mc++;
-    _cache.floors.push({name:FD[i].name,stage:stg,mods:mc});
+    _cache.floors[i].name=FD[i].name;_cache.floors[i].stage=stg;_cache.floors[i].mods=mc;
     if(stg>=5){ac++;dc++}else if(stg>0)bd++;
   }
   _cache.active=ac;_cache.building=bd;_cache.doneCount=dc;
@@ -153,6 +156,7 @@ export function enterControlRoom(){
   // Feature resets (per-visit)
   _logLines=[];_logTimer=0;_logIdx=0;
   _nearConsole=false;_redAlertT=0;_goldUsed=false;_pressedBtn=null;_pressedBtnT=0;
+  cr.jumping=false;cr.jumpVel=0;cr.jumpY=0;cr.charging=false;cr.chargeT=0;
   _wasJumping=false;_shakeT=0;_shakeIntensity=0;_consoleLandIdx=0;
   _glitchT=0;_glitchRng=5;_flickerT=2;_pendingSatLog=false;
   // SAT boost (60s cooldown persists across visits)
@@ -258,14 +262,20 @@ function _handleInput(dt){
 
   if(left){cr.px=Math.max(-600,cr.px-spd*dt);cr.walking=true;cr.walkDir=-1}
   if(right){cr.px=Math.min(600,cr.px+spd*dt);cr.walking=true;cr.walkDir=1}
-  if(down){cr.pz=Math.max(0,cr.pz-0.5*dt);cr.walking=true}
-  if(up&&cr.pz<1){cr.pz=Math.min(1,cr.pz+0.5*dt);cr.walking=true}
-  // Jump
-  if((k['Space']||(up&&cr.pz>=1))&&!cr.jumping&&cr.pz>=0.5){
-    cr.jumping=true;cr.jumpVel=-4.5;cr.jumpY=0;
+  if(down){cr.pz=Math.max(0,cr.pz-0.5*sprint*dt);cr.walking=true}
+  if(up&&cr.pz<1){cr.pz=Math.min(1,cr.pz+0.5*sprint*dt);cr.walking=true}
+  // Charge jump (hold Space to charge, release to jump higher)
+  const jumpKey=k['Space']||(up&&cr.pz>=1);
+  if(jumpKey&&!cr.jumping){
+    cr.charging=true;
+    cr.chargeT=Math.min((cr.chargeT||0)+dt,0.75);
+  } else if(cr.charging&&!jumpKey){
+    const t=Math.min((cr.chargeT||0)/0.75,1);
+    cr.jumping=true;cr.jumpVel=-(150+200*t);cr.jumpY=0;
+    cr.charging=false;cr.chargeT=0;
   }
   if(cr.jumping){
-    cr.jumpY+=cr.jumpVel*dt;cr.jumpVel+=12*dt;
+    cr.jumpY+=cr.jumpVel*dt;cr.jumpVel+=750*dt;
     if(cr.jumpY>=0){cr.jumpY=0;cr.jumping=false;cr.jumpVel=0}
   }
   cr.nearElev=cr.pz<0.08;

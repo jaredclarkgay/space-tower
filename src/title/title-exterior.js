@@ -1,6 +1,8 @@
 'use strict';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildPlayableCrane } from './playable-crane.js';
+import { buildPlayableBulldozer, buildTerrainMesh } from './playable-bulldozer.js';
 
 // ── Vertex color helper (for merged geometry) ──
 function _colorGeo(geo, color) {
@@ -85,6 +87,10 @@ let playerGroup = null;
 let carryBox = null;
 let siteGroup = null;
 let keys = {};
+
+// ── Bulldozer + terrain ──
+let _bulldozer = null;
+let _terrainMesh = null;
 
 // ── Interaction prompt ──
 let promptEl = null;
@@ -353,67 +359,8 @@ export function buildConstructionSite(scene) {
   arrowGroup.position.set(0, BASE_H + 8, OUTER_EDGE + 2);
   siteGroup.add(arrowGroup);
 
-  // ── Rooftop crane: merge opaque parts → 1, keep cab window + lines separate ──
-  const craneGroup = new THREE.Group();
-  const mastH = 12, mastW = 0.4;
-  const boomLen = TOWER_HALF * 1.6;
-  const cbLen = boomLen * 0.35;
-  const hookX = TOWER_HALF * 0.3 + boomLen * 0.7;
-  const mastX = TOWER_HALF * 0.3;
-  const craneGeos = [];
-  // Mast
-  const mastGeo = _colorGeo(new THREE.BoxGeometry(mastW, mastH, mastW), 0xe8a020);
-  mastGeo.translate(mastX, mastH / 2, 0); craneGeos.push(mastGeo);
-  // Lattice braces
-  for (let my = 0; my < mastH; my += 1.5) {
-    const g = _colorGeo(new THREE.BoxGeometry(mastW + 0.05, 0.06, mastW + 0.05), 0xc08010);
-    g.translate(mastX, my, 0); craneGeos.push(g);
-  }
-  // Boom
-  const boomGeo = _colorGeo(new THREE.BoxGeometry(boomLen, 0.3, 0.3), 0xe8a020);
-  boomGeo.translate(mastX + boomLen * 0.2, mastH, 0); craneGeos.push(boomGeo);
-  // Counter-boom
-  const cbGeo = _colorGeo(new THREE.BoxGeometry(cbLen, 0.3, 0.3), 0xe8a020);
-  cbGeo.translate(mastX - cbLen * 0.4, mastH, 0); craneGeos.push(cbGeo);
-  // Counterweight
-  const cwGeo = _colorGeo(new THREE.BoxGeometry(1.2, 0.8, 0.6), 0x606060);
-  cwGeo.translate(mastX - cbLen * 0.6, mastH - 0.3, 0); craneGeos.push(cwGeo);
-  // Cab
-  const cabGeo = _colorGeo(new THREE.BoxGeometry(1.0, 0.8, 0.8), 0x506880);
-  cabGeo.translate(mastX - 0.2, mastH - 0.5, 0); craneGeos.push(cabGeo);
-  // Hook
-  const hookGeo = _colorGeo(new THREE.SphereGeometry(0.15, 8, 6), 0x606060);
-  hookGeo.translate(hookX, mastH - 6.2, 0); craneGeos.push(hookGeo);
-  // Red warning light
-  const lightGeo = _colorGeo(new THREE.SphereGeometry(0.12, 8, 6), 0xff3030);
-  lightGeo.translate(mastX, mastH + 0.2, 0); craneGeos.push(lightGeo);
-
-  const craneMerged = mergeGeometries(craneGeos, false);
-  craneGroup.add(new THREE.Mesh(craneMerged, new THREE.MeshBasicMaterial({ vertexColors: true })));
-  craneGeos.forEach(g => g.dispose());
-
-  // Cab window (transparent — keep separate)
-  const cabWin = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.6, 0.4),
-    new THREE.MeshBasicMaterial({ color: 0x8cc8e6, transparent: true, opacity: 0.5 })
-  );
-  cabWin.position.set(mastX - 0.2, mastH - 0.4, 0.41);
-  craneGroup.add(cabWin);
-  // Cable line
-  const cableGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(hookX, mastH, 0), new THREE.Vector3(hookX, mastH - 6, 0)
-  ]);
-  craneGroup.add(new THREE.Line(cableGeo, new THREE.LineBasicMaterial({ color: 0x404040 })));
-  // Support cables
-  const topY = mastH + 0.5;
-  [[mastX + boomLen * 0.7, mastH], [mastX - cbLen * 0.5, mastH]].forEach(([tx, ty]) => {
-    const sg = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(mastX, topY, 0), new THREE.Vector3(tx, ty, 0)
-    ]);
-    craneGroup.add(new THREE.Line(sg, new THREE.LineBasicMaterial({ color: 0xc08010, transparent: true, opacity: 0.5 })));
-  });
-  craneGroup.position.y = ROOF_Y;
-  siteGroup.add(craneGroup);
+  // ── Playable crane (replaces static crane) ──
+  const crane = buildPlayableCrane(scene, ROOF_Y);
 
   // ── Rooftop workers (4 construction workers matching interior appearance) ──
   const workerNames = ['Rodriguez', 'Kim', 'Murphy', 'Okafor'];
@@ -524,7 +471,7 @@ export function buildConstructionSite(scene) {
     });
   }
 
-  siteGroup.userData = { dropRing, roofPlate, craneGroup, rooftopWorkers, arrowGroup, ladderMesh };
+  siteGroup.userData = { dropRing, roofPlate, crane, rooftopWorkers, arrowGroup, ladderMesh };
 
   scene.add(siteGroup);
   return siteGroup;
@@ -538,12 +485,51 @@ export function setupExteriorInput() {
   _keydownHandler = (e) => {
     if (!PLAYER.active) return;
     keys[e.code] = true;
+
+    const crane = siteGroup?.userData?.crane;
+    if (crane?.isOperating) {
+      if (e.code === 'Space') e.preventDefault();
+      if (crane.handleKeyDown(e.code)) {
+        if (e.code === 'Escape') {
+          const exitPos = crane.exit();
+          PLAYER.pos.copy(exitPos);
+          PLAYER.vel.set(0, 0, 0);
+        }
+        return;
+      }
+    }
+
+    if (_bulldozer?.isOperating) {
+      if (_bulldozer.handleKeyDown(e.code)) {
+        if (e.code === 'Escape') {
+          const exitPos = _bulldozer.exit();
+          PLAYER.pos.copy(exitPos);
+          PLAYER.vel.set(0, 0, 0);
+          if (playerGroup) playerGroup.visible = true;
+        }
+        return;
+      }
+      return; // bulldozer consumes all keys while operating
+    }
+
     if (e.code === 'Space') e.preventDefault();
     if (e.code === 'KeyE') handleInteract();
     if (e.code === 'Tab') { e.preventDefault(); if (_enterDoorCallback && _isNearDoor()) _startDoorAnim(); }
   };
   _keyupHandler = (e) => {
     keys[e.code] = false;
+
+    const crane = siteGroup?.userData?.crane;
+    if (crane?.isOperating) {
+      crane.handleKeyUp(e.code);
+      return;
+    }
+
+    if (_bulldozer?.isOperating) {
+      _bulldozer.handleKeyUp(e.code);
+      return;
+    }
+
     if (e.code === 'Space' && PLAYER.active && PLAYER.isCharging && !PLAYER.onLadder) {
       const t = PLAYER.chargeT / CHARGE_MAX;
       PLAYER.vel.y = JUMP_BASE + (JUMP_MAX - JUMP_BASE) * t;
@@ -569,14 +555,36 @@ export function disposeExteriorInput() {
 }
 
 // ── Interaction ──
+// floorsBuilt is derived from the sim's buildout data via setBuiltHeight().
+// No separate localStorage key — the sim save is the single source of truth.
 let floorsBuilt = 0;
-try {
-  const d = JSON.parse(localStorage.getItem('spacetower_exterior'));
-  if (d && typeof d.floorsBuilt === 'number') floorsBuilt = d.floorsBuilt;
-} catch { /* no saved data */ }
+let _onFloorBuiltCallback = null;
+export function setOnFloorBuilt(cb) { _onFloorBuiltCallback = cb; }
 
 function handleInteract() {
   const pp = PLAYER.pos;
+  const crane = siteGroup?.userData?.crane;
+
+  // Don't interact with anything while operating crane or bulldozer
+  if (crane?.isOperating || _bulldozer?.isOperating) return;
+
+  // Enter bulldozer if near
+  if (_bulldozer && _bulldozer.isNear(pp)) {
+    _bulldozer.enter();
+    PLAYER.vel.set(0, 0, 0);
+    if (playerGroup) playerGroup.visible = false;
+    return;
+  }
+
+  // Enter crane if near cab
+  if (crane && crane.isNear(pp)) {
+    const cabPos = crane.getCabWorldPos();
+    PLAYER.pos.copy(cabPos);
+    PLAYER.vel.set(0, 0, 0);
+    crane.enter();
+    return;
+  }
+
   // Talk to nearby rooftop worker
   const nearWorker = _getNearbyWorker();
   if (nearWorker) {
@@ -609,7 +617,8 @@ function handleInteract() {
       PLAYER.carrying = false;
       if (carryBox) carryBox.visible = false;
       floorsBuilt++;
-      localStorage.setItem('spacetower_exterior', JSON.stringify({ floorsBuilt, ts: Date.now() }));
+      setBuiltHeight(floorsBuilt);
+      if (_onFloorBuiltCallback) _onFloorBuiltCallback(floorsBuilt);
     } else {
       // Drop anywhere
       PLAYER.carrying = false;
@@ -1104,11 +1113,50 @@ function _updateRooftopWorkers(dt) {
 }
 
 // ── Interaction prompt (lazy-created DOM element) ──
+function _updateCranePrompt(crane) {
+  if (!promptEl) {
+    promptEl = document.createElement('div');
+    promptEl.style.cssText = 'position:fixed;bottom:52%;left:50%;transform:translateX(-50%);z-index:60;color:rgba(255,255,255,0.45);font-family:monospace;font-size:10px;pointer-events:none;user-select:none;letter-spacing:0.1em';
+    document.body.appendChild(promptEl);
+  }
+  let text = 'A/D rotate \u2022 W/S winch \u2022 Q/E trolley \u2022 SPACE grab';
+  if (crane.hasPayload) {
+    if (crane.chargeT > 0) {
+      const pct = Math.round((crane.chargeT / crane.chargeMax) * 100);
+      text = `CHARGING: ${pct}% \u2014 release F to LAUNCH!`;
+    } else {
+      text = 'F hold to charge \u2022 SPACE drop \u2022 ESC exit';
+    }
+  } else {
+    text += ' \u2022 ESC exit';
+  }
+  promptEl.textContent = text;
+  promptEl.style.opacity = '1';
+}
+
+function _updateDozerPrompt() {
+  if (!promptEl) {
+    promptEl = document.createElement('div');
+    promptEl.style.cssText = 'position:fixed;bottom:52%;left:50%;transform:translateX(-50%);z-index:60;color:rgba(255,255,255,0.45);font-family:monospace;font-size:10px;pointer-events:none;user-select:none;letter-spacing:0.1em';
+    document.body.appendChild(promptEl);
+  }
+  let text = 'W/S drive \u2022 A/D turn \u2022 SHIFT boost \u2022 SPACE jump';
+  text += _bulldozer.bladeDown ? ' \u2022 F blade up' : ' \u2022 F blade down';
+  text += ' \u2022 ESC exit';
+  promptEl.textContent = text;
+  promptEl.style.opacity = '1';
+}
+
 function _updatePrompt() {
   const pp = PLAYER.pos;
   let text = '';
+  const crane = siteGroup?.userData?.crane;
   const nearWorker = _getNearbyWorker();
-  if (nearWorker) {
+  if (_bulldozer && !_bulldozer.isOperating && _bulldozer.isNear(pp)) {
+    text = 'E \u2014 operate bulldozer';
+  } else if (crane && !crane.isOperating && crane.isNear(pp)) {
+    text = 'E \u2014 operate crane';
+  } else if (nearWorker) {
     text = `E \u2014 talk to ${nearWorker.name}`;
   } else if (_isNearDoor() && _enterDoorCallback) {
     text = 'E \u2014 enter tower';
@@ -1141,6 +1189,59 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     return;
   }
   if (!PLAYER.active || !playerGroup) return;
+
+  const crane = siteGroup?.userData?.crane;
+
+  // If operating bulldozer, skip normal movement
+  if (_bulldozer?.isOperating) {
+    _bulldozer.update(dt, PLAYER.pos, keys);
+    const dozerPos = _bulldozer.getWorldPos();
+    PLAYER.pos.set(dozerPos.x, dozerPos.y, dozerPos.z);
+    // Set velocity from bulldozer heading + speed so camera follows direction
+    const dSpd = _bulldozer.speed;
+    PLAYER.vel.set(
+      Math.sin(_bulldozer.heading) * dSpd * 0.01,
+      0,
+      Math.cos(_bulldozer.heading) * dSpd * 0.01
+    );
+    PLAYER.onGround = true;
+
+    // Player is hidden while operating — just track position for camera
+    if (playerGroup) playerGroup.position.copy(PLAYER.pos);
+
+    _updateDozerPrompt();
+    // Still update crane for projectile physics
+    if (crane) crane.update(dt, PLAYER.pos, keys);
+    return;
+  }
+
+  // If operating crane, skip normal movement — crane handles input
+  if (crane?.isOperating) {
+    crane.update(dt, PLAYER.pos, keys);
+    const cabPos = crane.getCabWorldPos();
+    PLAYER.pos.copy(cabPos);
+    PLAYER.vel.set(0, 0, 0);
+
+    // Position player inside the cab (offset down to seat level)
+    playerGroup.position.copy(cabPos);
+    playerGroup.position.y -= 0.55;
+    playerGroup.rotation.y = crane.boomAngle + Math.PI / 2;
+    playerGroup.rotation.x = 0;
+
+    // Seated pose — hands on levers
+    const ud = playerGroup.userData;
+    ud.torso.position.y = 0.52;
+    ud.torso.rotation.z = 0;
+    ud.leftLeg.rotation.x = 1.2;
+    ud.rightLeg.rotation.x = 1.2;
+    ud.leftArm.rotation.x = 0.6;
+    ud.rightArm.rotation.x = 0.6;
+    ud.leftArm.rotation.z = 0.15;
+    ud.rightArm.rotation.z = -0.15;
+
+    _updateCranePrompt(crane);
+    return;
+  }
 
   const pp = PLAYER.pos;
   const pv = PLAYER.vel;
@@ -1412,6 +1513,11 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   _updatePrompt();
   _updateRooftopWorkers(dt);
 
+  // Update crane even when not operating (projectile physics + light blink)
+  if (crane) crane.update(dt, PLAYER.pos, keys);
+  // Update bulldozer even when not operating (idle vibration)
+  if (_bulldozer && !_bulldozer.isOperating) _bulldozer.update(dt, PLAYER.pos, keys);
+
   if (PLAYER.carrying && carryBox) {
     carryBox.rotation.z = Math.sin(performance.now() * 0.003) * 0.04;
   }
@@ -1421,6 +1527,7 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
 export function getPlayerPos() { return PLAYER.pos; }
 export function getPlayerVel() { return PLAYER.vel; }
 export function getActiveRoofY() { return activeRoofY; }
+export function getCrane() { return siteGroup?.userData?.crane || null; }
 
 export function activateExterior() {
   PLAYER.active = true;
@@ -1441,12 +1548,13 @@ export function deactivateExterior() {
 export function setBuiltHeight(topBuilt) {
   activeMaxFloor = Math.max(0, topBuilt - 1);
   activeRoofY = BASE_H + Math.max(1, topBuilt) * FLOOR_H;
+  floorsBuilt = topBuilt;
   if (!siteGroup) return;
   const ud = siteGroup.userData;
   // Reposition roof plate to match built height
   if (ud.roofPlate) ud.roofPlate.position.y = activeRoofY;
   // Reposition crane to sit on the active rooftop
-  if (ud.craneGroup) ud.craneGroup.position.y = activeRoofY;
+  if (ud.crane) ud.crane.setRoofY(activeRoofY);
   // Reposition workers to the active rooftop
   if (ud.rooftopWorkers) {
     ud.rooftopWorkers.forEach(w => { w.group.position.y = activeRoofY; });
@@ -1459,3 +1567,11 @@ export function setBuiltHeight(topBuilt) {
 
 export function isExteriorActive() { return PLAYER.active; }
 export function isWalkingBackward() { return walkingBackward; }
+export function getBulldozer() { return _bulldozer; }
+
+export function spawnBulldozer(scene) {
+  if (_bulldozer) return _bulldozer;
+  _terrainMesh = buildTerrainMesh(scene, 0);
+  _bulldozer = buildPlayableBulldozer(scene, 0, _terrainMesh);
+  return _bulldozer;
+}

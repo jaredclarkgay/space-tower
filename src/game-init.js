@@ -1,6 +1,6 @@
 'use strict';
-import { S, syncLitFloors, cZoom, tZoom, setCZoom, setTZoom, getActiveBuildFloor } from './state.js';
-import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF, BPF, PG } from './constants.js';
+import { S, syncLitFloors, cZoom, tZoom, setCZoom, setTZoom, getActiveBuildFloor, isBuildable, canAfford, placeModule } from './state.js';
+import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF, BPF, PG, TERRAIN_RES, TERRAIN_X_MIN, TERRAIN_X_MAX, isFlankBlock } from './constants.js';
 import { FD } from './floors.js';
 import { CASUAL_TOPS_M } from './npcs.js';
 import { initCanvas, draw, showMsg, getInter, nearSuit, spawnParticles, triggerShake, triggerFlash } from './render.js';
@@ -9,7 +9,7 @@ import { setupPanel, renderPanel } from './panel.js';
 import { genWorld } from './world.js';
 import { loadGame, autoSave } from './save.js';
 import { setupCompendium, isCompendiumOpen } from './compendium.js';
-import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, sndBuild, sndTile, sndWhoosh, sndChime, sndBoom, sndGrow, sndData, sndAwe, soundOn, toggleSound, getAudioCtx, sndDoorHumStart, sndDoorHumStop } from './sound.js';
+import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, sndBuild, sndTile, sndWhoosh, sndChime, sndBoom, sndGrow, sndData, sndAwe, soundOn, toggleSound, getAudioCtx, sndDoorHumStart, sndDoorHumStop, sndDozerStart, sndDozerStop, sndDozerUpdate } from './sound.js';
 import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js';
 import { setupRadio } from './radio-ui.js';
 import { checkReckoningTrigger, updateReckoning, checkReckoningBell, startRematch, isReckoningFrozen, isReckoningActive, setupTestMode, handleReckoningIntroE, handleReckoningColorLeft, handleReckoningColorRight, handleReckoningColorConfirm, checkColorWheel, openColorWheel } from './reckoning.js';
@@ -25,6 +25,7 @@ const SAVE_INTERVAL = 60000;
 let _exitDoorCheck = null;
 let _simStartTime = 0;
 let _keeperDebounce = false;
+let _roofFloor = null; // cached ref to rooftop pseudo-floor
 
 // ═══ ELEVATOR PANEL ═══
 let elevPanel, elevFloors, fpElRef;
@@ -86,6 +87,8 @@ function triggerActivation(fi){
       sndChime();
       // Warm glow particles at doorway
       spawnParticles(TL+900,fy-FH*0.3,12,'rgba(255,200,120,0.5)',{speed:1,life:60,size:2.5,spread:Math.PI,dir:-Math.PI/2,gravity:-0.01});
+      // Corner store + diner flanks activate — happiness boost
+      S.builderHappiness+=10;
       break;
     case 2: // GARDEN — green burst, pollen floats upward
       triggerFlash('#80ff60',0.3);
@@ -234,6 +237,105 @@ function processArrivals(){
   S.door.openR+=((nearDoorR?1:0)-S.door.openR)*0.08;
 }
 
+// ═══ ECONOMY: FOOD / HAPPINESS / CROPS / BULLDOZER ═══
+let _econAcc=0;
+const ECON_TICK=60; // frames per economy tick (~1 second at 60fps)
+let _cropAcc=0;
+const CROP_TICK=1800; // frames per crop growth stage (~30 seconds at 60fps)
+let _hudFood=null,_hudHappy=null;
+
+function terrainIndex(worldX){
+  const t=(worldX-TERRAIN_X_MIN)/(TERRAIN_X_MAX-TERRAIN_X_MIN);
+  return Math.floor(Math.max(0,Math.min(TERRAIN_RES-1,t*TERRAIN_RES)));
+}
+function terrainHeight(worldX){
+  return TB+S.terrain[terrainIndex(worldX)];
+}
+
+function updateEconomy(){
+  // Crop growth (every ~30 seconds)
+  _cropAcc++;
+  if(_cropAcc>=CROP_TICK){
+    _cropAcc=0;
+    if(S.buildout[2].stage>=5){
+      for(let bi=0;bi<BPF;bi++){
+        const m=S.modules[2]?.[bi];
+        if(m&&m.id==='planter'){
+          if(m.growStage==null)m.growStage=0;
+          if(m.growStage<4){
+            m.growStage++;
+            if(m.growStage===4)S.builderHappiness+=3;
+          }
+        }
+      }
+    }
+  }
+  // Economy tick (every ~1 second)
+  _econAcc++;
+  if(_econAcc<ECON_TICK)return;
+  _econAcc=0;
+
+  // Count food production
+  let foodProd=0;
+  // Floor 1 diner (right flank, block 7) — active at stage 4+
+  if(S.buildout[1].stage>=4){
+    foodProd+=S.foodChainComplete?2:1;
+  }
+  // Floor 2 planters at growStage 4
+  if(S.buildout[2].stage>=5){
+    for(let bi=0;bi<BPF;bi++){
+      const m=S.modules[2]?.[bi];
+      if(m&&m.id==='planter'&&m.growStage>=4)foodProd++;
+    }
+  }
+  // Corner store food (after upgrade)
+  if(S.cornerStoreUpgraded)foodProd++;
+
+  // Count food demand (bunks on floor 1)
+  let foodDemand=0;
+  for(let bi=0;bi<BPF;bi++){
+    const m=S.modules[1]?.[bi];
+    if(m&&m.id==='bunk')foodDemand++;
+  }
+
+  // Update food
+  S.food=Math.max(0,S.food+foodProd-foodDemand);
+
+  // Happiness from food surplus/deficit
+  if(foodProd>foodDemand)S.builderHappiness++;
+  else if(foodProd<foodDemand&&S.builderHappiness>0)S.builderHappiness--;
+
+  // ── Food chain event check ──
+  if(!S.foodChainComplete&&S.buildout[1].stage>=4){
+    let maturePlanters=0;
+    for(let bi=0;bi<BPF;bi++){
+      const m=S.modules[2]?.[bi];
+      if(m&&m.id==='planter'&&m.growStage>=4)maturePlanters++;
+    }
+    if(maturePlanters>=2){
+      S.foodChainComplete=true;
+      S.builderHappiness+=8;
+      showMsg('\ud83c\udf3f LOCAL PRODUCE','The food gets good.');
+    }
+  }
+
+  // ── Bulldozer unlock check ──
+  if(!S.bulldozer.unlocked&&S.foodChainComplete&&S.builderHappiness>=20){
+    let hasResident=false;
+    for(let bi=0;bi<BPF;bi++){if(S.modules[1]?.[bi])hasResident=true}
+    if(hasResident){
+      S.bulldozer.unlocked=true;
+      showMsg('\ud83d\ude9c BULLDOZER UNLOCKED','Exit the tower to find it.');
+    }
+  }
+
+  // Update HUD (cached refs)
+  if(!_hudFood)_hudFood=document.getElementById('hud-food');
+  if(!_hudHappy)_hudHappy=document.getElementById('hud-happy');
+  if(_hudFood)_hudFood.textContent=`\ud83c\udf5e ${S.food}`;
+  if(_hudHappy)_hudHappy.textContent=`\ud83d\ude0a ${S.builderHappiness}`;
+}
+
 // ═══ UPDATE ═══
 function update(){
   // Control room — completely separate scene
@@ -260,8 +362,7 @@ function update(){
   // Dynamic rooftop — keep floor entry in sync for collision
   const _abf2=getActiveBuildFloor();
   const _dynRY=TB-(_abf2>=0?_abf2+1:NF)*FH;
-  const _rf=S.floors.find(f=>f.level===-1);
-  if(_rf){_rf.y=_dynRY;S.floors.sort((a,b)=>a.y-b.y)}
+  if(_roofFloor&&_roofFloor.y!==_dynRY){_roofFloor.y=_dynRY;S.floors.sort((a,b)=>a.y-b.y)}
   // Advance build reveal timers + per-tile sound (30% speed — slow sweep)
   for(let i=0;i<NF;i++){
     const rt=S.buildout[i].revealT;
@@ -273,6 +374,8 @@ function update(){
   // Reckoning + Keeper updates
   checkReckoningTrigger();updateReckoning();
   updateKeeper();
+  // ── Food / Happiness / Crops / Bulldozer ──
+  updateEconomy();
   const p=S.player,k=S.keys,inter=getInter();
   S.frame++;
   const zLerp=(p.isChg||p.isDrp)?0.04:0.15;
@@ -326,8 +429,59 @@ function update(){
   if(p.cf===4&&S.buildout[4].stage>=5&&Math.abs(p.x-(TL+2*PG+PG/2))<200){sndDoorHumStart()}else{sndDoorHumStop()}
   const _f8frozen=isReckoningFrozen()||S.keeper.active;
   if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()&&!_f8frozen){
+  // Bulldozer driving mode
+  if(S.bulldozer.active){
+    const bd=S.bulldozer;
+    const accel=0.6,maxSpd=k['ShiftLeft']||k['ShiftRight']?18:12,friction=0.92;
+    if(k['ArrowLeft']||k['KeyA']){bd.vx-=accel;bd.facing=-1}
+    if(k['ArrowRight']||k['KeyD']){bd.vx+=accel;bd.facing=1}
+    if(S.jp['Space']||S.jp['KeyW'])bd.bladeDown=!bd.bladeDown;
+    if(S.jp['KeyE']||S.jp['Escape']){
+      bd.active=false;p.x=bd.x+bd.facing*40;p.y=bd.y;p.vy=0;p.vx=0;p.onF=true;p.st='idle';sndDozerStop();
+    }
+    sndDozerUpdate(bd.vx);
+    bd.vx*=friction;
+    if(Math.abs(bd.vx)>maxSpd)bd.vx=Math.sign(bd.vx)*maxSpd;
+    if(Math.abs(bd.vx)<0.1)bd.vx=0;
+    bd.x+=bd.vx;
+    bd.bobT+=Math.abs(bd.vx)*0.15;
+    // Clamp to explorable area
+    const bdMin=TERRAIN_X_MIN+40,bdMax=TERRAIN_X_MAX-40;
+    if(bd.x<bdMin)bd.x=bdMin;if(bd.x>bdMax)bd.x=bdMax;
+    // Don't drive inside tower — bounce off walls
+    if(bd.x>TL-30&&bd.x<TR+30){bd.x=bd.vx>0?TR+30:TL-30;bd.vx*=-0.3}
+    // Terrain following
+    const tIdx=Math.floor((bd.x-TERRAIN_X_MIN)/(TERRAIN_X_MAX-TERRAIN_X_MIN)*TERRAIN_RES);
+    const tH=TB+(S.terrain[Math.max(0,Math.min(TERRAIN_RES-1,tIdx))]||0);
+    bd.y=tH;
+    // Blade-down terrain modification
+    if(bd.bladeDown&&Math.abs(bd.vx)>0.5){
+      const ci=Math.max(0,Math.min(TERRAIN_RES-1,tIdx));
+      const dir=bd.vx>0?1:-1;
+      const digRate=Math.abs(bd.vx)*0.08;
+      // Dig at current position
+      S.terrain[ci]=Math.max(-200,Math.min(200,S.terrain[ci]+digRate));
+      // Pile up ahead (3-5 samples forward)
+      for(let ahead=3;ahead<6;ahead++){
+        const ai=ci+dir*ahead;
+        if(ai>=0&&ai<TERRAIN_RES){
+          const ax=TERRAIN_X_MIN+ai*(TERRAIN_X_MAX-TERRAIN_X_MIN)/TERRAIN_RES;
+          if(ax>=TL&&ax<=TR)continue; // don't pile under tower
+          S.terrain[ai]=Math.max(-200,Math.min(200,S.terrain[ai]-digRate*0.4));
+        }
+      }
+    }
+    // Dust particles (spawn into particle system every few frames)
+    if(Math.abs(bd.vx)>2&&S.frame%4===0){
+      spawnParticles(bd.x-bd.facing*30,bd.y-5,2,'rgba(160,140,100,0.3)',{speed:1.5,life:25,size:3,spread:Math.PI*0.5,dir:bd.facing>0?Math.PI:0,gravity:0.03});
+    }
+    // Player tracks bulldozer
+    p.x=bd.x;p.y=bd.y;p.vx=0;p.vy=0;p.onF=true;p.st='idle';p.cf=-1;
+    // Camera follows bulldozer
+    S.cam.tx=bd.x;S.cam.ty=bd.y-80;
+  }
   // Crane driving mode
-  if(p.crane>=0){
+  else if(p.crane>=0){
     const _cc=S.cranes[p.crane],_cabY=_cc.y-200;
     p.x=_cc.x;p.y=_cabY;p.vx=0;p.vy=0;p.onF=true;p.st='idle';
     if(k['ArrowLeft']||k['KeyA'])_cc.angle-=1.5*(frameDt/16);
@@ -366,7 +520,13 @@ function update(){
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
     if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=5)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
       else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
-      }S.iLock=true}}
+      }else if(inter.t==='upgrade_store'){
+        if(canAfford(inter.v.cost)){S.credits-=inter.v.cost;S.cornerStoreUpgraded=true;S.builderHappiness+=10;showMsg('\ud83c\uded2 GROCERY STORE','Corner store upgraded. Fresh produce.');sndChime();autoSave()}
+        else showMsg('NOT ENOUGH','Need $'+inter.v.cost+' to upgrade.');
+      }else if(inter.t==='mount_dozer'){
+        S.bulldozer.active=true;p.st='idle';sndBoom();sndDozerStart();
+      }
+      S.iLock=true}}
     // E to enter crane — on cab platform, no other interaction
     if(k['KeyE']&&!S.iLock&&p.onF&&p.crane<0){
       for(let ci=0;ci<S.cranes.length;ci++){
@@ -410,7 +570,10 @@ function update(){
     }
     p.onF=false;
     for(let f of S.floors){if(p.vy>=0&&p.y<=f.y&&p.y+p.vy>=f.y){if(f.level<0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&(p.x<TL||p.x>TR))continue;if(f.level>=0&&S.buildout[f.level].stage<1&&f.level!==_abf2)continue;if(p.drpPhase>0&&f.level>=0){p.drpPhase--;continue}p.y=f.y;p.vy=0;p.cf=f.level;p.onF=true;if(p.st==='jump'){p.st=p.vx===0?'idle':'walk';p.flipCommitted=false;p.wallSlide=false}break}}
-    if(p.y>TB){p.y=TB;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=0;p.flipCommitted=false;p.wallSlide=false}
+    // Ground collision — terrain outside tower, flat inside
+    const _outsideTower=p.x<TL||p.x>TR;
+    const _groundY=_outsideTower?terrainHeight(p.x):TB;
+    if(p.y>_groundY){p.y=_groundY;p.vy=0;p.onF=true;p.drpPhase=0;p.cf=_outsideTower?-1:0;p.flipCommitted=false;p.wallSlide=false}
     // Crane cab collision (wide platform — 120px across)
     if(!p.onF&&p.vy>=0){
       for(let ci=0;ci<S.cranes.length;ci++){
@@ -447,7 +610,7 @@ function update(){
   });
   if(p.st==='walk'||p.st==='climb')p.bob+=0.2;else p.bob*=0.9;
   if(p.st==='walk'&&S.frame%12===0)sndStep();
-  fpElRef.textContent=p.crane>=0?'CRANE · \u2190 \u2192 ROTATE · E EXIT':p.cf<0?'ROOFTOP · UNDER CONSTRUCTION':`FLOOR ${p.cf+1} · ${FD[p.cf]?.name||''}`;
+  fpElRef.textContent=S.bulldozer.active?'BULLDOZER · \u2190 \u2192 DRIVE · SPACE BLADE · E EXIT':p.crane>=0?'CRANE · \u2190 \u2192 ROTATE · E EXIT':p.cf<0?'ROOFTOP · UNDER CONSTRUCTION':`FLOOR ${p.cf+1} · ${FD[p.cf]?.name||''}`;
   if(!S.keeper.active){S.cam.tx=p.x;S.cam.ty=p.y-60}
   S.cam.x+=(S.cam.tx-S.cam.x)*0.08;S.cam.y+=(S.cam.ty-S.cam.y)*0.08;
   S.jp={};
@@ -511,14 +674,27 @@ export function initGame(saveData){
 
   // Generate world + load save
   genWorld();
-  if(saveData&&loadGame()){
-    showMsg('SAVE LOADED','Welcome back, builder.');
+  _roofFloor=S.floors.find(f=>f.level===-1);
+  // Dev dozer mode: unlock bulldozer, place player next to it (skip save load)
+  if(saveData==='dozer'){
+    S.bulldozer.unlocked=true;
+    S.foodChainComplete=true;
+    S.builderHappiness=30;
+    S.credits=1000;
+    for(let i=0;i<NF;i++){S.buildout[i].stage=5;S.buildout[i].revealT=999}
+    S.reckoning.played=true;S.reckoning.phase='DONE';S.reckoning.outcome='builders';
+    S.player.x=S.bulldozer.x+80;S.player.y=TB;
+    S.cam.x=S.player.x;S.cam.y=S.player.y-60;
+  } else {
+    if(saveData&&loadGame()){
+      showMsg('SAVE LOADED','Welcome back, builder.');
+    }
+    // Test mode: jump straight to reckoning
+    const _testFlag=localStorage.getItem('spacetower_testReckoning');
+    if(_testFlag){localStorage.removeItem('spacetower_testReckoning');setupTestMode()}
+    // Always enter through the elevator doors
+    S.player.x=ELEV_X;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
   }
-  // Test mode: jump straight to reckoning
-  const _testFlag=localStorage.getItem('spacetower_testReckoning');
-  if(_testFlag){localStorage.removeItem('spacetower_testReckoning');setupTestMode()}
-  // Always enter through the elevator doors
-  S.player.x=ELEV_X;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
   // Finalize arrivals for already-completed floors (post-load)
   S.npcs.forEach(n=>{
     if(S.buildout[n.floor].stage>=5){

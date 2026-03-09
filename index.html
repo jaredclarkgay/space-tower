@@ -138,7 +138,7 @@
 <div id="title-overlay"></div>
 <canvas id="gameCanvas"></canvas>
 <div id="game-ui" style="display:none">
-<div id="hud-top"><div class="hp" id="fp">FLOOR 1 · LOBBY</div><div class="hp" id="sp" style="display:none;background:rgba(255,180,50,0.6);color:#2a2010">🧑 SUIT — F</div></div>
+<div id="hud-top"><div class="hp" id="fp">FLOOR 1 · LOBBY</div><div class="hp" id="hud-food" style="color:#e8c060">🍞 0</div><div class="hp" id="hud-happy" style="color:#80e080">😊 0</div><div class="hp" id="sp" style="display:none;background:rgba(255,180,50,0.6);color:#2a2010">🧑 SUIT — F</div></div>
 <div id="instr">WASD / Arrows — move, climb<br>Hold ↑ or Space — charge jump (1-3 floors)<br>Hold ↓ — charge drop (1-4 floors)<br>E — interact · F — suit · TAB — compendium</div>
 <div id="zoom-wrap"><div id="zoom-lbl">70%</div><input type="range" id="zoom-sl" min="0.25" max="1.0" step="0.01" value="0.7"></div>
 <div id="radio" class="radio-wrap">
@@ -204,7 +204,7 @@
 </div>
 <button id="menu-btn" title="Back to Title">⌂</button>
 </div>
-<div id="dev-nav"><button data-goto="exterior">EXT</button><button data-goto="interior">INT</button><button data-goto="control-room">CR</button></div>
+<div id="dev-nav"><button data-goto="exterior">EXT</button><button data-goto="interior">INT</button><button data-goto="control-room">CR</button><button data-goto="dozer">DOZER</button></div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

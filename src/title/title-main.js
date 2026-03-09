@@ -5,7 +5,7 @@ import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlen
 import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistCallbacks } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY, setTransitionRefs } from './title-transition.js';
-import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive } from './title-exterior.js';
+import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setOnFloorBuilt, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive, getCrane, getBulldozer, spawnBulldozer } from './title-exterior.js';
 import { ThirdPersonCamera } from './third-person-camera.js';
 import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
 import { ensureAudioCtx, getAudioCtx } from '../sound.js';
@@ -14,6 +14,17 @@ import { setupRadio, disposeRadio } from '../radio-ui.js';
 let renderer, scene, camera;
 let titleAnimId = null;
 let cityData = null;
+
+// Patch sim save with updated buildout from exterior building
+function _syncBuildoutToSave(buildout) {
+  const key = 'spacetower_v14';
+  try {
+    const raw = localStorage.getItem(key);
+    const d = raw ? JSON.parse(raw) : { ts: Date.now() };
+    d.buildout = buildout.slice(0, 10);
+    localStorage.setItem(key, JSON.stringify(d));
+  } catch { /* save failed — non-critical */ }
+}
 
 // ── Orbit state ──
 let orbitAngle = 0;
@@ -252,6 +263,29 @@ export function initTitle(canvas, saveData) {
     if (extActive) {
       const fwd = tpCam.getCameraForward();
       updateExterior(dt, fwd.x, fwd.z);
+      // Camera follows boom rotation when operating crane
+      const _crane = getCrane();
+      if (_crane?.isOperating) {
+        const targetYaw = _crane.boomAngle - Math.PI / 2;
+        let delta = targetYaw - tpCam.yaw;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        tpCam.yaw += delta * 0.06;
+      }
+      // Camera follows bulldozer heading + zooms out
+      const _dozer = getBulldozer();
+      if (_dozer?.isOperating) {
+        const targetDist = 25;
+        tpCam.distance += (targetDist - tpCam.distance) * 0.05;
+        // Track behind the bulldozer
+        if (Math.abs(_dozer.speed) > 1) {
+          const targetYaw = _dozer.heading + Math.PI;
+          let delta = targetYaw - tpCam.yaw;
+          while (delta > Math.PI) delta -= 2 * Math.PI;
+          while (delta < -Math.PI) delta += 2 * Math.PI;
+          tpCam.yaw += delta * 0.04;
+        }
+      }
       tpCam.update(dt, getPlayerPos(), getPlayerVel(), isWalkingBackward());
     } else if (orbitalView) {
       // Orbital view — camera above Earth, bottom third of globe visible
@@ -332,7 +366,7 @@ function _startTransition(isNew) {
  * Skip directly to exterior mode (used when returning from the sim).
  * Sets up the scene as if the forward transition had just completed.
  */
-export function skipToExterior() {
+export function skipToExterior(placeAtDozer) {
   if (!cityData || !scene) return;
   const TC = cityData.TC;
 
@@ -412,6 +446,35 @@ export function skipToExterior() {
   if (cityData.semiWorkers) setGroundNPCs(cityData.semiWorkers);
   if (cityData.bizPeople) setBizPeople(cityData.bizPeople);
   if (cityData.doorLeft) setDoorMeshes(cityData.doorLeft, cityData.doorRight);
+
+  // Wire floor-built callback so exterior builds sync to sim save + 3D tower
+  setOnFloorBuilt((newTopBuilt) => {
+    const TC = cityData.TC;
+    // Advance sim buildout for newly built floor (stage 1 = funded)
+    while (TC.buildout.length < newTopBuilt) TC.buildout.push(0);
+    const fi = newTopBuilt - 1;
+    if ((TC.buildout[fi] || 0) < 1) TC.buildout[fi] = 1;
+    // Restore the new floor visually
+    cityData.restoreTowerFloor(fi);
+    TC.playerFloor = Math.max(0, fi);
+    // Scale structural columns
+    const fhC = TC.floorH, baseHC = fhC * 3, fullHC = baseHC + TC.maxFloors * fhC;
+    const visHC = baseHC + Math.max(1, newTopBuilt) * fhC;
+    cityData.structColumns.forEach(c => { c.scale.y = visHC / fullHC; c.position.y = visHC / 2; });
+    cityData.applyPlayerLighting();
+    // Update sim save
+    _syncBuildoutToSave(TC.buildout);
+  });
+
+  // Spawn bulldozer in the exterior
+  const dozer = spawnBulldozer(scene);
+
+  // If dev dozer mode, place player next to the bulldozer
+  if (placeAtDozer && dozer) {
+    const dozerPos = dozer.getWorldPos();
+    const pp = getPlayerPos();
+    pp.set(dozerPos.x + 6, 0, dozerPos.z);
+  }
 
   // Show arrival text, home button, and activate exterior
   showArrivalText(onEnterGame);

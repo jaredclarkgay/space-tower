@@ -398,7 +398,6 @@ export function drawKeeperGlow(X,_now){
 
 // ═══ PROXIMITY + ZOOM STATE MACHINE ═══
 let _zoomState='idle'; // idle | zooming_in | zoomed | zooming_out
-let _savedCamTx=0,_savedCamTy=0;
 
 export function isKeeperProximity(){
   if(S.buildout[KEEPER_FLOOR].stage<5)return false;
@@ -412,7 +411,6 @@ export function startKeeperZoom(){
   if(_zoomState!=='idle')return;
   _zoomState='zooming_in';
   S.keeper.active=true;
-  _savedCamTx=S.cam.tx;_savedCamTy=S.cam.ty;
   sndKeeper();
   // Decide mode: LLM or scripted
   if(_readBYOK()&&!S.keeper.spoken){

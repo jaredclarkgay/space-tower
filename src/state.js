@@ -1,5 +1,5 @@
 'use strict';
-import { NF, BPF, TB, FH, MOB, isWinBlock, isElevBlock } from './constants.js';
+import { NF, BPF, TB, FH, MOB, isWinBlock, isElevBlock, isFlankBlock } from './constants.js';
 
 // ═══ GAME STATE ═══
 export const S={
@@ -42,6 +42,16 @@ export const S={
   modules:Array.from({length:NF},()=>Array(BPF).fill(null)),
   credits:500,
   sat:50,
+  food:0,
+  builderHappiness:0,
+  foodChainComplete:false,
+  cornerStoreUpgraded:false,
+  terrain:new Float32Array(800),
+  bulldozer:{
+    unlocked:false,active:false,
+    x:-1800-200,y:2400,vx:0,vy:0,
+    facing:1,bladeDown:false,bobT:0,
+  },
 };
 
 export let cZoom=MOB?0.5:0.7;
@@ -65,13 +75,17 @@ export function getActiveBuildFloor(){
 }
 
 // ═══ MODULE UTILITIES ═══
-export function isBuildable(bi){return !isWinBlock(bi)&&!isElevBlock(bi)}
+export function isBuildable(bi){return !isWinBlock(bi)&&!isElevBlock(bi)&&!isFlankBlock(bi)}
 export function canAfford(cost){return S.credits>=cost}
 export function placeModule(fi,bi,mod){
   if(!isBuildable(bi)||S.modules[fi][bi])return false;
   if(!canAfford(mod.cost))return false;
   S.modules[fi][bi]={...mod};
+  // Init growStage for planters on floor 2
+  if(fi===2&&mod.id==='planter')S.modules[fi][bi].growStage=0;
   S.credits-=mod.cost;
+  // Happiness from residential placement
+  if(fi===1)S.builderHappiness+=2;
   S.panelDirty=true;
   return true;
 }
@@ -79,6 +93,9 @@ export function sellModule(fi,bi){
   const mod=S.modules[fi][bi];
   if(!mod)return false;
   S.credits+=mod.sell;
+  // Deduct happiness for residential demolition
+  if(fi===1&&S.builderHappiness>0)S.builderHappiness=Math.max(0,S.builderHappiness-2);
+  if(fi===2&&mod.id==='planter'&&mod.growStage>=4&&S.builderHappiness>0)S.builderHappiness=Math.max(0,S.builderHappiness-3);
   S.modules[fi][bi]=null;
   S.panelDirty=true;
   return true;

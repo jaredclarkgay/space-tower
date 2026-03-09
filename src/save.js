@@ -5,8 +5,8 @@ import { FD } from './floors.js';
 import { F8_ALL_MODS } from './reckoning.js';
 
 // ═══ SAVE / LOAD ═══
-const SAVE_KEY='spacetower_v13';
-const OLD_KEYS=['spacetower_v12','spacetower_v11'];
+const SAVE_KEY='spacetower_v14';
+const OLD_KEYS=['spacetower_v13','spacetower_v12','spacetower_v11'];
 function _getRaw(){
   let raw=localStorage.getItem(SAVE_KEY);
   if(raw)return raw;
@@ -22,8 +22,12 @@ export function peekSave(){
 }
 export function saveGame(){
   try{
-    // Serialize modules as 2D array of ID strings or null
-    const mods=S.modules.map(row=>row.map(m=>m?m.id:null));
+    // Serialize modules as 2D array — planter modules include growStage
+    const mods=S.modules.map(row=>row.map(m=>{
+      if(!m)return null;
+      if(m.growStage!=null)return{id:m.id,growStage:m.growStage};
+      return m.id;
+    }));
     const d={
       buildout:S.buildout.map(b=>b.stage),
       litFloors:[...S.litFloors],
@@ -32,6 +36,12 @@ export function saveGame(){
       modules:mods,
       credits:S.credits,
       sat:S.sat,
+      food:S.food,
+      builderHappiness:S.builderHappiness,
+      foodChainComplete:S.foodChainComplete,
+      cornerStoreUpgraded:S.cornerStoreUpgraded,
+      terrain:Array.from(S.terrain),
+      bulldozer:{unlocked:S.bulldozer.unlocked,x:S.bulldozer.x,y:S.bulldozer.y,facing:S.bulldozer.facing},
       reckoning:{played:S.reckoning.played,outcome:S.reckoning.outcome,bellX:S.reckoning.bellX,map:S.reckoning.map,builderColor:S.reckoning.builderColor},
       keeper:{spoken:S.keeper.spoken,exchange:S.keeper.exchange,resolved:S.keeper.resolved||false},
       ts:Date.now()
@@ -47,15 +57,30 @@ export function loadGame(){
     if(d.compendium)S.compendium.entries=d.compendium;
     if(d.credits!=null)S.credits=d.credits;
     if(d.sat!=null)S.sat=d.sat;
+    if(d.food!=null)S.food=d.food;
+    if(d.builderHappiness!=null)S.builderHappiness=d.builderHappiness;
+    if(d.foodChainComplete!=null)S.foodChainComplete=d.foodChainComplete;
+    if(d.cornerStoreUpgraded!=null)S.cornerStoreUpgraded=d.cornerStoreUpgraded;
+    if(d.terrain){const t=d.terrain;for(let i=0;i<Math.min(t.length,S.terrain.length);i++)S.terrain[i]=t[i]}
+    if(d.bulldozer){
+      S.bulldozer.unlocked=!!d.bulldozer.unlocked;
+      if(d.bulldozer.x!=null)S.bulldozer.x=d.bulldozer.x;
+      if(d.bulldozer.y!=null)S.bulldozer.y=d.bulldozer.y;
+      if(d.bulldozer.facing!=null)S.bulldozer.facing=d.bulldozer.facing;
+    }
     // Reconstruct module objects from saved IDs
     if(d.modules){
       for(let fi=0;fi<NF;fi++){
         if(!d.modules[fi])continue;
         for(let bi=0;bi<BPF;bi++){
-          const id=d.modules[fi][bi];
-          if(!id){S.modules[fi][bi]=null;continue}
+          const saved=d.modules[fi][bi];
+          if(!saved){S.modules[fi][bi]=null;continue}
+          const id=typeof saved==='string'?saved:saved.id;
           const mod=FD[fi].mods.find(m=>m.id===id)||F8_ALL_MODS.find(m=>m.id===id);
-          if(mod)S.modules[fi][bi]={...mod};
+          if(mod){
+            S.modules[fi][bi]={...mod};
+            if(typeof saved==='object'&&saved.growStage!=null)S.modules[fi][bi].growStage=saved.growStage;
+          }
           else S.modules[fi][bi]=null;
         }
       }
