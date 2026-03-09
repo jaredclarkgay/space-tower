@@ -290,6 +290,68 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   }
 
   // ═══════════════════════════════════════
+  // REVEAL (spinning item + floating label after crate opens)
+  // ═══════════════════════════════════════
+  const STAGE_LABELS_2 = ['STEEL COLUMNS', 'BEAMS & FLOOR PLATE'];
+  const STAGE_LABELS_4 = ['CORNER COLUMNS', 'MID COLUMNS', 'CROSS BEAMS', 'FLOOR PLATE'];
+  const _revealGroup = new THREE.Group();
+  _revealGroup.visible = false;
+  scene.add(_revealGroup);
+
+  // Spinning preview mesh (simple box, tinted bright)
+  const _revealMat = new THREE.MeshBasicMaterial({ color: 0xffd700, wireframe: true });
+  const _revealMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), _revealMat);
+  _revealMesh.position.y = 2;
+  _revealGroup.add(_revealMesh);
+
+  // Floating text label (canvas texture on a plane)
+  const _labelCanvas = document.createElement('canvas');
+  _labelCanvas.width = 512; _labelCanvas.height = 128;
+  const _labelTex = new THREE.CanvasTexture(_labelCanvas);
+  _labelTex.minFilter = THREE.LinearFilter;
+  const _labelMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(16, 4),
+    new THREE.MeshBasicMaterial({ map: _labelTex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  );
+  _labelMesh.position.y = 6;
+  _revealGroup.add(_labelMesh);
+
+  function _showReveal(stageIdx, matCount) {
+    const labels = matCount === 2 ? STAGE_LABELS_2 : STAGE_LABELS_4;
+    const label = labels[stageIdx] || 'MATERIALS';
+    // Draw text on canvas
+    const ctx = _labelCanvas.getContext('2d');
+    ctx.clearRect(0, 0, 512, 128);
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, 256, 52);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '24px monospace';
+    ctx.fillText(`${stageIdx + 1}/${matCount}`, 256, 100);
+    _labelTex.needsUpdate = true;
+    // Position at crate landing (bullseye center, on roof)
+    _revealGroup.position.set(0, _roofY, 0);
+    _revealGroup.visible = true;
+    _revealMesh.scale.set(1, 1, 1);
+  }
+
+  function _hideReveal() { _revealGroup.visible = false; }
+
+  function _updateReveal(dt, camPos) {
+    if (!_revealGroup.visible) return;
+    _revealMesh.rotation.y += dt * 2.5;
+    // Gentle float
+    _revealMesh.position.y = 2 + Math.sin(performance.now() * 0.003) * 0.3;
+    _labelMesh.position.y = 6 + Math.sin(performance.now() * 0.003) * 0.2;
+    // Billboard the label toward camera
+    if (camPos) {
+      const worldPos = _revealGroup.localToWorld(_labelMesh.position.clone());
+      _labelMesh.lookAt(camPos);
+    }
+  }
+
+  // ═══════════════════════════════════════
   // POWER METER (near player, center-right)
   // ═══════════════════════════════════════
   let meterEl = null, meterLine = null;
@@ -356,7 +418,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
 
   // ═══════════════════════════════════════
   // STATE
-  // idle|ready|jumping|slam|pull|flight|birdseye|miss_reset|building|complete
+  // idle|ready|jumping|slam|pull|flight|birdseye|miss_reset
   // ═══════════════════════════════════════
   const st = {
     operating: false,
@@ -486,13 +548,12 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   function _checkCatchOrMiss() {
     const peakH = st.cratePos.y;
     if (peakH >= _roofY) {
-      // HIT → bird's eye
+      // HIT → bird's eye (stages revealed during birdseye phase, not here)
       st.phase = 'birdseye'; st.timer = 0; st.skipRequested = false;
+      st._floorCompleted = false;
       sndCrateHit();
       st.delivered++;
       _saveProgress(st.floor, st.delivered);
-      const idx = st.delivered - 1;
-      if (idx < _stages.length) _stages[idx].forEach(m => { m.visible = true; });
       if (st.delivered >= st.required) {
         const [title, sub] = FLOOR_MSGS[st.floor] || ['MATERIALS DELIVERED', ''];
         _banner(title, sub);
@@ -507,19 +568,6 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     }
   }
 
-  function _goBuilding() { st.phase = 'building'; st.timer = 0; }
-
-  function _completeFloor() {
-    st.phase = 'complete'; st.timer = 0;
-    sndFloorDone();
-    _stages.forEach(s => s.forEach(m => { m.visible = false; }));
-    const fi = st.floor;
-    if (onFloorComplete) onFloorComplete(fi);
-    st.floor++; st.delivered = 0; st.required = _matsForFloor(st.floor);
-    _saveProgress(st.floor, 0);
-    const [title, sub] = FLOOR_MSGS[fi] || ['FLOOR COMPLETE', ''];
-    _banner(title, sub);
-  }
 
   // ═══════════════════════════════════════
   // UPDATE
@@ -604,25 +652,65 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     }
 
     case 'birdseye': {
+      // Full roof cinematic: settle → open → reveal → build → return
+      // 0-1.2s:   crate settles, workers converge
+      // 1.2s:     crate opens → spinning reveal + label, stage appears
+      // 1.2-3.5s: hold on reveal, construction visible
+      // 3.5s:     if final delivery → floor complete
+      // 4.0-4.8s: ease camera back to wide
+      // ≥4.8s:    goReady
       st.timer += dt;
-      if (st.skipRequested && st.timer < 2.7) st.timer = 2.7;
-      // Keep player on platform
+      if (st.skipRequested && st.timer < 4.0) st.timer = 4.0;
       if (pg) { pg.position.copy(_platformWorldPos()); pg.rotation.set(0, root.rotation.y, 0); }
 
-      // Crate settles on roof during swoop
-      if (crateMesh.visible) {
-        const settleY = _roofY + 0.5;
-        crateMesh.position.y += (settleY - crateMesh.position.y) * dt * 5;
-        crateMesh.position.x += (0 - crateMesh.position.x) * dt * 4;
-        crateMesh.position.z += (0 - crateMesh.position.z) * dt * 4;
-        crateMesh.rotation.x *= 0.92; crateMesh.rotation.z *= 0.92;
-        if (st.timer > 2.5) crateMesh.visible = false;
+      // Phase 1: crate settles on bullseye
+      if (st.timer < 1.2) {
+        if (crateMesh.visible) {
+          const settleY = _roofY + 0.5;
+          crateMesh.position.y += (settleY - crateMesh.position.y) * dt * 5;
+          crateMesh.position.x += (0 - crateMesh.position.x) * dt * 4;
+          crateMesh.position.z += (0 - crateMesh.position.z) * dt * 4;
+          crateMesh.rotation.x *= 0.92; crateMesh.rotation.z *= 0.92;
+        }
       }
 
-      if (st.timer >= 3.2) {
+      // Phase 2: crate opens — show reveal + construction stage
+      if (st.timer >= 1.2 && crateMesh.visible) {
+        crateMesh.visible = false;
+        const stageIdx = st.delivered - 1;
+        if (stageIdx >= 0 && stageIdx < _stages.length) {
+          _stages[stageIdx].forEach(m => { m.visible = true; });
+        }
+        _showReveal(stageIdx, st.required);
+      }
+
+      // Phase 2-3: animate reveal
+      _calcOverheadView();
+      _updateReveal(dt, _overPos);
+
+      // Phase 3: floor complete trigger
+      if (st.timer >= 3.5 && st.delivered >= st.required && st.phase === 'birdseye') {
+        if (!st._floorCompleted) {
+          st._floorCompleted = true;
+          sndFloorDone();
+          const fi = st.floor;
+          const [title, sub] = FLOOR_MSGS[fi] || ['FLOOR COMPLETE', ''];
+          _banner(title, sub);
+          if (onFloorComplete) onFloorComplete(fi);
+          st.floor++; st.delivered = 0; st.required = _matsForFloor(st.floor);
+          _saveProgress(st.floor, 0);
+        }
+      }
+
+      // Phase 4: ease back + transition out
+      if (st.timer >= 4.0) _hideReveal();
+      if (st.timer >= 4.8) {
         st.seesawTarget = 0;
-        if (st.delivered >= st.required) _goBuilding();
-        else _goReady();
+        _hideReveal();
+        _stages.forEach(s => s.forEach(m => { m.visible = false; }));
+        if (st.floor >= 10) { _doExit(); return; }
+        _buildStages(_roofY, st.required);
+        _goReady();
       }
       break;
     }
@@ -645,25 +733,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
       break;
     }
 
-    case 'building': {
-      st.timer += dt;
-      if (pg) { pg.position.copy(_platformWorldPos()); pg.rotation.set(0, root.rotation.y, 0); }
-      _showHint('Builders constructing…');
-      if (st.timer >= 3.0) _completeFloor();
-      break;
-    }
-
-    case 'complete': {
-      st.timer += dt;
-      if (pg) { pg.position.copy(_platformWorldPos()); pg.rotation.set(0, root.rotation.y, 0); }
-      _hideHint();
-      if (st.timer >= 2.5) {
-        if (st.floor >= 10) { _doExit(); return; }
-        _buildStages(_roofY, st.required);
-        _goReady();
-      }
-      break;
-    }
+    // (building/complete phases removed — floor completion now handled in birdseye)
     }
   }
 
@@ -719,19 +789,24 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
       return { pos: _camPos, lookAt: _camLook, lerp: 0.2 };
     }
 
-    // HIT: camera follows crate as it settles on bullseye, then eases back
+    // HIT: full roof cinematic — stay overhead for settle+reveal+build, then ease back
     if (phase === 'birdseye') {
       _calcOverheadView(); _calcWideView();
       const t = st.timer;
-      if (t < 2.7) {
-        // Position eases toward overhead (smooth transition from flight)
+      if (t < 4.0) {
+        // 0-4.0s: overhead view — crate settles, opens, reveal spins, construction appears
         _camPos.copy(_overPos);
-        // LookAt tracks the crate as it settles — natural continuity from flight
-        _camLook.set(crateMesh.position.x, crateMesh.position.y, crateMesh.position.z);
-        return { pos: _camPos, lookAt: _camLook, lerp: 0.08 + t * 0.05 };
+        // First 1.2s: track the settling crate for natural continuity from flight
+        // After 1.2s: look at roof center (reveal position)
+        if (t < 1.2) {
+          _camLook.set(crateMesh.position.x, crateMesh.position.y, crateMesh.position.z);
+        } else {
+          _camLook.copy(_overLook);
+        }
+        return { pos: _camPos, lookAt: _camLook, lerp: 0.08 + t * 0.04 };
       } else {
-        // Ease back to wide
-        const s = _easeInOut(Math.min((t - 2.7) / 0.8, 1));
+        // 4.0-4.8s: ease back to wide view
+        const s = _easeInOut(Math.min((t - 4.0) / 0.8, 1));
         _camPos.lerpVectors(_overPos, _widePos, s);
         _camLook.lerpVectors(_overLook, _wideLook, s);
         return { pos: _camPos, lookAt: _camLook, lerp: 1.0 };
@@ -743,13 +818,6 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
       _calcWideView();
       _camPos.copy(_widePos); _camLook.copy(_wideLook);
       return { pos: _camPos, lookAt: _camLook, lerp: 0.12 };
-    }
-
-    // Building/Complete: wide
-    if (phase === 'building' || phase === 'complete') {
-      _calcWideView();
-      _camPos.copy(_widePos); _camLook.copy(_wideLook);
-      return { pos: _camPos, lookAt: _camLook, lerp: 0.15 };
     }
 
     return null;
@@ -837,6 +905,8 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
 
     dispose() {
       scene.remove(root); scene.remove(crateMesh); scene.remove(conGroup); scene.remove(bullseyeGroup);
+      scene.remove(_revealGroup);
+      _hideReveal();
       if (meterEl) { meterEl.remove(); meterEl = null; }
       if (bannerEl) { bannerEl.remove(); bannerEl = null; }
       if (hintEl) { hintEl.remove(); hintEl = null; }
