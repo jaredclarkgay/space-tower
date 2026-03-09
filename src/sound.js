@@ -139,6 +139,13 @@ export function sndDozerUpdate(speed){
   _dozerGain.gain.setTargetAtTime(0.05+Math.abs(speed)*0.005,t,0.1);
 }
 
+// Scaffolding seesaw sounds
+export function sndLaunch(){playNoise(0.1,0.18);playTone(150,0.12,'square',0.2);playTone(100,0.18,'square',0.15,0.04);playTone(250,0.06,'triangle',0.1,0.02)}
+export function sndCrateFly(){playTone(300,0.3,'sine',0.06);playTone(450,0.2,'sine',0.04,0.1);playNoise(0.25,0.04)}
+export function sndCrateHit(){playTone(660,0.08,'sine',0.2);playTone(880,0.06,'sine',0.15,0.05);playNoise(0.06,0.1)}
+export function sndCrateMiss(){playNoise(0.12,0.1);playTone(120,0.2,'sine',0.12);playTone(80,0.25,'sine',0.08,0.08)}
+export function sndFloorDone(){playTone(440,0.12,'sine',0.25);playTone(554,0.12,'sine',0.2,0.1);playTone(660,0.12,'sine',0.25,0.2);playTone(880,0.2,'sine',0.3,0.3);playNoise(0.06,0.05)}
+
 // Ambient drone — altitude-aware, continuous
 let ambOsc1=null,ambOsc2=null,ambGain=null,ambFilt=null;
 export function updateAmbient(altFrac2){

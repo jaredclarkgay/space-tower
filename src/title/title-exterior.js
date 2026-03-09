@@ -1140,9 +1140,26 @@ function _updateRooftopWorkers(dt) {
   if (!siteGroup.userData.rooftopWorkers) return;
   const workers = siteGroup.userData.rooftopWorkers;
   const roofBound = TOWER_HALF * 0.8; // keep within tower footprint
+  // During birdseye phase, workers converge toward the crate landing spot
+  const attracting = _scaffolding && _scaffolding.isOperating && _scaffolding.phase === 'birdseye';
+  const crateXZ = attracting ? _scaffolding.getCratePos() : null;
   for (const w of workers) {
     w.walkCycle += 0.04;
-    if (w.state === 'walk') {
+    if (attracting && crateXZ) {
+      // Override: walk toward crate landing position
+      const dx = crateXZ.x - w.group.position.x;
+      const dz = crateXZ.z - w.group.position.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d > 1.5) {
+        const spd = 0.04;
+        w.group.position.x += (dx / d) * spd;
+        w.group.position.z += (dz / d) * spd;
+        w.group.rotation.y = Math.atan2(dx, dz);
+      }
+      const sw = Math.sin(w.walkCycle * 4) * 0.3;
+      w.leftLeg.rotation.x = sw; w.rightLeg.rotation.x = -sw;
+      w.leftArm.rotation.x = -sw * 0.6; w.rightArm.rotation.x = sw * 0.6;
+    } else if (w.state === 'walk') {
       w.group.position.x += w.vx;
       w.group.position.z += w.vz;
       // Keep on rooftop
@@ -1266,6 +1283,7 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     PLAYER.onGround = true;
     if (crane) crane.update(dt, PLAYER.pos, keys);
     if (_bulldozer && !_bulldozer.isOperating) _bulldozer.update(dt, PLAYER.pos, keys);
+    _updateRooftopWorkers(dt); // workers must animate for birdseye attraction
     return;
   }
 
@@ -1657,14 +1675,14 @@ export function spawnScaffolding(scene) {
     if (_onFloorBuiltCallback) _onFloorBuiltCallback(floorsBuilt);
     _scaffolding.setRoofY(activeRoofY);
   });
-  // Sync tower if scaffolding save is ahead — restore each intermediate floor
+  // Sync tower if scaffolding save is ahead — batch restore
   const prevBuilt = floorsBuilt;
   if (_scaffolding.currentFloor > prevBuilt) {
-    for (let f = prevBuilt; f < _scaffolding.currentFloor; f++) {
-      floorsBuilt = f + 1;
-      setBuiltHeight(floorsBuilt);
-      if (_onFloorBuiltCallback) _onFloorBuiltCallback(floorsBuilt);
-    }
+    floorsBuilt = _scaffolding.currentFloor;
+    setBuiltHeight(floorsBuilt);
+    // Call the callback once with final value — it restores the top floor,
+    // adjusts columns, and syncs the save. We manually restore intermediate floors.
+    if (_onFloorBuiltCallback) _onFloorBuiltCallback(floorsBuilt);
     _scaffolding.setRoofY(activeRoofY);
   }
   // Position BUILD arrow above the launch pad

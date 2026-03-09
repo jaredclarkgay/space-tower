@@ -1,6 +1,7 @@
 'use strict';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { sndLaunch, sndCrateFly, sndCrateHit, sndCrateMiss, sndFloorDone } from '../sound.js';
 
 /**
  * ScaffoldingGame — seesaw launch mini-game for building floor structures.
@@ -243,39 +244,46 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   scene.add(conGroup);
   let _stages = [];
 
+  // Shared geometry + materials (allocated once, reused across floor rebuilds)
+  const _hw = 37, _colW = 0.6;
+  const _colGeo = new THREE.BoxGeometry(_colW, FLOOR_H, _colW);
+  const _beamGeoH = new THREE.BoxGeometry(_hw * 2, _colW * 0.7, _colW);
+  const _beamGeoV = new THREE.BoxGeometry(_colW, _colW * 0.7, _hw * 2);
+  const _plateGeo = new THREE.BoxGeometry(_hw * 2, 0.1, _hw * 2);
+  const _colMat = new THREE.MeshBasicMaterial({ color: 0x808890 });
+  const _beamMat = new THREE.MeshBasicMaterial({ color: 0x707880 });
+  const _plateMat = new THREE.MeshBasicMaterial({ color: 0x606870, transparent: true, opacity: 0.6 });
+
   function _buildStages(floorY, matCount) {
-    _stages.forEach(s => s.forEach(m => { conGroup.remove(m); m.geometry.dispose(); }));
+    // Hide + remove old stage meshes (geometries are shared, don't dispose)
+    _stages.forEach(s => s.forEach(m => { conGroup.remove(m); }));
     _stages = [];
-    const hw = 37;
-    const colW = 0.6, colMat = new THREE.MeshBasicMaterial({ color: 0x808890 });
-    const beamMat = new THREE.MeshBasicMaterial({ color: 0x707880 });
-    const plateMat = new THREE.MeshBasicMaterial({ color: 0x606870, transparent: true, opacity: 0.6 });
-    const corners = [[-hw,-hw],[-hw,hw],[hw,-hw],[hw,hw]];
-    const mids = [[0,-hw],[0,hw],[-hw,0],[hw,0]];
+    const corners = [[-_hw,-_hw],[-_hw,_hw],[_hw,-_hw],[_hw,_hw]];
+    const mids = [[0,-_hw],[0,_hw],[-_hw,0],[_hw,0]];
     function _addCol(arr, cx, cz) {
-      const c = new THREE.Mesh(new THREE.BoxGeometry(colW, FLOOR_H, colW), colMat);
+      const c = new THREE.Mesh(_colGeo, _colMat);
       c.position.set(cx, floorY + FLOOR_H / 2, cz); c.visible = false; conGroup.add(c); arr.push(c);
     }
-    function _addBeam(arr, bx, bz, sx, sz) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(sx, colW * 0.7, sz), beamMat);
+    function _addBeam(arr, bx, bz, horiz) {
+      const b = new THREE.Mesh(horiz ? _beamGeoH : _beamGeoV, _beamMat);
       b.position.set(bx, floorY + FLOOR_H, bz); b.visible = false; conGroup.add(b); arr.push(b);
     }
     function _addPlate(arr) {
-      const p = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, 0.1, hw * 2), plateMat);
+      const p = new THREE.Mesh(_plateGeo, _plateMat);
       p.position.set(0, floorY + 0.05, 0); p.visible = false; conGroup.add(p); arr.push(p);
     }
     if (matCount === 2) {
       const s1 = []; corners.forEach(([cx,cz]) => _addCol(s1, cx, cz)); _stages.push(s1);
       const s2 = [];
-      _addBeam(s2, 0, -hw, hw*2, colW); _addBeam(s2, 0, hw, hw*2, colW);
-      _addBeam(s2, -hw, 0, colW, hw*2); _addBeam(s2, hw, 0, colW, hw*2);
+      _addBeam(s2, 0, -_hw, true); _addBeam(s2, 0, _hw, true);
+      _addBeam(s2, -_hw, 0, false); _addBeam(s2, _hw, 0, false);
       _addPlate(s2); _stages.push(s2);
     } else {
       const s1 = []; corners.forEach(([cx,cz]) => _addCol(s1, cx, cz)); _stages.push(s1);
       const s2 = []; mids.forEach(([cx,cz]) => _addCol(s2, cx, cz)); _stages.push(s2);
       const s3 = [];
-      _addBeam(s3, 0, -hw, hw*2, colW); _addBeam(s3, 0, hw, hw*2, colW);
-      _addBeam(s3, -hw, 0, colW, hw*2); _addBeam(s3, hw, 0, colW, hw*2);
+      _addBeam(s3, 0, -_hw, true); _addBeam(s3, 0, _hw, true);
+      _addBeam(s3, -_hw, 0, false); _addBeam(s3, _hw, 0, false);
       _stages.push(s3);
       const s4 = []; _addPlate(s4); _stages.push(s4);
     }
@@ -344,6 +352,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   // SCREEN SHAKE
   // ═══════════════════════════════════════
   let _shakeT = 0, _shakeIntensity = 0;
+  let _entryFrames = 0; // fast camera convergence on first few frames
 
   // ═══════════════════════════════════════
   // STATE
@@ -440,6 +449,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     st.phase = 'slam'; st.timer = 0;
     st.seesawTarget = -0.15 - st.power * 0.45;
     loadedCrate.visible = false;
+    sndLaunch();
 
     if (st.power >= GREEN_MIN) { _shakeT = 0.3; _shakeIntensity = 0.4; }
     else if (st.power >= YELLOW_MIN) { _shakeT = 0.15; _shakeIntensity = 0.15; }
@@ -471,13 +481,14 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     if (st._pg) { const pp = _platformWorldPos(); st._pg.position.copy(pp); }
   }
 
-  function _goFlight() { st.phase = 'flight'; st.timer = 0; }
+  function _goFlight() { st.phase = 'flight'; st.timer = 0; sndCrateFly(); }
 
   function _checkCatchOrMiss() {
     const peakH = st.cratePos.y;
     if (peakH >= _roofY) {
       // HIT → bird's eye
       st.phase = 'birdseye'; st.timer = 0; st.skipRequested = false;
+      sndCrateHit();
       st.delivered++;
       _saveProgress(st.floor, st.delivered);
       const idx = st.delivered - 1;
@@ -490,7 +501,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
       }
     } else {
       // MISS → quick reset (no cinematic)
-      st.phase = 'miss_reset'; st.timer = 0;
+      st.phase = 'miss_reset'; st.timer = 0; sndCrateMiss();
       const pct = Math.round((peakH / _roofY) * 100);
       _banner('MISSED', `Reached ${pct}% of the height needed`);
     }
@@ -500,6 +511,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
 
   function _completeFloor() {
     st.phase = 'complete'; st.timer = 0;
+    sndFloorDone();
     _stages.forEach(s => s.forEach(m => { m.visible = false; }));
     const fi = st.floor;
     if (onFloorComplete) onFloorComplete(fi);
@@ -513,6 +525,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   // UPDATE
   // ═══════════════════════════════════════
   function update(dt, keys) {
+    if (_exitCooldown > 0) _exitCooldown -= dt;
     if (bannerTimer > 0) { bannerTimer -= dt; if (bannerTimer <= 0 && bannerEl) bannerEl.style.opacity = '0'; }
     if (_shakeT > 0) _shakeT -= dt;
 
@@ -685,12 +698,14 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   function getCameraTarget() {
     if (!st.operating) return null;
     const phase = st.phase;
+    // Fast convergence on entry — first 10 frames use high lerp
+    const entryBoost = _entryFrames > 0 ? (--_entryFrames, 0.5) : 0;
 
     // Ready/Jumping/Slam: wide view of the launcher
     if (phase === 'ready' || phase === 'jumping' || phase === 'slam') {
       _calcWideView();
       _camPos.copy(_widePos); _camLook.copy(_wideLook);
-      return { pos: _camPos, lookAt: _camLook, lerp: 0.15 };
+      return { pos: _camPos, lookAt: _camLook, lerp: Math.max(0.15, entryBoost) };
     }
 
     // Pull + Flight: camera follows the crate like a golf ball camera
@@ -744,7 +759,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   // ENTER / EXIT
   // ═══════════════════════════════════════
   function _doEnter(playerGroup) {
-    st.operating = true; st._pg = playerGroup;
+    st.operating = true; st._pg = playerGroup; _entryFrames = 10;
     _buildStages(_roofY, st.required);
     for (let i = 0; i < st.delivered; i++) {
       if (i < _stages.length) _stages[i].forEach(m => { m.visible = true; });
@@ -753,11 +768,14 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     _goReady();
   }
 
+  let _exitCooldown = 0;
   function _doExit() {
     st.operating = false; st.phase = 'idle'; st.seesawTarget = 0;
+    _exitCooldown = 0.5; // prevent immediate re-entry
     _hideMeter(); _hideHint();
     crateMesh.visible = false; loadedCrate.visible = false;
     bullseyeGroup.visible = false;
+    _stages.forEach(s => s.forEach(m => { m.visible = false; }));
     if (st._pg) {
       st._pg.position.set(SEESAW_X + _backDir.x * 5, 0, SEESAW_Z + _backDir.z * 5);
       st._pg = null;
@@ -802,7 +820,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     getCameraTarget,
 
     isNear(pos) {
-      if (st.floor >= 10) return false;
+      if (st.floor >= 10 || _exitCooldown > 0) return false;
       const dx = pos.x - SEESAW_X, dz = pos.z - SEESAW_Z;
       return Math.sqrt(dx * dx + dz * dz) < 8 && Math.abs(pos.y) < 3;
     },
