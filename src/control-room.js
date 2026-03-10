@@ -281,7 +281,7 @@ function _handleInput(dt){
   cr.nearElev=cr.pz<0.08;
 }
 
-// ── Cached data accessors (refreshed once per frame via _refreshCache) ──
+// ── Cached data accessors ──
 function _getStats(){return _cache.stats}
 function _getFloorData(i){return _cache.floors[i]}
 function _getNextTask(){return _cache.nextTask}
@@ -296,6 +296,181 @@ function _wrapText(X,text,x,y,maxW,lineH){
     else line=test;
   }
   if(line)X.fillText(line,x,ly);
+}
+
+// ═══ SHARED DRAW PRIMITIVES ═══
+// Used by both room-view screen and full-screen mode.
+
+function _drawStars(X,ox,oy,w,h,rMul){
+  STARS.forEach(st=>{
+    const twinkle=st.alpha+Math.sin(_t*1.5+st.x*40)*0.1;
+    X.fillStyle=`rgba(200,210,230,${twinkle})`;
+    X.beginPath();X.arc(ox+st.x*w,oy+st.y*h*0.7,st.r*rMul,0,Math.PI*2);X.fill();
+  });
+}
+
+function _drawEarthMoon(X,cx,cy,eR,moonR,moonDist){
+  // Earth
+  X.fillStyle='#0a1628';
+  X.beginPath();X.arc(cx,cy,eR,0,Math.PI*2);X.fill();
+  // Atmosphere glow
+  X.strokeStyle='rgba(60,120,180,0.15)';X.lineWidth=eR>300?4:3;
+  X.beginPath();X.arc(cx,cy,eR+2,Math.PI+0.3,Math.PI*2-0.3);X.stroke();
+  X.strokeStyle='rgba(80,160,220,0.08)';X.lineWidth=eR>300?8:6;
+  X.beginPath();X.arc(cx,cy,eR+5,Math.PI+0.5,Math.PI*2-0.5);X.stroke();
+  // Moon
+  const mAngle=_t*0.15;
+  const mX=cx+Math.cos(mAngle)*moonDist,mY=cy+Math.sin(mAngle)*moonDist*0.3-eR*0.4;
+  X.fillStyle='#8090a8';X.beginPath();X.arc(mX,mY,moonR,0,Math.PI*2);X.fill();
+  X.fillStyle='rgba(100,120,150,0.15)';X.beginPath();X.arc(mX,mY,moonR*1.75,0,Math.PI*2);X.fill();
+}
+
+function _drawTowerWire(X,twrX,twrW,twrBase,flrH,sel,opts){
+  const fs=opts.fontSize||7,bk=opts.bracket||4;
+  const selCol=opts.selColor||CR.blue;
+  const lineCol=opts.lineColor||CR.blueMid;
+  const ghostCol=opts.ghostColor||CR.blueGhost;
+  const fillSel=opts.fillSel||CR.blueMid+'30';
+  const fillNorm=opts.fillNorm||CR.blueFaint+'18';
+  const nameOff=opts.nameOffset||6;
+
+  for(let i=0;i<10;i++){
+    const f=_getFloorData(i);
+    const fy=twrBase-(i+1)*flrH;
+    const isSel=sel===i;
+
+    if(f.stage>0){
+      X.strokeStyle=isSel?selCol:lineCol+'55';
+      X.lineWidth=isSel?1.5:0.7;
+      X.strokeRect(twrX,fy,twrW,flrH-1);
+      const fill=f.stage/5;
+      X.fillStyle=isSel?fillSel:fillNorm;
+      X.fillRect(twrX,fy,twrW*fill,flrH-1);
+      if(f.stage<5){
+        const p=Math.sin(_t*2.5+i)*0.12+0.12;
+        X.fillStyle=`rgba(126,200,238,${p})`;
+        X.fillRect(twrX,fy,twrW*fill,flrH-1);
+      }
+      // Module dots
+      if(opts.modSlots){
+        for(let m=0;m<9;m++){
+          X.fillStyle=m<f.mods?(m%5===1?CR.cream+'33':m%7===3?CR.red+'28':'rgba(255,255,255,0.15)'):CR.whiteFaint+'18';
+          X.fillRect(twrX+opts.modPadX+m*opts.modSpacing,fy+flrH-opts.modOffY,opts.modW,opts.modH);
+        }
+        if(f.stage<5){
+          const stages=['POWER','STRUCTURE','SYSTEMS','FURNISH','ACTIVATE'];
+          X.font=`${opts.stageFont||8}px monospace`;X.fillStyle=CR.whiteFaint;X.textAlign='left';
+          X.fillText(f.stage>=5?'COMPLETE':`STAGE: ${stages[f.stage-1]}`,twrX+opts.modPadX,fy+16);
+        }
+      } else {
+        for(let m=0;m<f.mods;m++){
+          const col=m%5===1?CR.cream+'44':m%7===3?CR.red+'33':CR.blue+'44';
+          X.fillStyle=col;X.fillRect(twrX+3+m*8,fy+flrH-5,6,2);
+        }
+      }
+    } else {
+      X.strokeStyle=ghostCol+'88';X.lineWidth=0.5;
+      X.strokeRect(twrX,fy,twrW,flrH-1);
+    }
+
+    X.font=isSel?`bold ${fs}px monospace`:`${fs}px monospace`;X.textAlign='left';
+    X.fillStyle=isSel?CR.white:(f.stage>0?CR.whiteMid+'88':CR.whiteFaint+'88');
+    X.fillText(f.name,twrX+twrW+nameOff,fy+flrH/2+(fs<10?3:4));
+
+    if(isSel){
+      X.strokeStyle=selCol;X.lineWidth=isSel?1.5:1;
+      X.beginPath();
+      X.moveTo(twrX-2,fy+bk);X.lineTo(twrX-2,fy);X.lineTo(twrX+bk,fy);
+      X.moveTo(twrX+twrW+2,fy+bk);X.lineTo(twrX+twrW+2,fy);X.lineTo(twrX+twrW-bk,fy);
+      X.moveTo(twrX-2,fy+flrH-1-bk);X.lineTo(twrX-2,fy+flrH-1);X.lineTo(twrX+bk,fy+flrH-1);
+      X.moveTo(twrX+twrW+2,fy+flrH-1-bk);X.lineTo(twrX+twrW+2,fy+flrH-1);X.lineTo(twrX+twrW-bk,fy+flrH-1);
+      X.stroke();
+    }
+  }
+}
+
+function _drawStatsPanel(X,x,y,labelSz,valSz,stats){
+  X.font=`bold ${labelSz}px monospace`;X.textAlign='left';
+  X.fillStyle=CR.whiteDim;X.fillText('POP',x,y);
+  X.font=`bold ${valSz}px monospace`;X.fillStyle=CR.white+'cc';
+  X.fillText(stats.population.toString(),x,y+valSz+2);
+
+  const satY=y+valSz+labelSz+12;
+  X.font=`bold ${labelSz}px monospace`;
+  X.fillStyle=stats.satisfaction>50?CR.whiteDim:CR.redDim;
+  X.fillText('SAT',x,satY);
+  X.font=`bold ${Math.round(valSz*0.8)}px monospace`;
+  X.fillStyle=stats.satisfaction>50?CR.blueMid+'cc':CR.red+'cc';
+  X.fillText(stats.satisfaction+'%',x,satY+valSz*0.8+2);
+
+  const crY=satY+valSz*0.8+labelSz+12;
+  X.font=`bold ${labelSz}px monospace`;X.fillStyle=CR.whiteDim;
+  X.fillText('CREDITS',x,crY);
+  X.font=`bold ${Math.round(valSz*0.8)}px monospace`;X.fillStyle=CR.cream+'cc';
+  X.fillText(stats.credits.toString(),x,crY+valSz*0.8+2);
+
+  const acY=crY+valSz*0.8+labelSz+8;
+  X.font=`${labelSz}px monospace`;X.fillStyle=CR.whiteFaint;
+  const dark=10-_cache.active-_cache.building;
+  X.fillText(`${_cache.active} ACTIVE · ${_cache.building} BUILDING`+(dark>0?` · ${dark} DARK`:''),x,acY);
+}
+
+function _drawNextStepPanel(X,x,y,maxW,headerSz,titleSz,textSz,dotW,dotH,dotGap){
+  const nextTask=_getNextTask();
+
+  X.font=`bold ${headerSz}px monospace`;X.fillStyle=CR.blue;X.textAlign='left';
+  X.fillText('NEXT STEP',x,y);
+  X.fillStyle=CR.blueMid+'33';X.fillRect(x,y+4,maxW,1);
+
+  if(nextTask){
+    X.font=`bold ${titleSz}px monospace`;X.fillStyle=CR.blue;
+    X.fillText(`FLOOR ${nextTask.floor+1}`,x,y+22);
+    X.font=`${textSz}px monospace`;X.fillStyle=CR.white+'dd';
+    _wrapText(X,nextTask.text,x,y+22+textSz+8,maxW,textSz+4);
+  }
+
+  const doneCount=_cache.doneCount;
+  X.font=`${Math.max(7,headerSz-2)}px monospace`;X.fillStyle=CR.whiteFaint;
+  X.fillText(`${doneCount}/10 COMPLETE`,x,y+105);
+
+  for(let i=0;i<10;i++){
+    const done=_getTaskDone(i);
+    const isNext=nextTask&&nextTask.floor===i;
+    X.fillStyle=done?CR.blue+'88':(isNext?CR.blue+'44':CR.blueGhost+'88');
+    X.fillRect(x+i*(dotW+dotGap),y+112,dotW,dotH);
+  }
+}
+
+function _drawLogPanel(X,x,y,fontSize,lineH){
+  if(_logLines.length===0)return;
+  X.font=`${fontSize}px monospace`;X.textAlign='left';
+  for(let i=0;i<_logLines.length;i++){
+    const l=_logLines[i];
+    const fadeIn=Math.min(1,l.age/0.5);
+    const fadeOut=l.age>LOG_INTERVAL*3?Math.max(0,1-(l.age-LOG_INTERVAL*3)/2):1;
+    const a=0.6*fadeIn*fadeOut;
+    X.fillStyle=`rgba(144,160,180,${a})`;
+    X.fillText('> '+l.text,x,y-((_logLines.length-1-i)*lineH));
+  }
+}
+
+function _drawHeartbeat(X,x,y,w,freqMul,ampMul){
+  const hbSpeed=1.0+(1-Math.min(Math.max(S.sat,0),100)/100)*2.0;
+  X.strokeStyle=CR.blueFaint+'44';X.lineWidth=1;
+  X.beginPath();
+  for(let lx=0;lx<w;lx++){
+    const ly=Math.sin(lx*0.018*freqMul+_t*hbSpeed)*4*ampMul+Math.sin(lx*0.06*freqMul+_t*hbSpeed*2.2)*2*ampMul;
+    if(lx===0)X.moveTo(x+lx,y+ly);else X.lineTo(x+lx,y+ly);
+  }
+  X.stroke();
+}
+
+function _hitTestTower(mx,my,twrX,twrW,twrBase,flrH,nameW){
+  for(let i=9;i>=0;i--){
+    const fy=twrBase-(i+1)*flrH;
+    if(mx>=twrX-10&&mx<=twrX+twrW+nameW&&my>=fy&&my<=fy+flrH) return i;
+  }
+  return -1;
 }
 
 // ═══ MAIN DRAW ═══
@@ -372,12 +547,10 @@ function _drawRoom(X,W,H){
   X.fillRect(W*0.095,H*0.21,W*0.035,H*0.456);
   for(let i=0;i<9;i++){
     const ry=H*0.224+i*H*0.048;
-    // Feature 4c: Blue LEDs track floor stage
     const flrStg=i<NF?_cache.floors[i].stage:0;
     const blueOn=flrStg>=5?true:(flrStg>0?Math.sin(_t*3+i*0.7)>0:false);
     X.fillStyle=blueOn?'rgba(126,200,238,0.4)':'rgba(40,50,65,0.2)';
     X.fillRect(W*0.1025,ry,4,3);
-    // Red LEDs keep decorative behavior
     const redOn=Math.sin(_t*1.5+i*1.3)>0.4;
     X.fillStyle=redOn?'rgba(221,160,160,0.25)':'rgba(35,40,50,0.15)';
     X.fillRect(W*0.115,ry,4,3);
@@ -401,7 +574,6 @@ function _drawRoom(X,W,H){
 // ═══ SCREEN ═══
 function _drawScreen(X,W,H){
   const cr=S.cr;
-  // Scale screen layout proportionally to canvas
   const sx=W*0.1375,sy=H*0.19,sw=W*0.725,sh=H*0.39;
 
   // Bezel
@@ -424,7 +596,7 @@ function _drawScreen(X,W,H){
   const alpha=Math.min(1,(boot-0.25)/0.5);
   X.fillStyle=CR.bg;X.fillRect(sx,sy,sw,sh);
 
-  // Scanline tint (single pass instead of per-line)
+  // Scanline tint
   X.fillStyle=`rgba(126,200,238,${0.003*alpha})`;
   X.fillRect(sx,sy,sw,sh);
 
@@ -432,29 +604,8 @@ function _drawScreen(X,W,H){
   X.save();
   X.beginPath();X.rect(sx,sy,sw,sh);X.clip();
 
-  // Stars
-  STARS.forEach(st=>{
-    const twinkle=st.alpha+Math.sin(_t*1.5+st.x*40)*0.1;
-    X.fillStyle=`rgba(200,210,230,${twinkle})`;
-    X.beginPath();X.arc(sx+st.x*sw,sy+st.y*sh*0.7,st.r,0,Math.PI*2);X.fill();
-  });
-
-  // Earth — dark navy, top third visible at bottom
-  const eR=sw*0.55,eCx=sx+sw*0.5,eCy=sy+sh+eR*0.67;
-  X.fillStyle='#0a1628';
-  X.beginPath();X.arc(eCx,eCy,eR,0,Math.PI*2);X.fill();
-  // Atmosphere glow
-  X.strokeStyle='rgba(60,120,180,0.15)';X.lineWidth=3;
-  X.beginPath();X.arc(eCx,eCy,eR+2,Math.PI+0.3,Math.PI*2-0.3);X.stroke();
-  X.strokeStyle='rgba(80,160,220,0.08)';X.lineWidth=6;
-  X.beginPath();X.arc(eCx,eCy,eR+5,Math.PI+0.5,Math.PI*2-0.5);X.stroke();
-
-  // Moon — orbiting Earth at a distance
-  const mAngle=_t*0.15;
-  const mDist=eR+35;
-  const mX=eCx+Math.cos(mAngle)*mDist,mY=eCy+Math.sin(mAngle)*mDist*0.3-eR*0.4;
-  X.fillStyle='#8090a8';X.beginPath();X.arc(mX,mY,4,0,Math.PI*2);X.fill();
-  X.fillStyle='rgba(100,120,150,0.15)';X.beginPath();X.arc(mX,mY,7,0,Math.PI*2);X.fill();
+  _drawStars(X,sx,sy,sw,sh,1);
+  _drawEarthMoon(X,sx+sw*0.5,sy+sh+sw*0.55*0.67,sw*0.55,4,sw*0.55+35);
 
   // Header bar
   X.fillStyle=CR.blueGhost+'88';
@@ -463,111 +614,20 @@ function _drawScreen(X,W,H){
   X.fillStyle=CR.blueMid;
   X.fillText('SPACE TOWER — SEGMENT 1',sx+10,sy+11);
 
-  // ── Wireframe tower (left) ──
-  const twrX=sx+20,twrW=80,twrBase=sy+sh-14,flrH=16;
-  const sel=cr.selectedFloor;
+  // Tower wireframe (left)
+  _drawTowerWire(X,sx+20,80,sy+sh-14,16,cr.selectedFloor,{
+    fontSize:7,bracket:4,nameOffset:6,
+  });
 
-  for(let i=0;i<10;i++){
-    const f=_getFloorData(i);
-    const fy=twrBase-(i+1)*flrH;
-    const isSel=sel===i;
+  // Stats (center)
+  _drawStatsPanel(X,sx+sw*0.345,sy+30,8,20,_getStats());
 
-    if(f.stage>0){
-      X.strokeStyle=isSel?CR.blue:CR.blueMid+'55';
-      X.lineWidth=isSel?1.5:0.7;
-      X.strokeRect(twrX,fy,twrW,flrH-1);
-      const fill=f.stage/5;
-      X.fillStyle=isSel?CR.blueMid+'30':CR.blueFaint+'18';
-      X.fillRect(twrX,fy,twrW*fill,flrH-1);
-      if(f.stage<5){
-        const p=Math.sin(_t*2.5+i)*0.12+0.12;
-        X.fillStyle=`rgba(126,200,238,${p})`;
-        X.fillRect(twrX,fy,twrW*fill,flrH-1);
-      }
-      for(let m=0;m<f.mods;m++){
-        const col=m%5===1?CR.cream+'44':m%7===3?CR.red+'33':CR.blue+'44';
-        X.fillStyle=col;X.fillRect(twrX+3+m*8,fy+flrH-5,6,2);
-      }
-    } else {
-      X.strokeStyle=CR.blueGhost+'88';X.lineWidth=0.5;
-      X.strokeRect(twrX,fy,twrW,flrH-1);
-    }
-
-    X.font=isSel?'bold 7px monospace':'7px monospace';X.textAlign='left';
-    X.fillStyle=isSel?CR.white:(f.stage>0?CR.whiteMid+'88':CR.whiteFaint+'88');
-    X.fillText(f.name,twrX+twrW+6,fy+10);
-
-    // Selection brackets
-    if(isSel){
-      X.strokeStyle=CR.blue;X.lineWidth=1;
-      const bk=4;
-      X.beginPath();
-      X.moveTo(twrX-2,fy+bk);X.lineTo(twrX-2,fy);X.lineTo(twrX+bk,fy);
-      X.moveTo(twrX+twrW+2,fy+bk);X.lineTo(twrX+twrW+2,fy);X.lineTo(twrX+twrW-bk,fy);
-      X.moveTo(twrX-2,fy+flrH-1-bk);X.lineTo(twrX-2,fy+flrH-1);X.lineTo(twrX+bk,fy+flrH-1);
-      X.moveTo(twrX+twrW+2,fy+flrH-1-bk);X.lineTo(twrX+twrW+2,fy+flrH-1);X.lineTo(twrX+twrW-bk,fy+flrH-1);
-      X.stroke();
-    }
-  }
-
-  // ── Stats (center column) ──
-  const stats=_getStats();
-  const stX=sx+sw*0.345;
-
-  X.font='bold 8px monospace';X.textAlign='left';
-  X.fillStyle=CR.whiteDim;
-  X.fillText('POP',stX,sy+30);
-  X.font='bold 20px monospace';X.fillStyle=CR.white+'cc';
-  X.fillText(stats.population.toString(),stX,sy+52);
-
-  X.font='bold 8px monospace';
-  X.fillStyle=stats.satisfaction>50?CR.whiteDim:CR.redDim;
-  X.fillText('SAT',stX,sy+70);
-  X.font='bold 16px monospace';
-  X.fillStyle=stats.satisfaction>50?CR.blueMid+'cc':CR.red+'cc';
-  X.fillText(stats.satisfaction+'%',stX,sy+88);
-
-  X.font='bold 8px monospace';X.fillStyle=CR.whiteDim;
-  X.fillText('CREDITS',stX,sy+106);
-  X.font='bold 16px monospace';X.fillStyle=CR.cream+'cc';
-  X.fillText(stats.credits.toString(),stX,sy+124);
-
-  const active=_cache.active;
-  const building=_cache.building;
-  X.font='8px monospace';X.fillStyle=CR.whiteFaint;
-  X.fillText(`${active} ACTIVE · ${building} BUILDING`,stX,sy+145);
-
-  // ── Next Step (right column) ──
-  const nsX=sx+sw*0.569;
-  const nextTask=_getNextTask();
-
-  X.font='bold 9px monospace';X.fillStyle=CR.blue;
-  X.fillText('NEXT STEP',nsX,sy+30);
-  X.fillStyle=CR.blueMid+'33';
-  X.fillRect(nsX,sy+34,sw*0.38,1);
-
-  if(nextTask){
-    X.font='bold 11px monospace';X.fillStyle=CR.blue;
-    X.fillText(`FLOOR ${nextTask.floor+1}`,nsX,sy+52);
-    X.font='13px monospace';X.fillStyle=CR.white+'dd';
-    _wrapText(X,nextTask.text,nsX,sy+72,sw*0.38,17);
-  }
-
-  const doneCount=_cache.doneCount;
-  X.font='7px monospace';X.fillStyle=CR.whiteFaint;
-  X.fillText(`${doneCount}/10 COMPLETE`,nsX,sy+135);
-
-  // Progress dots
-  for(let i=0;i<10;i++){
-    const done=_getTaskDone(i);
-    const isNext=nextTask&&nextTask.floor===i;
-    X.fillStyle=done?CR.blue+'88':(isNext?CR.blue+'44':CR.blueGhost+'88');
-    X.fillRect(nsX+i*14,sy+142,10,4);
-  }
+  // Next Step (right)
+  _drawNextStepPanel(X,sx+sw*0.569,sy+30,sw*0.38,9,11,13,10,4,4);
 
   // Upcoming tasks (faint)
-  let upcoming=[];
-  let foundNext=false;
+  const nsX=sx+sw*0.569;
+  let upcoming=[];let foundNext=false;
   for(let i=0;i<NF;i++){
     if(!_getTaskDone(i)){
       if(!foundNext){foundNext=true;continue}
@@ -577,23 +637,13 @@ function _drawScreen(X,W,H){
   }
   upcoming.forEach((task,idx)=>{
     const ty=sy+162+idx*14;
-    X.font='7px monospace';X.fillStyle=CR.whiteFaint+'88';
+    X.font='7px monospace';X.fillStyle=CR.whiteFaint+'88';X.textAlign='left';
     const txt=`F${task.floor+1}: ${task.text.substring(0,40)}${task.text.length>40?'…':''}`;
     X.fillText(txt,nsX,ty);
   });
 
   // Feature 1: Log lines
-  if(_logLines.length>0){
-    X.font='8px monospace';X.textAlign='left';
-    for(let i=0;i<_logLines.length;i++){
-      const l=_logLines[i];
-      const fadeIn=Math.min(1,l.age/0.5);
-      const fadeOut=l.age>LOG_INTERVAL*3?Math.max(0,1-(l.age-LOG_INTERVAL*3)/2):1;
-      const a=0.6*fadeIn*fadeOut;
-      X.fillStyle=`rgba(144,160,180,${a})`;
-      X.fillText('> '+l.text,sx+10,sy+sh-28-((_logLines.length-1-i)*11));
-    }
-  }
+  _drawLogPanel(X,sx+10,sy+sh-28,8,11);
 
   // Feature 2: RED ALERT text
   if(_redAlertT>1.0){
@@ -614,16 +664,8 @@ function _drawScreen(X,W,H){
     }
   }
 
-  // Heartbeat line (Feature 4a: speed tracks SAT)
-  const hbSpeed=1.0+(1-Math.min(Math.max(S.sat,0),100)/100)*2.0;
-  X.strokeStyle=CR.blueFaint+'44';X.lineWidth=1;
-  X.beginPath();
-  for(let lx=0;lx<sw-16;lx++){
-    const ly=Math.sin(lx*0.018+_t*hbSpeed)*4+Math.sin(lx*0.06+_t*hbSpeed*2.2)*2;
-    if(lx===0)X.moveTo(sx+8+lx,sy+sh-8+ly);
-    else X.lineTo(sx+8+lx,sy+sh-8+ly);
-  }
-  X.stroke();
+  // Heartbeat (Feature 4a)
+  _drawHeartbeat(X,sx+8,sy+sh-8,sw-16,1,1);
 
   X.restore();
   X.globalAlpha=1;
@@ -664,11 +706,9 @@ function _drawConsole(X,W,H){
   if(_pressedBtnT>0){
     const fa=_pressedBtnT/0.3;
     if(_pressedBtn==='red'){
-      // Red glow on first button group
       X.fillStyle=`rgba(220,80,80,${0.3*fa})`;
       X.fillRect(cx+12,cy+3,80,6);
     } else if(_pressedBtn==='gold'){
-      // Gold glow on gold buttons
       X.fillStyle=`rgba(200,180,80,${0.3*fa})`;
       X.fillRect(cx+270,cy+3,24,6);
     }
@@ -832,178 +872,58 @@ function _drawLighting(X,W,H){
 // ═══ FULL-SCREEN ARTBOARD ═══
 function _drawFullScreen(X,W,H){
   const cr=S.cr;
-  // Virtual 1600×900 scaled to canvas
   const vW=1600,vH=900;
   const scaleX=W/vW,scaleY=H/vH;
-  const sc=Math.min(scaleX,scaleY)*1.2; // 120% like prototype
+  const sc=Math.min(scaleX,scaleY)*1.2;
 
   X.save();
   X.translate(cr.fsPanX,cr.fsPanY);
   X.scale(sc,sc);
 
   X.fillStyle=CR.bg;X.fillRect(0,0,vW,vH);
+  X.fillStyle='rgba(126,200,238,0.0015)';X.fillRect(0,0,vW,vH);
 
-  // Scanline tint (single pass)
-  X.fillStyle='rgba(126,200,238,0.0015)';
-  X.fillRect(0,0,vW,vH);
-
-  // Stars
-  STARS.forEach(st=>{
-    const twinkle=st.alpha+Math.sin(_t*1.5+st.x*40)*0.1;
-    X.fillStyle=`rgba(200,210,230,${twinkle})`;
-    X.beginPath();X.arc(st.x*vW,st.y*vH*0.7,st.r*2,0,Math.PI*2);X.fill();
-  });
-
-  // Earth — dark navy, top third visible at bottom
-  const eR=vW*0.5,eCx=vW*0.5,eCy=vH+eR*0.67;
-  X.fillStyle='#0a1628';
-  X.beginPath();X.arc(eCx,eCy,eR,0,Math.PI*2);X.fill();
-  X.strokeStyle='rgba(60,120,180,0.15)';X.lineWidth=4;
-  X.beginPath();X.arc(eCx,eCy,eR+3,Math.PI+0.3,Math.PI*2-0.3);X.stroke();
-  X.strokeStyle='rgba(80,160,220,0.08)';X.lineWidth=8;
-  X.beginPath();X.arc(eCx,eCy,eR+8,Math.PI+0.5,Math.PI*2-0.5);X.stroke();
-
-  // Moon
-  const mAngle=_t*0.15;
-  const mDist=eR+80;
-  const mX=eCx+Math.cos(mAngle)*mDist,mY=eCy+Math.sin(mAngle)*mDist*0.3-eR*0.4;
-  X.fillStyle='#8090a8';X.beginPath();X.arc(mX,mY,8,0,Math.PI*2);X.fill();
-  X.fillStyle='rgba(100,120,150,0.15)';X.beginPath();X.arc(mX,mY,14,0,Math.PI*2);X.fill();
+  _drawStars(X,0,0,vW,vH,2);
+  _drawEarthMoon(X,vW*0.5,vH+vW*0.5*0.67,vW*0.5,8,vW*0.5+80);
 
   // Header
-  X.fillStyle=CR.blueGhost+'66';
-  X.fillRect(0,0,vW,40);
+  X.fillStyle=CR.blueGhost+'66';X.fillRect(0,0,vW,40);
   X.font='bold 14px monospace';X.textAlign='left';
   X.fillStyle=CR.blueMid;
   X.fillText('SPACE TOWER — CONTROL ROOM — SEGMENT 1',28,27);
 
-  // Tower (left) — white wireframe, full height
-  const twrX=80,twrW=200,twrTop=55,twrBot=vH-30;
-  const flrH=(twrBot-twrTop)/10;
-  const sel=cr.selectedFloor;
-  for(let i=0;i<10;i++){
-    const f=_getFloorData(i);const fy=twrBot-(i+1)*flrH;
-    const isSel=sel===i;
-
-    X.strokeStyle=f.stage>0?(isSel?'#ffffff':CR.white+'66'):CR.whiteFaint+'44';
-    X.lineWidth=isSel?2:1;
-    X.strokeRect(twrX,fy,twrW,flrH-2);
-
-    if(f.stage>0){
-      const fill=f.stage/5;
-      X.fillStyle=isSel?'rgba(255,255,255,0.06)':'rgba(255,255,255,0.02)';
-      X.fillRect(twrX,fy,twrW*fill,flrH-2);
-      if(f.stage<5){
-        const p=Math.sin(_t*2.5+i)*0.08+0.08;
-        X.fillStyle=`rgba(255,255,255,${p*0.5})`;
-        X.fillRect(twrX,fy,twrW*fill,flrH-2);
-      }
-      for(let m=0;m<9;m++){
-        X.fillStyle=m<f.mods?(m%5===1?CR.cream+'33':m%7===3?CR.red+'28':'rgba(255,255,255,0.15)'):CR.whiteFaint+'18';
-        X.fillRect(twrX+8+m*21,fy+flrH-15,17,6);
-      }
-      X.font='8px monospace';X.fillStyle=CR.whiteFaint;X.textAlign='left';
-      const stages=['POWER','STRUCTURE','SYSTEMS','FURNISH','ACTIVATE'];
-      X.fillText(f.stage>=5?'COMPLETE':`STAGE: ${stages[f.stage-1]}`,twrX+8,fy+16);
-    }
-
-    X.font=isSel?'bold 12px monospace':'11px monospace';X.textAlign='left';
-    X.fillStyle=isSel?'#ffffff':(f.stage>0?CR.whiteMid+'99':CR.whiteFaint+'88');
-    X.fillText(f.name,twrX+twrW+14,fy+flrH/2+4);
-
-    if(isSel){
-      X.strokeStyle='#ffffff';X.lineWidth=1.5;
-      const bk=8;
-      X.beginPath();
-      X.moveTo(twrX-4,fy+bk);X.lineTo(twrX-4,fy);X.lineTo(twrX+bk,fy);
-      X.moveTo(twrX+twrW+4,fy+bk);X.lineTo(twrX+twrW+4,fy);X.lineTo(twrX+twrW-bk,fy);
-      X.moveTo(twrX-4,fy+flrH-2-bk);X.lineTo(twrX-4,fy+flrH-2);X.lineTo(twrX+bk,fy+flrH-2);
-      X.moveTo(twrX+twrW+4,fy+flrH-2-bk);X.lineTo(twrX+twrW+4,fy+flrH-2);X.lineTo(twrX+twrW-bk,fy+flrH-2);
-      X.stroke();
-    }
-  }
+  // Tower (left)
+  const twrTop=55,twrBot=vH-30,flrH=(twrBot-twrTop)/10;
+  _drawTowerWire(X,80,200,vH-30,flrH,cr.selectedFloor,{
+    fontSize:11,bracket:8,selColor:'#ffffff',lineColor:CR.white,
+    fillSel:'rgba(255,255,255,0.06)',fillNorm:'rgba(255,255,255,0.02)',
+    nameOffset:14,
+    modSlots:true,modPadX:8,modSpacing:21,modOffY:15,modW:17,modH:6,stageFont:8,
+  });
 
   // Stats (center)
-  const stats=_getStats();
-  const stX=460;
-  X.font='bold 11px monospace';X.textAlign='left';
-  X.fillStyle=CR.whiteDim;X.fillText('POPULATION',stX,90);
-  X.font='bold 48px monospace';X.fillStyle=CR.white+'cc';
-  X.fillText(stats.population.toString(),stX,140);
+  _drawStatsPanel(X,460,90,11,48,_getStats());
 
-  X.font='bold 11px monospace';
-  X.fillStyle=stats.satisfaction>50?CR.whiteDim:CR.redDim;
-  X.fillText('SATISFACTION',stX,185);
-  X.font='bold 36px monospace';
-  X.fillStyle=stats.satisfaction>50?CR.blueMid+'cc':CR.red+'cc';
-  X.fillText(stats.satisfaction+'%',stX,225);
-
-  X.font='bold 11px monospace';X.fillStyle=CR.whiteDim;
-  X.fillText('CREDITS',stX,270);
-  X.font='bold 36px monospace';X.fillStyle=CR.cream+'cc';
-  X.fillText(stats.credits.toString(),stX,310);
-
-  const active=_cache.active;
-  const building=_cache.building;
-  X.font='11px monospace';X.fillStyle=CR.whiteFaint;
-  X.fillText(`${active} ACTIVE · ${building} BUILDING · ${10-active-building} DARK`,stX,355);
-
-  // Next Step (right) — 3x size
+  // Next Step (right)
   const nsX=900;
-  const nextTask=_getNextTask();
-  X.font='bold 42px monospace';X.fillStyle=CR.blue;
-  X.fillText('NEXT STEP',nsX,110);
-  X.fillStyle=CR.blueMid+'33';X.fillRect(nsX,120,600,2);
-
-  if(nextTask){
-    X.font='bold 48px monospace';X.fillStyle=CR.blue;
-    X.fillText(`FLOOR ${nextTask.floor+1}`,nsX,185);
-    X.font='36px monospace';X.fillStyle=CR.white+'dd';
-    _wrapText(X,nextTask.text,nsX,240,600,48);
-  }
-
-  const doneCount=_cache.doneCount;
-  X.font='18px monospace';X.fillStyle=CR.whiteFaint;
-  X.fillText(`${doneCount}/10 COMPLETE`,nsX,440);
-  for(let i=0;i<10;i++){
-    const done=_getTaskDone(i);
-    const isNext=nextTask&&nextTask.floor===i;
-    X.fillStyle=done?CR.blue+'88':(isNext?CR.blue+'33':CR.blueGhost+'66');
-    X.fillRect(nsX+i*44,460,36,10);
-  }
+  _drawNextStepPanel(X,nsX,88,600,42,48,36,36,10,8);
 
   // Full task list
   for(let i=0;i<NF;i++){
     const ty=510+i*42;
     const done=_getTaskDone(i);
+    const nextTask=_getNextTask();
     const isCurrent=nextTask&&nextTask.floor===i;
-    X.font=isCurrent?'bold 16px monospace':'14px monospace';
+    X.font=isCurrent?'bold 16px monospace':'14px monospace';X.textAlign='left';
     X.fillStyle=done?CR.blueMid+'55':(isCurrent?CR.white:CR.whiteFaint+'88');
     X.fillText(`${done?'✓':isCurrent?'→':'·'}  F${i+1}  ${TASK_TEXT[i]}`,nsX,ty);
   }
 
-  // Feature 1: Log lines (full-screen)
-  if(_logLines.length>0){
-    X.font='14px monospace';X.textAlign='left';
-    for(let i=0;i<_logLines.length;i++){
-      const l=_logLines[i];
-      const fadeIn=Math.min(1,l.age/0.5);
-      const fadeOut=l.age>LOG_INTERVAL*3?Math.max(0,1-(l.age-LOG_INTERVAL*3)/2):1;
-      const a=0.6*fadeIn*fadeOut;
-      X.fillStyle=`rgba(144,160,180,${a})`;
-      X.fillText('> '+l.text,40,vH-70-((_logLines.length-1-i)*20));
-    }
-  }
+  // Log lines
+  _drawLogPanel(X,40,vH-70,14,20);
 
-  // Heartbeat (Feature 4a: speed tracks SAT)
-  const hbSpeedFS=1.0+(1-Math.min(Math.max(S.sat,0),100)/100)*2.0;
-  X.strokeStyle=CR.blueFaint+'33';X.lineWidth=1;
-  X.beginPath();
-  for(let lx=0;lx<vW-40;lx++){
-    const ly=Math.sin(lx*0.008+_t*hbSpeedFS*0.8)*8+Math.sin(lx*0.03+_t*hbSpeedFS*2)*3;
-    if(lx===0)X.moveTo(20+lx,vH-30+ly);else X.lineTo(20+lx,vH-30+ly);
-  }
-  X.stroke();
+  // Heartbeat
+  _drawHeartbeat(X,20,vH-30,vW-40,0.44,2);
 
   X.restore();
 
@@ -1019,36 +939,23 @@ export function crClick(mx,my){
   if(cr.phase<3)return;
 
   if(cr.fullScreen){
-    // Full-screen click detection
     const vW=1600,vH=900;
     const W=innerWidth,H=innerHeight;
-    const scaleX=W/vW,scaleY=H/vH;
-    const sc=Math.min(scaleX,scaleY)*1.2;
+    const sc=Math.min(W/vW,H/vH)*1.2;
     const vmx=(mx-cr.fsPanX)/sc;
     const vmy=(my-cr.fsPanY)/sc;
-    const twrX=80,twrW=200,twrTop=55,twrBase=vH-30,flrH=(vH-30-twrTop)/10;
-    for(let i=9;i>=0;i--){
-      const fy=twrBase-(i+1)*flrH;
-      if(vmx>=twrX-10&&vmx<=twrX+twrW+100&&vmy>=fy&&vmy<=fy+flrH){
-        cr.selectedFloor=cr.selectedFloor===i?-1:i;return;
-      }
-    }
-    cr.selectedFloor=-1;
+    const twrTop=55,twrBot=vH-30,flrH=(twrBot-twrTop)/10;
+    const hit=_hitTestTower(vmx,vmy,80,200,vH-30,flrH,100);
+    cr.selectedFloor=hit>=0&&cr.selectedFloor===hit?-1:hit;
     return;
   }
 
   // Room-view click detection (screen tower area)
   const C=document.getElementById('gameCanvas');
   const W=C.width,H=C.height;
-  const sx=W*0.1375,sy=H*0.19,sw=W*0.725,sh=H*0.39;
-  const twrX=sx+20,twrW=80,twrBase=sy+sh-14,flrH=16;
-  for(let i=9;i>=0;i--){
-    const fy=twrBase-(i+1)*flrH;
-    if(mx>=twrX-10&&mx<=twrX+twrW+80&&my>=fy&&my<=fy+flrH){
-      cr.selectedFloor=cr.selectedFloor===i?-1:i;return;
-    }
-  }
-  cr.selectedFloor=-1;
+  const sx=W*0.1375,sy=H*0.19,sh=H*0.39;
+  const hit=_hitTestTower(mx,my,sx+20,80,sy+sh-14,16,80);
+  cr.selectedFloor=hit>=0&&cr.selectedFloor===hit?-1:hit;
 }
 
 // ═══ DETAIL PANEL (drawn on canvas) ═══

@@ -1,44 +1,30 @@
-# CLAUDE.md — Space Tower (Sim)
+# CLAUDE.md — Space Tower
 
 ## What This Is
 
-Space Tower is a tower-building game where you ARE the builder — a physically strong human in a hardhat constructing a space elevator by hand. The game has four surfaces: the Exterior (third-person climbing/building on the tower's outside), the Sim (cross-section management view — this repo), the Restaurant (hunger refill + RGB threshold on floor 5), and the RGB (first-person LLM-powered immersive experience). All four are views of the same tower, experienced by the same character.
+Space Tower is a tower-building game where you ARE the builder — a physically strong human in a hardhat constructing a space elevator by hand. The game runs as a single-page web app with multiple interconnected modes: a 3D title screen and exterior (Three.js), a 2D side-on sim interior (Canvas 2D), a basement Control Room, and eventual connection to the RGB (LLM-powered immersive experience). One tower, one character, multiple cameras.
 
-This repo is **the Sim** — the resource management and tower interior layer.
+This repo contains **everything** — the title/exterior, the sim, and the control room all live here. The RGB is a separate repo (`space-tower-rgb`).
 
-The first 10-floor segment is called "Goodbye Earth" and explores departure and loss. It has a three-act narrative structure: Build (floors 1–4), Discover (floors 5–8 with two set-piece events), Prove (floors 9–10 with The Keeper).
-
----
-
-## The Four Surfaces
-
-1. **The Exterior** (`space-tower-exterior`): Third-person, Three.js. Climb the tower's outside, place structural elements. Title screen zoom lands here.
-2. **The Sim** (`space-tower`, this repo): Side-on cross-section. Canvas 2D. Manage interior — modules, resources, NPCs.
-3. **The Restaurant**: Floor 5. Player goes here because they're hungry. Transitions to first-person 3D. RGB threshold.
-4. **The RGB** (`space-tower-rgb`): First-person, LLM-powered. Self-contained space the player crosses into. Does NOT bleed back into the sim.
-
-**The RGB boundary is sacred.** The sim stays handcrafted and deterministic. The RGB is a separate world you enter through doors. The only exception: each segment's mayor (top floor) is LLM-powered inside the sim — a rare, special character who feels fundamentally different from every scripted NPC around them.
+The first 10-floor segment is called "Goodbye Earth" and explores departure and loss. Three-act structure: Build (floors 1–4), Discover (floors 5–8 with The Reckoning), Prove (floors 9–10 with The Keeper).
 
 ---
 
-## Segment 1: Three-Act Structure
+## Modes & Transitions
 
-### Act 1: Build (Floors 1–4)
-Learn the game. Place modules, manage resources, talk to static NPCs. No LLM. The world is deterministic.
+1. **Title Screen** — Three.js. Night city, orbital Earth view, constellation clicking. Mouse-orbit camera. "New Game" / "Continue" enter the transition.
+2. **Exterior** — Third-person. Three.js. **The primary construction layer.** Player physically builds the tower: launching crates via the scaffolding seesaw, climbing the structure, driving the bulldozer. This is where floors get built. Tab key or walking through the door enters the sim.
+3. **Sim** — Side-on cross-section. Canvas 2D. **The interior you unlock by building outside.** Explore floors you constructed, discover what your building created — NPCs, economy, story. The platforming and traversal are a strength (charged jump, wall slide, drop-through-floors). Tab key or walking out the door returns to exterior.
+4. **Control Room** — Basement (Floor -1). Canvas 2D. Perspective room with console screen showing tower status, log quips, interactive buttons. Reached via elevator.
+5. **The RGB** (separate repo) — First-person LLM-powered experience. Not yet wired to this repo.
 
-### Act 2: Discover (Floors 5–8)
-**Floor 5 — The Restaurant.** Hunger pulls the player here. BYOK moment — connect your LLM. First RGB experience. The world is alive.
-
-**Floor 8 — The Reckoning.** Builders vs. Suits mini-game. Who really runs the tower? The player is a builder — they fight alongside their people. Outcome affects political power and The Keeper's disposition. Designed to be delightful and replayable.
-
-### Act 3: Prove (Floors 9–10)
-**Floor 10 — The Keeper.** The first mayor. LLM-powered, lives on Command floor. Knows everything about your tower. Gates passage to Segment 2 via a conversation/puzzle/debate. Difficulty scales inversely with tower health — thriving tower = near-instant concession, struggling tower = genuine battle of ideas. All players can win.
+Transitions between modes use `localStorage` flags + `location.reload()`. The title screen manages exterior activation via `skipToExterior()`. Sim ↔ Exterior use `spacetower_gotoExterior`. Dev navigation uses `spacetower_devGoto` with values: `interior`, `exterior`, `dozer`, `control-room`.
 
 ---
 
 ## Tech Stack
 
-**Vanilla JS + Canvas 2D.** No framework. No React (in package.json but unused — legacy from Vite scaffolding, safe to remove). Vite is dev server/bundler only.
+**Vanilla JS + Canvas 2D + Three.js.** Vite for dev/build. Tone.js + @tonejs/midi for music. Three.js for all 3D (title, exterior, crane, bulldozer, scaffolding).
 
 ```
 npm run dev    → starts Vite dev server
@@ -51,123 +37,202 @@ npm run build  → production bundle
 
 ```
 src/
-  state.js        (36 lines)  — Global state object S, zoom, resource engine
-  constants.js    (31 lines)  — Dimensions, physics, seeded RNG, color lerp
-  floors.js       (84 lines)  — 10 floor definitions, modules, themes, object/NPC data
-  npcs.js         (95 lines)  — Name pools, appearance palettes, dialogue trees
-  world.js        (49 lines)  — World generation (floors, stairs, objects, NPCs, suits, cranes)
-  main.js        (154 lines)  — Game loop, player physics, elevator state machine, NPC AI
-  render.js      (567 lines)  — THE BIG ONE. Sky, parallax, tower, characters, modules, prompts
-  panel.js        (95 lines)  — Build panel (desktop + mobile), module placement/selling
-  input.js        (27 lines)  — Keyboard + touch input, zoom slider
-  save.js         (32 lines)  — localStorage save/load (key: spacetower_v9c)
-  sound.js        (73 lines)  — Web Audio API synth, procedural SFX, ambient drone
-  compendium.js  (205 lines)  — Character collection UI, mini-sprite renderer, dialogue log
-index.html       (149 lines)  — All CSS (inline <style>), DOM structure, UI layout
+  state.js            (103 lines)  — Global state S, zoom, buildout engine, module utilities
+  constants.js         (44 lines)  — Dimensions, physics, seeded RNG, color lerp, reckoning constants
+  floors.js           (179 lines)  — 10 floor definitions, 3 buildout stages each, visual themes, objects
+  npcs.js             (117 lines)  — Name pools, palettes, dialogue trees (6 types), Gene, floor leaders
+  world.js             (62 lines)  — World gen: floors, stairs, objects, NPCs (per-floor config), Gene, aliens
+  game-init.js        (718 lines)  — THE BIG ONE. Game loop, player physics, economy, bulldozer/crane driving,
+                                      elevator, NPC AI, arrivals, activations, wall slide/jump, all input handling
+  render.js          (2330 lines)  — Canvas rendering. Sky, parallax, tower, characters, modules, reckoning HUD,
+                                      keeper overlay, particles, buildout reveal, bulldozer, terrain, RGB door
+  panel.js            (185 lines)  — Build panel (desktop + mobile), module placement/selling, HUD
+  input.js             (22 lines)  — Keyboard + touch input, zoom slider
+  save.js             (103 lines)  — localStorage save/load (key: spacetower_v14), migration from older saves
+  sound.js            (161 lines)  — Web Audio synth, 30+ procedural SFX, ambient drone, bulldozer/door hum
+  music.js            (566 lines)  — Tone.js MIDI playback, playlist from /public/midi/, shuffle, volume, radio state
+  radio-ui.js         (198 lines)  — Radio widget: volume knob, track name, play/pause, scrub bar
+  compendium.js       (205 lines)  — Character collection UI, mini-sprite renderer, dialogue log
+  reckoning.js        (633 lines)  — Floor 8 Builders vs Suits mini-game, all phases, AI, scoring, color pick
+  keeper.js           (566 lines)  — Floor 10 Keeper: LLM + scripted paths, zoom state machine, chat UI, BYOK
+  control-room.js    (1100 lines)  — Basement: perspective room, console screen, tower status, quips, buttons, jumping
+
+  title/
+    title-main.js      (569 lines)  — Title entry point: renderer, scene, camera, orbit, input, transitions
+    title-city.js     (1350 lines)  — Procedural city: buildings, tower mesh, stars, hover, Earth, moon, sky
+    title-exterior.js (1701 lines)  — Player character, WASD, climbing, ladders, beams, collision, NPC workers
+    title-ui.js        (311 lines)  — Title screen DOM: menus, buttons, dev nav, camera slider, arrival text
+    title-transition.js(293 lines)  — Forward/reverse transition between title orbit and exterior gameplay
+    title-constellation.js(162 lines) — Star constellation clicking system
+    third-person-camera.js(159 lines) — Critically-damped spring camera, orbit, collision raycasting
+    playable-crane.js  (760 lines)  — Tower crane: cab, boom, trolley, winch, pendulum physics, launch mechanic
+    playable-bulldozer.js(607 lines) — Driveable bulldozer: terrain deformation, blade physics, dust particles
+    scaffolding-game.js(915 lines)  — Seesaw launch mini-game: crate physics, bullseye targets, floor building
+
+index.html          (210 lines)  — All CSS (inline <style>), DOM structure, UI layout, keeper chat DOM
 ```
 
-Total: ~1450 lines JS + 149 lines HTML.
+Total: ~14,600 lines JS + 210 lines HTML.
 
 ---
 
 ## Architecture
 
 ### State
-Single mutable object `S` from `state.js`. No immutability, no reducers. Everything reads/writes directly.
+Single mutable object `S` from `state.js`. No framework.
 
 Key paths:
-- `S.player` — position, velocity, state, appearance, hunger, political power
-- `S.floors[]` — floor collision data
-- `S.modules[floor][block]` — placed buildables (null = empty)
-- `S.npcs[]` / `S.workers[]` — NPCs and rooftop workers
-- `S.res` — `{energy, credits, population}`
-- `S.sat` — satisfaction (0–100)
+- `S.player` — position, velocity, state, appearance, wallSlide, crane, charging
+- `S.floors[]` — floor collision data (sorted by Y)
+- `S.modules[fi][bi]` — placed buildables (null = empty, or `{id, nm, cost, ...}`)
+- `S.buildout[fi]` — `{stage: 0–5, revealT}` per floor
+- `S.npcs[]` / `S.workers[]` — NPCs (with arrival state machine) and rooftop workers
+- `S.credits` / `S.sat` / `S.food` / `S.builderHappiness` — economy
+- `S.foodChainComplete` / `S.cornerStoreUpgraded` / `S.bulldozer` — progression flags
 - `S.cam` — camera position + target
 - `S.litFloors` — Set of unlocked floor indices
+- `S.reckoning` — full reckoning state (phase, map, scores, builders, suits, color)
+- `S.keeper` — keeper encounter state (active, zoom, LLM mode, history, resolved)
+- `S.cr` — control room state (phase, position, screen, fullscreen, jumping)
+- `S.fx` — screen effects (shake, flash, tint)
+- `S.particles[]` — particle system
+- `S.terrain` — Float32Array(800) heightmap for exterior ground
 - `S.compendium.entries` — discovered character data
 
 ### Game Loop
 `requestAnimationFrame` → `update()` → `draw()` → `renderPanel()`
 
-### World Generation
-`genWorld()` in world.js. Seeded RNG (`sr()`, `ri()`, `pk()`). Same seed = same layout.
+Control room has its own update path inside `update()` — when `S.cr.active`, the sim loop is skipped entirely.
 
-### Rendering
+### World Generation
+`genWorld()` in world.js. Seeded RNG (`sr()`, `ri()`, `pk()`). Same seed = same layout. Per-floor NPC config controls spawn types and counts.
+
+### Rendering (Sim)
 Canvas 2D. No sprites. Procedural drawing. Parallax via camera transform nesting:
 - City skyline: 0.35x
 - Treeline: 0.6x
 - Tower + characters: 1x
 
+### Rendering (Title/Exterior)
+Three.js. Vertex-colored merged geometries (no textures except crate labels). Fog + skybox transitions. Third-person camera with spring physics. All 3D objects are procedurally built in JS.
+
 ### UI Split
-Canvas (top 58%) for game world. DOM (bottom 42%) for build panel, elevator, compendium, HUD. Mobile: touch controls + tabbed panel.
+Canvas (top ~68%) for game world. DOM (bottom ~32%) for build panel, elevator, compendium, HUD. Mobile: touch controls + tabbed panel.
 
 ---
 
-## Player-Level Resources
+## Economy System
 
-### Hunger
-- 0–100, starts full. Decays ~1 per 15 seconds.
-- Refills at Floor 5 restaurant.
-- < 30: movement slows, screen dims. = 0: significant penalties.
-- Never kills. Pulls player toward Floor 5 (RGB threshold).
+### Food Chain
+- Floor 1 diner (right flank) produces food at stage 4+
+- Floor 2 planters grow through 4 stages (~30s each), produce food at stage 4
+- Corner store upgradeable for +1 food
+- Bunks on floor 1 consume food
+- Surplus → happiness, deficit → happiness drain
+- `foodChainComplete` triggers when diner active + 2 mature planters
 
-### Political Power
-Composite stat. How much the tower trusts you. Multiplier, not spendable.
+### Builder Happiness
+- Rises from: food surplus, residential placement, floor activations, corner store upgrade
+- Falls from: food deficit, residential demolition, mature planter removal
+- Threshold (20) + foodChainComplete → bulldozer unlock
 
-**Inputs:** hunger, satisfaction, NPC conversations, module choices, restaurant visit recency, Floor 8 outcome.
-
-**Outputs (MVP):** credit income multiplier (0.5x–1.5x), The Keeper's disposition.
-
-**Post-MVP:** NPC dialogue depth, funding costs, ambient behavior.
+### Bulldozer
+- Unlocked by happiness + food chain
+- Drives outside tower, terrain deformation via Float32Array heightmap
+- Blade-down digs at current position, piles ahead
+- Bounce off tower walls, dust particles
 
 ---
 
 ## Key Systems
 
 ### The Block System
-12 blocks per floor. `PG=300`. Blocks 3/7/11 = windows (`isWinBlock`). Block 6 = elevator (`isElevBlock`). 9 buildable per floor.
+12 blocks per floor. `PG=300`. Blocks 3, 11 = windows (`isWinBlock`). Block 6 = elevator (`isElevBlock`). Blocks 5, 7 = flank blocks (`isFlankBlock`) — fixed identity (corner store, diner, etc.). 7 buildable per floor.
 
-### Module System
-`FD[]` in floors.js. Each module: `{id, nm, ic, col, cost, prod, sat, sell, desc, eff?}`. Stored in `S.modules[fi][bi]`. `recalc()` updates totals. Credit income modified by political power multiplier.
+### Buildout System
+**Exterior builds floors. Interior reveals them.** Floors are physically constructed on the exterior (scaffolding seesaw launches crates onto the roof, which builds the 3D structure). When a floor is built outside, its interior becomes explorable in the sim.
 
-### Floor 5: The Restaurant
-RGB threshold. In the sim: normal floor with modules/NPCs. Special zone triggers transition to 3D restaurant interior (page navigation, state via localStorage).
+Each floor has 3 interior stages (STAGES array in floors.js). These are discovery moments — the player walks through and sees what changed. Stages: Power On → Structure → Activate. Stage 3 triggers activation effects (per-floor particles, sounds, NPC arrivals). The interior platforming (charged jump, wall slide, drop-through-floors) is a core strength — traversing the tower should feel athletic and fun, not like walking to waypoints.
 
-### Floor 8: The Reckoning
-Builders vs. Suits mini-game. Triggers when Floor 8 is funded. Outcome feeds political power and Keeper context. Designed to be replayable and delightful. Exact mechanics TBD — principles: physical, clear outcome, identity-driven (not good vs. bad).
+**Note: The codebase currently has 5 stages. Reducing to 3 is a planned change — see MVP spec.**
 
-### Floor 10: The Keeper
-The only LLM-powered character in the sim. Mayor of Segment 1. Corporate Merlin — suit with a too-long beard, walking stick that could be a staff, stars on his tie. Way too poetic about leaving Earth. Gates Segment 2 via conversation/debate. Difficulty scales with tower health. Fed full game context via BYOK connection.
-
-### NPC Types
-| Type | Code | Renderer | Features |
-|------|------|----------|----------|
-| Casual human | `c` | `drawCasual()` | genAppearance(), skin/hair/clothing, male/female |
-| Business | `b` | `drawBiz()` | Suit palette, springy walk |
-| Construction worker | `w` | `drawWorker()` | Orange vest, hardhat |
-| Alien | `a` | `drawBlob()` | Single eye, antenna, bright colors |
-
-All have `convo` (3 dialogue functions) and `ci` (conversation index). Sequential: greeting → context → the real thing. The Keeper breaks this pattern — he has infinite dialogue via LLM.
-
-### Character Drawing
-- Characters: flat color fills. No gradients. Deliberate.
-- Modules: detailed, animated. Smoke, charge, growing plants.
-- The contrast is intentional.
+### Floor Flanks
+Each floor has named left/right flanks (blocks 5 and 7): lobby-desk, corner-store, diner, seed-bank, host-stand, pharmacy, armory, gift-shop, comms-closet, etc. These are fixed identities drawn as part of the floor.
 
 ### Elevator
-State machine: `idle` → `closing` → `traveling` (30 frames) → `opening` → `idle`.
+State machine: `idle` → `closing` → `traveling` (30 frames) → `opening` → `idle`. Includes Control Room (B) as basement destination.
 
-### Satisfaction Decay
-Every 180 frames. Rate = `0.3 + litFloors * 0.15`. Feeds political power.
+### NPC Arrival System
+NPCs don't exist on a floor until it reaches stage 5. Then they queue, walk through the lobby door, ride the elevator, and walk to their destination. State machine: `queue` → `entering` → `riding` → `arriving` → `done`.
 
-### Save System
-localStorage `spacetower_v9c`. Modules, lit floors, credits, satisfaction, compendium. Needs hunger/PP/Floor 8 outcome once implemented. Auto-saves every ~60 seconds. Also read by other surfaces via localStorage.
+### The Reckoning (Floor 8)
+Builders vs. Suits. Triggers when Floor 8 (Storage) hits stage 5 and all floors have stage ≥ 1. Contested floors: 6 (Observation), 7 (Storage), 8 (Observatory). Phases: INTRO → COUNTDOWN → ACTIVE → FLOOD → RESULT → COLOR_PICK → DONE.
 
-### Sound
-Web Audio oscillator synth. Procedural SFX + altitude-aware ambient drone.
+- Player claims blocks by standing on them (150 frames)
+- 12 builder AI, 18 suit AI (6 squads of 3)
+- Suits are wave-locked (bottom to top), faster claim time (45 frames)
+- Builders are slower (210 frames) but can go anywhere
+- FLOOD phase spawns 30 civilian NPCs (population explosion)
+- Post-reckoning: color picker (8 colors), rematch bell, color wheel station
+- Gene is hidden during reckoning, returns after with injected dialogue
 
-### Compendium
-Character collection. Mini canvas sprites, dialogue history, type filters. 36 discoverable names.
+### The Keeper (Floor 10)
+LLM-powered or scripted fallback. Proximity auto-trigger with zoom state machine (idle → zooming_in → zoomed → zooming_out). Camera locks to desk area.
+
+- **LLM path**: Reads BYOK credentials from `localStorage('rgb_llm_connection')`. Supports OpenRouter (OpenAI-compatible) and direct Anthropic API. Builds system prompt with tower context (health score, floors, satisfaction, reckoning outcome). Chat UI overlaid on canvas. Resolves when model outputs `[RESOLVED]` token.
+- **Scripted path**: 5 lines of dialogue adapting to tower state. Typewriter effect. Auto-zoom-out on return visits.
+
+### Control Room (Basement)
+4-phase entry: black → elevator doors open → walk toward screen → interactive. Canvas-rendered perspective room with:
+- Wireframe tower diagram (clickable floors)
+- Stats: population, satisfaction, credits
+- "Next Step" panel showing current build task
+- Full-screen monitor toggle (F key) with pannable artboard
+- Log quips (contextual + generic, rotating)
+- Red button (fake alarm), gold button (+1 credit, once per visit)
+- Jump-on-console gag (glitch + quip)
+- SAT-responsive heartbeat line, low-SAT screen flicker, zero-credit glitch
+- Floor LEDs on side racks track buildout stage
+
+### Music System
+Tone.js + @tonejs/midi. MIDI files in `/public/midi/`. Filtered by `skip.txt`. Artist metadata embedded. Shuffle mode. Volume control. State persists across mode transitions via `localStorage('spacetower_music')`.
+
+### Radio Widget
+Lower-right corner. Volume knob (click-drag), track name + artist, play/pause, scrub bar. Mountable to different DOM containers (`#ext-radio` for exterior, default for sim).
+
+### Exterior Systems
+- **Player**: WASD movement, charged jump, wall slide + wall jump, ladder climbing, sprint
+- **Tower**: 4-corner structural columns, perimeter beams as one-way platforms, windows, roof plate
+- **Crane**: Full playable tower crane. Boom rotation, trolley extension, winch, pendulum physics, charge-and-launch mechanic, 20-projectile pool
+- **Bulldozer**: Driveable. W/S forward/reverse, A/D turn, F blade toggle, terrain deformation
+- **Scaffolding Game**: Seesaw launch. Jump on one end to fling crate toward bullseye on roof. 3-beat camera. 2 crates per floor (early), 4 per floor (late). Builds floors in the 3D tower.
+- **NPCs**: Semi-circular patrol workers on ground, business people on sidewalk
+- **Construction site**: Fence, porta-potties, material piles, scaffolding
+
+---
+
+## Player Movement
+
+### Sim (2D)
+- WASD/arrows: walk, climb stairs, enter elevator
+- Space/W: charged jump (hold to charge, release to jump). Zoom pulls back during charge.
+- S: charged drop (hold to charge, release to drop through floors)
+- Wall slide: stick to tower walls when descending. Cap fall speed to 1.5.
+- Wall jump: jump away from wall with horizontal impulse
+- Jump flip: cosmetic flip animation on jumps exceeding 50% max height
+- Sprint: Shift key doubles speed
+- E: interact (build stages, NPCs, objects, elevator, crane, bulldozer, door)
+- F: toggle suit pickup
+- Tab: switch to exterior
+
+### Exterior (3D)
+- WASD: third-person movement relative to camera
+- Space: charged jump (hold → higher)
+- Shift: sprint (2.5x speed)
+- Ladders: walk into tower face to grab, W/S to climb, A/D to shimmy, Space to dismount
+- Beams: one-way platforms (jump through from below)
+- E: interact (crane cab, bulldozer, door)
+- Tab: switch to sim
 
 ---
 
@@ -175,8 +240,8 @@ Character collection. Mini canvas sprites, dialogue history, type filters. 36 di
 
 | Constant | Value | Meaning |
 |----------|-------|---------|
-| `TW` | 3600 | Tower width |
-| `FH` | 160 | Floor height |
+| `TW` | 3600 | Tower width (sim) |
+| `FH` | 160 | Floor height (sim) |
 | `FT` | 12 | Floor slab thickness |
 | `NF` | 10 | Number of floors |
 | `PG` | 300 | Block width |
@@ -187,7 +252,31 @@ Character collection. Mini canvas sprites, dialogue history, type filters. 36 di
 | `TL` / `TR` | -1800 / 1800 | Tower edges |
 | `ELEV_X` | 150 | Elevator center |
 | `GRAV` | 0.5 | Gravity per frame |
-| `PH` | 0.42 | Panel height fraction |
+| `PH` | 0.32 | Panel height fraction |
+| `TERRAIN_RES` | 800 | Terrain heightmap resolution |
+| `RK_ACTIVE_T` | 5400 | Reckoning active phase (90 seconds) |
+
+---
+
+## Save System
+
+localStorage `spacetower_v14`. Migrates from v11–v13. Saves: buildout stages, modules (with growStage), credits, satisfaction, food, builderHappiness, foodChainComplete, cornerStoreUpgraded, terrain heightmap, bulldozer state, reckoning (played, outcome, map, color), keeper (spoken, exchange, resolved), compendium, panelFloor. Auto-saves every 60 seconds.
+
+The exterior syncs buildout to the sim save via `_syncBuildoutToSave()`.
+
+---
+
+## NPC Types
+
+| Type | Code | Features |
+|------|------|----------|
+| Casual human | `c` | genAppearance(), skin/hair/clothing, male/female |
+| Business | `b` | Suit palette, springy walk, periodic jumps |
+| Construction worker | `w` | Orange vest, hardhat (rooftop + indoor variants) |
+| Alien | `a` | Single eye, antenna, bright colors (3 max, converted from casuals) |
+| Gene | `b` (isGene) | Recurring on floors 1,3,5,7. Hidden during reckoning. Keeper foreshadowing. |
+
+All have `convo` (3 dialogue functions) and `ci` (conversation index). Sequential: greeting → context → the real thing.
 
 ---
 
@@ -196,49 +285,44 @@ Character collection. Mini canvas sprites, dialogue history, type filters. 36 di
 ### Code Style
 Terse constants (`S`, `X`, `TW`), descriptive functions (`drawCasual`, `canAfford`). Semicolons. Single quotes. Dense formatting. ES modules, named exports, `'use strict'`.
 
-### Adding a Module
-1. Add to `FD[floor].mods` (floors.js)
-2. Add drawing case in `drawMod()` (render.js)
-3. Done. `recalc()`, panel, save/load work automatically.
+### Adding a Floor Stage
+1. Define in `STAGES[floor]` (floors.js)
+2. Activation effects in `triggerActivation()` (game-init.js)
+3. Done. Build interaction, save/load, reveal animation work automatically.
 
 ### Adding an NPC Type
 1. Name pool + dialogue in npcs.js
-2. Spawn logic in `genWorld()` (world.js)
+2. Spawn logic in `FLOOR_NPCS` config + `genWorld()` (world.js)
 3. Draw function in render.js
-4. Add to render sorting (render.js ~534-546)
-5. Sprite in `_drawSprite()` (compendium.js)
-
-### Adding Player Resources
-1. Add to `S.player` (state.js)
-2. Decay/update in `update()` (main.js)
-3. Display in index.html + panel.js/render.js
-4. Save/load in save.js (bump version key)
-5. Wire multipliers into `recalc()` or income tick
+4. Sprite in `_drawSprite()` (compendium.js)
 
 ---
 
 ## What Not to Break
 
 - `S` object structure — everything reads it
-- `isWinBlock()` / `isElevBlock()` — guard all placement
+- `isWinBlock()` / `isElevBlock()` / `isFlankBlock()` — guard all placement
 - Camera save/restore nesting in `draw()` — parallax depends on it
-- `recalc()` after module changes
 - Seeded RNG sequence — changing order changes every world
-- Save key `spacetower_v9c` — bump for new fields
-- Floor 5 as RESTAURANT — RGB threshold
-- Floor 8 as STORAGE — Reckoning event floor
-- Floor 10 as COMMAND — The Keeper's floor
+- Save key `spacetower_v14` — bump for new fields
+- Floor 4 as RESTAURANT — RGB threshold (index 4 in code, Floor 5 to player)
+- Floor 7 as STORAGE — Reckoning trigger (index 7, Floor 8 to player)
+- Floor 9 as COMMAND — Keeper's floor (index 9, Floor 10 to player)
+- `localStorage` flags for mode transitions (`spacetower_gotoExterior`, `spacetower_devGoto`)
+- BYOK credential path: `rgb_llm_connection` in localStorage
 
 ---
 
 ## Design Principles
 
+- **The player's body is the tool.** You climb, you jump, you swing, you drive, you launch. The game is best when the player physically does the thing, not when they press E on a waypoint.
+- **Exterior builds, interior rewards.** Physical construction happens outside. The interior is the living consequence of that work — populated, alive, reactive. You enter a floor you built with your hands and find it breathing.
+- **The interior is for traversal and discovery.** The sim's platforming (charged jump, wall slide, drop-through-floors) is a strength. Interior progression should feel like exploring what you created, not activating scripted checkpoints.
 - **Discovery over instruction.** No tutorials. If it needs explaining, redesign it.
 - **Character dignity.** Every NPC is a person. Three-line reveals: greeting → context → the real thing.
 - **The RGB boundary is sacred.** The sim is handcrafted. The RGB is a place you enter. They don't contaminate each other. The Keeper is the rare exception — one living thing in a museum.
-- **Hunger as rhythm.** Mechanical need becomes narrative gateway.
-- **Political power as felt leadership.** Your choices shape how the tower responds.
-- **The player is the builder.** Hardhat. Strong. Gets hungry. Has standing. Built this thing by hand.
+- **Meaningful consequence over choice.** Fixed block identities with direct causal consequences beat a shopping-list system.
+- **Unlocks should be fun or gate something fun.** The bulldozer is inherently enjoyable to drive AND unlocks terrain shaping.
 - **Floor 8 is about identity.** Builders vs. suits. Who are you?
 - **The Keeper is about readiness.** Can you lead people higher? He calibrates to your answer.
 - **BYOK as culmination.** You earn the right to bring your own mind into the world.
