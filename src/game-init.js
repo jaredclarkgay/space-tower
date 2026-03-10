@@ -14,7 +14,7 @@ import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js
 import { setupRadio } from './radio-ui.js';
 import { checkReckoningTrigger, updateReckoning, checkReckoningBell, startRematch, isReckoningFrozen, isReckoningActive, setupTestMode, handleReckoningIntroE, handleReckoningColorLeft, handleReckoningColorRight, handleReckoningColorConfirm, checkColorWheel, openColorWheel } from './reckoning.js';
 import { isKeeperProximity, startKeeperZoom, endKeeperZoom, updateKeeper, advanceKeeperDialogue, getZoomState } from './keeper.js';
-import { enterControlRoom, exitControlRoom, updateControlRoom, handleConsoleInteract } from './control-room.js';
+import { enterControlRoom, exitControlRoom, updateControlRoom, handleConsoleInteract, isTopoActive, updateTopoView, resizeTopoView, enterTopo } from './control-room.js';
 
 // ═══ REAL-TIME ACCUMULATORS (frame-rate independent) ═══
 let _lastFrameTime = 0;
@@ -39,7 +39,7 @@ function openElev(){
     const fd=FD[fi],stg=S.buildout[fi].stage,cur=S.player.cf===fi;
     const div=document.createElement('div');
     div.className='elev-floor'+(cur?' current':'')+(fi===S.elevSelected?' selected':'');
-    div.innerHTML=`<span style="opacity:${stg>=1?1:0.35}">${fd.name}</span><span class="ef-num">${stg>=5?'★':stg>0?`${stg}/5`:'—'}</span>`;
+    div.innerHTML=`<span style="opacity:${stg>=1?1:0.35}">${fd.name}</span><span class="ef-num">${stg>=3?'★':stg>0?`${stg}/3`:'—'}</span>`;
     div.dataset.fi=fi;
     if(!cur){div.addEventListener('click',()=>rideElev(fi))}
     elevFloors.appendChild(div);
@@ -242,7 +242,9 @@ let _econAcc=0;
 const ECON_TICK=60; // frames per economy tick (~1 second at 60fps)
 let _cropAcc=0;
 const CROP_TICK=1800; // frames per crop growth stage (~30 seconds at 60fps)
-let _hudFood=null,_hudHappy=null;
+let _hudFood=null,_hudHappy=null,_hudHunger=null;
+let _hungerAcc=0;
+const HUNGER_TICK=900; // frames per hunger decay (~15 seconds at 60fps)
 
 function terrainIndex(worldX){
   const t=(worldX-TERRAIN_X_MIN)/(TERRAIN_X_MAX-TERRAIN_X_MIN);
@@ -257,7 +259,7 @@ function updateEconomy(){
   _cropAcc++;
   if(_cropAcc>=CROP_TICK){
     _cropAcc=0;
-    if(S.buildout[2].stage>=5){
+    if(S.buildout[2].stage>=3){
       for(let bi=0;bi<BPF;bi++){
         const m=S.modules[2]?.[bi];
         if(m&&m.id==='planter'){
@@ -278,11 +280,11 @@ function updateEconomy(){
   // Count food production
   let foodProd=0;
   // Floor 1 diner (right flank, block 7) — active at stage 4+
-  if(S.buildout[1].stage>=4){
+  if(S.buildout[1].stage>=2){
     foodProd+=S.foodChainComplete?2:1;
   }
   // Floor 2 planters at growStage 4
-  if(S.buildout[2].stage>=5){
+  if(S.buildout[2].stage>=3){
     for(let bi=0;bi<BPF;bi++){
       const m=S.modules[2]?.[bi];
       if(m&&m.id==='planter'&&m.growStage>=4)foodProd++;
@@ -306,7 +308,7 @@ function updateEconomy(){
   else if(foodProd<foodDemand&&S.builderHappiness>0)S.builderHappiness--;
 
   // ── Food chain event check ──
-  if(!S.foodChainComplete&&S.buildout[1].stage>=4){
+  if(!S.foodChainComplete&&S.buildout[1].stage>=2){
     let maturePlanters=0;
     for(let bi=0;bi<BPF;bi++){
       const m=S.modules[2]?.[bi];
@@ -329,11 +331,39 @@ function updateEconomy(){
     }
   }
 
+  // ── Credit income from placed modules (activated floors only) ──
+  let _income=0;
+  for(let fi=0;fi<NF;fi++){
+    if(S.buildout[fi].stage<3)continue;
+    for(let bi=0;bi<BPF;bi++){
+      const m=S.modules[fi]?.[bi];
+      if(m&&m.sat)_income+=m.sat;
+    }
+  }
+  if(_income>0)S.credits+=_income;
+
+  // ── Hunger decay ──
+  _hungerAcc++;
+  if(_hungerAcc>=HUNGER_TICK){
+    _hungerAcc=0;
+    if(S.player.hunger>0)S.player.hunger=Math.max(0,S.player.hunger-1);
+  }
+  // Floor 5 restaurant refill — standing on floor 5 with food available restores hunger
+  if(S.player.cf===4&&S.buildout[4].stage>=3&&S.food>0&&S.player.hunger<100){
+    S.player.hunger=Math.min(100,S.player.hunger+2);
+  }
+
   // Update HUD (cached refs)
   if(!_hudFood)_hudFood=document.getElementById('hud-food');
   if(!_hudHappy)_hudHappy=document.getElementById('hud-happy');
+  if(!_hudHunger)_hudHunger=document.getElementById('hud-hunger');
   if(_hudFood)_hudFood.textContent=`\ud83c\udf5e ${S.food}`;
   if(_hudHappy)_hudHappy.textContent=`\ud83d\ude0a ${S.builderHappiness}`;
+  if(_hudHunger){
+    const h=S.player.hunger;
+    _hudHunger.textContent=`\ud83c\udf56 ${h}`;
+    _hudHunger.style.color=h<30?'#ff4030':h<60?'#ff9060':'#ff9060';
+  }
 }
 
 // ═══ UPDATE ═══
@@ -344,6 +374,12 @@ function update(){
     const _crDt=Math.min((_crNow-(_lastFrameTime||_crNow))/1000,0.05);
     _lastFrameTime=_crNow;
     updateControlRoom(_crDt);
+    // Topo bulldozer view — runs on top of control room
+    if(isTopoActive()){
+      updateTopoView(_crDt);
+      S.jp={};
+      return;
+    }
     // E to exit
     if(S.cr.nearElev&&S.jp.KeyE){exitControlRoom();S.jp.KeyE=false}
     // Escape to leave full-screen / deselect
@@ -351,8 +387,14 @@ function update(){
       if(S.cr.fullScreen){S.cr.fullScreen=false;S.cr.fsPanX=0;S.cr.fsPanY=0}
       else if(S.cr.selectedFloor>=0)S.cr.selectedFloor=-1;
     }
-    // F to toggle full-screen monitor
-    if(S.jp.KeyF&&S.cr.phase===3){S.cr.fullScreen=!S.cr.fullScreen;S.cr.fsPanX=0;S.cr.fsPanY=0}
+    // F to toggle full-screen monitor (topo mode when bulldozer unlocked)
+    if(S.jp.KeyF&&S.cr.phase===3){
+      if(S.bulldozer.unlocked&&!S.cr.fullScreen){
+        enterTopo();
+      } else {
+        S.cr.fullScreen=!S.cr.fullScreen;S.cr.fsPanX=0;S.cr.fsPanY=0;
+      }
+    }
     // E to interact with console buttons
     if(S.jp.KeyE&&S.cr.phase===3&&!S.cr.nearElev)handleConsoleInteract();
     S.jp={};
@@ -426,7 +468,7 @@ function update(){
   );
   if(k['KeyE']&&!S.iLock&&_exitDoorCheck&&performance.now()-_simStartTime>800&&_nearExit){_exitDoorCheck();S.iLock=true}
   // RGB door ambient hum
-  if(p.cf===4&&S.buildout[4].stage>=5&&Math.abs(p.x-(TL+2*PG+PG/2))<200){sndDoorHumStart()}else{sndDoorHumStop()}
+  if(p.cf===4&&S.buildout[4].stage>=3&&Math.abs(p.x-(TL+2*PG+PG/2))<200){sndDoorHumStart()}else{sndDoorHumStop()}
   const _f8frozen=isReckoningFrozen()||S.keeper.active;
   if(!S.elevOpen&&S.elevAnim==='idle'&&!isCompendiumOpen()&&!_f8frozen){
   // Bulldozer driving mode
@@ -490,12 +532,14 @@ function update(){
   } else {
   const jk=k['ArrowUp']||k['KeyW'],dk=k['ArrowDown']||k['KeyS'];
   const stUp=inter&&inter.t==='up',stDn=inter&&inter.t==='dn';
+  // Hunger debuff: below 30, movement and jump scale down (min 0.5x at 0)
+  const _hm=p.hunger>=30?1:0.5+p.hunger/60;
   if(p.st!=='climb'){
     p.vx=0;
     const _spr=k['ShiftLeft']||k['ShiftRight']?2:1;
     const _lk=k['ArrowLeft']||k['KeyA'],_rk=k['ArrowRight']||k['KeyD'];
-    if(_lk){p.vx=-p.spd*_spr;p.fr=false;if(p.onF)p.st='walk'}
-    if(_rk){p.vx=p.spd*_spr;p.fr=true;if(p.onF)p.st='walk'}
+    if(_lk){p.vx=-p.spd*_spr*_hm;p.fr=false;if(p.onF)p.st='walk'}
+    if(_rk){p.vx=p.spd*_spr*_hm;p.fr=true;if(p.onF)p.st='walk'}
     // Wall slide: override horizontal input — stick to wall
     if(p.wallSlide){
       p.vx=0;
@@ -514,11 +558,11 @@ function update(){
     if(jk&&stUp){p.st='climb';p.clT=inter.v;p.clP=0;p.x=inter.v.bx;p.vx=0;p.isChg=false;p.chgT=0;setTZoom(p.baseZoom||tZoom)}
     else if(jk||k['Space']){
       if(p.onF){if(!p.isChg)p.baseZoom=tZoom;p.isChg=true;p.chgT=Math.min(p.chgT+1,CHG_MX);setTZoom(p.baseZoom-p.chgT/CHG_MX*0.2)}
-    } else {if(p.isChg&&p.onF){const t=p.chgT/CHG_MX;p.vy=JUMP_F+(JUMP_MX-JUMP_F)*t;p.onF=false;p.st='jump';p.flipInitVel=p.vy;p.flipCommitted=t>=0.15;p.wallSlide=false}if(p.isChg)setTZoom(p.baseZoom);p.isChg=false;p.chgT=0}
+    } else {if(p.isChg&&p.onF){const t=p.chgT/CHG_MX;p.vy=(JUMP_F+(JUMP_MX-JUMP_F)*t)*_hm;p.onF=false;p.st='jump';p.flipInitVel=p.vy;p.flipCommitted=t>=0.15;p.wallSlide=false}if(p.isChg)setTZoom(p.baseZoom);p.isChg=false;p.chgT=0}
     if(dk&&p.onF&&!stDn){if(!p.isDrp)p.baseZoom=p.baseZoom||tZoom;p.isDrp=true;p.drpT=Math.min(p.drpT+1,DROP_MX);setTZoom(p.baseZoom-p.drpT/DROP_MX*0.25)}
     else if(dk&&stDn){p.st='climb';p.clT=inter.v;p.clP=1;p.x=inter.v.tx;p.vx=0;p.isDrp=false;p.drpT=0;setTZoom(p.baseZoom||tZoom)}
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
-    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=5)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
+    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=3)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
       else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
       }else if(inter.t==='upgrade_store'){
         if(canAfford(inter.v.cost)){S.credits-=inter.v.cost;S.cornerStoreUpgraded=true;S.builderHappiness+=10;showMsg('\ud83c\uded2 GROCERY STORE','Corner store upgraded. Fresh produce.');sndChime();autoSave()}
@@ -681,7 +725,7 @@ export function initGame(saveData){
     S.foodChainComplete=true;
     S.builderHappiness=30;
     S.credits=1000;
-    for(let i=0;i<NF;i++){S.buildout[i].stage=5;S.buildout[i].revealT=999}
+    for(let i=0;i<NF;i++){S.buildout[i].stage=3;S.buildout[i].revealT=999}
     S.reckoning.played=true;S.reckoning.phase='DONE';S.reckoning.outcome='builders';
     S.player.x=S.bulldozer.x+80;S.player.y=TB;
     S.cam.x=S.player.x;S.cam.y=S.player.y-60;
@@ -697,7 +741,7 @@ export function initGame(saveData){
   }
   // Finalize arrivals for already-completed floors (post-load)
   S.npcs.forEach(n=>{
-    if(S.buildout[n.floor].stage>=5){
+    if(S.buildout[n.floor].stage>=3){
       n.arrived=true;n.arrState='done';
       n.x=n.destX;n.y=TB-(n.floor*FH)-48;n.onF=true;n.vx=0;n.st='idle';
     }

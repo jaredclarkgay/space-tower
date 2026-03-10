@@ -3,9 +3,46 @@ import { S } from './state.js';
 import { NF, BPF, TB, FH, ELEV_X } from './constants.js';
 import { FD } from './floors.js';
 import { sndElev, sndCrAlarm, sndCrChunk, sndCrThud } from './sound.js';
+import { initTerrain } from './terrain.js';
+import { initTopoView } from './bulldozer-topo.js';
 
 // ═══ CONTROL ROOM ═══
 // Basement scene below Floor 1. Elevator doors → dark room → screen boots → interactive.
+
+// ── Topo bulldozer view (full-screen overlay) ──
+let _topoAPI = null;
+let _topoActive = false;
+
+export function isTopoActive() { return _topoActive; }
+
+export function enterTopo() {
+  // Initialize terrain if first time
+  if (!S.terrain3d.initialized) initTerrain(S.terrain3d);
+  // Lazy-init the topo renderer
+  if (!_topoAPI) {
+    const canvas = document.getElementById('topoCanvas');
+    if (!canvas) return;
+    _topoAPI = initTopoView(canvas);
+  }
+  _topoAPI.enter(S.terrain3d, S.bulldozer);
+  _topoActive = true;
+}
+
+function _exitTopo() {
+  if (_topoAPI && _topoAPI.active) _topoAPI.exit();
+  _topoActive = false;
+  S.cr.fullScreen = false;
+}
+
+export function updateTopoView(dt) {
+  if (!_topoActive || !_topoAPI) return;
+  _topoAPI.update(dt);
+  if (_topoAPI.wantsExit()) _exitTopo();
+}
+
+export function resizeTopoView(w, h) {
+  if (_topoAPI) _topoAPI.resize(w, h);
+}
 
 // ── Color palette ──
 const CR={
@@ -25,16 +62,16 @@ const STARS=Array.from({length:40},(_,i)=>({
 
 // ── Task text for "Next Step" on screen ──
 const TASK_TEXT=[
-  'Wire power and open the lobby',
-  'Frame quarters — give people a place to sleep',
-  'Bring the garden online — the tower needs to breathe',
-  'Finish the research level — connect the server rack',
-  'Get the restaurant running — you need to eat',
-  'Build out the lounge — your people need a place to gather',
-  'Install medical systems — someone is going to get hurt up here',
-  'Claim the storage level — secure your territory',
-  'Mount the telescope — look up, see how far you\'ve come',
-  'Reach the command floor — someone is waiting for you',
+  'Build Floor 1 — wire power, open the lobby',
+  'Build Floor 2 — frame quarters, give people a place to sleep',
+  'Build Floor 3 — raise the garden, the tower needs to breathe',
+  'Build Floor 4 — set the research level, connect the rack',
+  'Build Floor 5 — raise the restaurant, you need to eat',
+  'Build Floor 6 — frame the lounge, your people need to gather',
+  'Build Floor 7 — install medical, someone will get hurt up here',
+  'Build Floor 8 — claim storage, secure your territory',
+  'Build Floor 9 — mount the telescope, see how far you\'ve come',
+  'Build Floor 10 — reach command, someone is waiting for you',
 ];
 
 // ── Floor descriptions for detail panel ──
@@ -70,13 +107,13 @@ const LOG_QUIPS=[
   {text:s=>'Population: '+s.population+'. The tower is technically a house.',cond:s=>s.population<=15},
   {text:'Satisfaction critical. Consider doing literally anything.',cond:s=>s.satisfaction<20},
   {text:s=>'Credits: '+s.credits+'. Poverty is a feature, not a bug.',cond:s=>s.credits===0},
-  {text:'Floor 5 restaurant still empty. Your stomach knows.',cond:(_,c)=>c.floors[4].stage<5},
+  {text:'Floor 5 restaurant still empty. Your stomach knows.',cond:(_,c)=>c.floors[4].stage<3},
   {text:'Someone rang a bell on Floor 8. The reverberations continue.',cond:()=>S.reckoning.played},
   {text:'10 floors. All by hand. Your chiropractor is waiting.',cond:(_,c)=>c.doneCount>=10},
   {text:s=>'Satisfaction at '+s.satisfaction+'%. Morale is a concept.',cond:s=>s.satisfaction>=80},
   {text:'Half the tower is dark. The other half is also mostly dark.',cond:(_,c)=>c.active<=5},
   {text:s=>'Population '+s.population+'. Standing room only.',cond:s=>s.population>40},
-  {text:'Research floor offline. Science waits for no one. Except you.',cond:(_,c)=>c.floors[3].stage<5},
+  {text:'Research floor offline. Science waits for no one. Except you.',cond:(_,c)=>c.floors[3].stage<3},
   // Generic (no cond, rotate in order)
   {text:'Note: the red button does nothing useful.'},
   {text:'Elevator maintenance overdue by 47 visits.'},
@@ -139,7 +176,7 @@ function _refreshCache(){
   _cache.active=ac;_cache.building=bd;_cache.doneCount=dc;
   _cache.nextTask=null;
   for(let i=0;i<NF;i++){
-    if(S.buildout[i].stage<5){_cache.nextTask={floor:i,text:TASK_TEXT[i]};break}
+    if(S.buildout[i].stage<3){_cache.nextTask={floor:i,text:TASK_TEXT[i]};break}
   }
 }
 
@@ -168,6 +205,7 @@ export function enterControlRoom(){
 }
 
 export function exitControlRoom(){
+  if(_topoActive) _exitTopo();
   const cr=S.cr;
   cr.active=false;cr.phase=0;cr.phaseT=0;
   cr.doorOpen=0;cr.screenBoot=0;cr.screenOn=false;
@@ -285,7 +323,7 @@ function _handleInput(dt){
 function _getStats(){return _cache.stats}
 function _getFloorData(i){return _cache.floors[i]}
 function _getNextTask(){return _cache.nextTask}
-function _getTaskDone(i){return _cache.floors[i].stage>=5}
+function _getTaskDone(i){return _cache.floors[i].stage>=3}
 
 // ── Word wrap helper ──
 function _wrapText(X,text,x,y,maxW,lineH){
@@ -343,10 +381,10 @@ function _drawTowerWire(X,twrX,twrW,twrBase,flrH,sel,opts){
       X.strokeStyle=isSel?selCol:lineCol+'55';
       X.lineWidth=isSel?1.5:0.7;
       X.strokeRect(twrX,fy,twrW,flrH-1);
-      const fill=f.stage/5;
+      const fill=f.stage/3;
       X.fillStyle=isSel?fillSel:fillNorm;
       X.fillRect(twrX,fy,twrW*fill,flrH-1);
-      if(f.stage<5){
+      if(f.stage<3){
         const p=Math.sin(_t*2.5+i)*0.12+0.12;
         X.fillStyle=`rgba(126,200,238,${p})`;
         X.fillRect(twrX,fy,twrW*fill,flrH-1);
@@ -357,10 +395,10 @@ function _drawTowerWire(X,twrX,twrW,twrBase,flrH,sel,opts){
           X.fillStyle=m<f.mods?(m%5===1?CR.cream+'33':m%7===3?CR.red+'28':'rgba(255,255,255,0.15)'):CR.whiteFaint+'18';
           X.fillRect(twrX+opts.modPadX+m*opts.modSpacing,fy+flrH-opts.modOffY,opts.modW,opts.modH);
         }
-        if(f.stage<5){
-          const stages=['POWER','STRUCTURE','SYSTEMS','FURNISH','ACTIVATE'];
+        if(f.stage<3){
+          const stages=['POWER','STRUCTURE','ACTIVATE'];
           X.font=`${opts.stageFont||8}px monospace`;X.fillStyle=CR.whiteFaint;X.textAlign='left';
-          X.fillText(f.stage>=5?'COMPLETE':`STAGE: ${stages[f.stage-1]}`,twrX+opts.modPadX,fy+16);
+          X.fillText(f.stage>=3?'COMPLETE':`STAGE: ${stages[f.stage-1]}`,twrX+opts.modPadX,fy+16);
         }
       } else {
         for(let m=0;m<f.mods;m++){
@@ -487,6 +525,7 @@ export function drawControlRoom(X,W,H){
   }
 
   if(cr.fullScreen){
+    if(_topoActive) return; // topo overlay handles its own rendering
     _drawFullScreen(X,W,H);
     return;
   }
@@ -662,6 +701,11 @@ function _drawScreen(X,W,H){
       X.fillStyle=`rgba(126,200,238,${0.02+Math.random()*0.06})`;
       X.fillRect(sx+gx,sy+gy,sw*0.6+Math.random()*sw*0.4,1);
     }
+  }
+
+  // Terrain minimap (when bulldozer unlocked)
+  if(S.bulldozer.unlocked&&S.terrain3d.initialized){
+    _drawTerrainMini(X,sx+sw-82,sy+sh-72,70,60);
   }
 
   // Heartbeat (Feature 4a)
@@ -847,6 +891,11 @@ function _drawConsolePrompt(X,W,H){
   X.font='bold 14px monospace';X.textAlign='center';
   X.fillStyle=`rgba(126,200,238,${0.7*pulse})`;
   X.fillText('[ E ] INTERACT',W/2,H*0.56);
+  // Show F key hint for topo/full-screen
+  const label=S.bulldozer.unlocked?'[ F ] TERRAIN SURVEY':'[ F ] FULL SCREEN';
+  X.font='bold 11px monospace';
+  X.fillStyle=`rgba(126,200,238,${0.45*pulse})`;
+  X.fillText(label,W/2,H*0.56+20);
 }
 
 // ═══ LIGHTING ═══
@@ -867,6 +916,57 @@ function _drawLighting(X,W,H){
   vg.addColorStop(0.6,'rgba(0,0,0,0.2)');
   vg.addColorStop(1,'rgba(0,0,0,0.65)');
   X.fillStyle=vg;X.fillRect(0,0,W,H);
+}
+
+// ── Terrain minimap (contour sketch on small screen) ──
+function _drawTerrainMini(X,mx,my,mw,mh){
+  const t3=S.terrain3d;
+  const segs=Math.sqrt(t3.heightmap.length)|0;
+  if(segs<2)return;
+
+  // Dark background
+  X.fillStyle='rgba(6,10,16,0.8)';
+  X.fillRect(mx,my,mw,mh);
+  X.strokeStyle=CR.blueGhost+'88';
+  X.strokeRect(mx,my,mw,mh);
+
+  // Sample every Nth vertex to draw contour-like horizontal lines
+  const step=Math.max(1,Math.floor(segs/20));
+  const contourInterval=0.8;
+  X.lineWidth=0.5;
+
+  for(let iz=0;iz<segs;iz+=step){
+    const fy=my+(iz/segs)*mh;
+    X.beginPath();
+    for(let ix=0;ix<segs;ix+=step){
+      const h=t3.heightmap[iz*segs+ix];
+      const contourPhase=Math.abs(h%contourInterval)/contourInterval;
+      // Draw dots where contour lines would cross
+      if(contourPhase<0.15||contourPhase>0.85){
+        const fx=mx+(ix/segs)*mw;
+        // Color by heat
+        const ch=t3.cutHeat[iz*segs+ix]||0;
+        const rh=t3.raiseHeat[iz*segs+ix]||0;
+        if(ch>0.1)X.fillStyle=`rgba(255,80,40,${Math.min(0.8,ch)})`;
+        else if(rh>0.1)X.fillStyle=`rgba(40,255,80,${Math.min(0.8,rh)})`;
+        else X.fillStyle=CR.blueMid+'66';
+        X.fillRect(fx,fy,1.5,1.5);
+      }
+    }
+  }
+
+  // Label
+  X.font='6px monospace';X.fillStyle=CR.blueMid+'aa';X.textAlign='left';
+  X.fillText('TERRAIN',mx+2,my+8);
+
+  // Bulldozer position marker
+  const half=400/2; // T3D_SIZE
+  const bx=mx+((S.bulldozer.wx+half)/400)*mw;
+  const bz=my+((S.bulldozer.wz+half)/400)*mh;
+  if(bx>=mx&&bx<=mx+mw&&bz>=my&&bz<=my+mh){
+    X.fillStyle='#ff0';
+    X.fillRect(bx-1,bz-1,3,3);
+  }
 }
 
 // ═══ FULL-SCREEN ARTBOARD ═══
@@ -979,7 +1079,7 @@ export function drawCRDetailPanel(X,W,H){
   X.fillStyle=CR.blue;
   X.fillText(`FLOOR ${fi+1} — ${f.name}`,px+12,py+18);
   X.font='10px monospace';X.fillStyle=CR.whiteFaint;
-  X.fillText(`STAGE ${f.stage}/5 · ${f.mods}/9 MODULES`,px+12,py+34);
+  X.fillText(`STAGE ${f.stage}/3 · ${f.mods}/9 MODULES`,px+12,py+34);
 
   // Close hint
   X.font='9px monospace';X.textAlign='right';X.fillStyle=CR.whiteDim;

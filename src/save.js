@@ -5,8 +5,8 @@ import { FD } from './floors.js';
 import { F8_ALL_MODS } from './reckoning.js';
 
 // ═══ SAVE / LOAD ═══
-const SAVE_KEY='spacetower_v14';
-const OLD_KEYS=['spacetower_v13','spacetower_v12','spacetower_v11'];
+const SAVE_KEY='spacetower_v15';
+const OLD_KEYS=['spacetower_v14','spacetower_v13','spacetower_v12','spacetower_v11'];
 function _getRaw(){
   let raw=localStorage.getItem(SAVE_KEY);
   if(raw)return raw;
@@ -35,13 +35,15 @@ export function saveGame(){
       compendium:S.compendium.entries,
       modules:mods,
       credits:S.credits,
+      hunger:S.player.hunger,
       sat:S.sat,
       food:S.food,
       builderHappiness:S.builderHappiness,
       foodChainComplete:S.foodChainComplete,
       cornerStoreUpgraded:S.cornerStoreUpgraded,
       terrain:Array.from(S.terrain),
-      bulldozer:{unlocked:S.bulldozer.unlocked,x:S.bulldozer.x,y:S.bulldozer.y,facing:S.bulldozer.facing},
+      terrain3d:S.terrain3d.initialized?{heightmap:Array.from(S.terrain3d.heightmap),initialized:true}:null,
+      bulldozer:{unlocked:S.bulldozer.unlocked,x:S.bulldozer.x,y:S.bulldozer.y,facing:S.bulldozer.facing,wx:S.bulldozer.wx,wz:S.bulldozer.wz,wAngle:S.bulldozer.wAngle},
       reckoning:{played:S.reckoning.played,outcome:S.reckoning.outcome,bellX:S.reckoning.bellX,map:S.reckoning.map,builderColor:S.reckoning.builderColor},
       keeper:{spoken:S.keeper.spoken,exchange:S.keeper.exchange,resolved:S.keeper.resolved||false},
       ts:Date.now()
@@ -50,23 +52,41 @@ export function saveGame(){
 export function loadGame(){
   try{const raw=_getRaw();if(!raw)return false;
     const d=JSON.parse(raw);
+    // Detect old 5-stage saves (any stage > 3 means pre-v15)
+    const _old5=d.buildout&&d.buildout.some(s=>s>3);
     if(d.buildout)d.buildout.forEach((stage,i)=>{
-      if(i<NF) S.buildout[i].stage=stage;
+      if(i<NF){
+        if(_old5){
+          // Migrate 5→3 stages: 0→0, 1→1, 2-3→2, 4-5→3
+          S.buildout[i].stage=stage<=1?stage:stage<=3?2:3;
+        } else {
+          S.buildout[i].stage=stage;
+        }
+      }
     });
     if(d.panelFloor!=null)S.panelFloor=d.panelFloor;
     if(d.compendium)S.compendium.entries=d.compendium;
     if(d.credits!=null)S.credits=d.credits;
+    if(d.hunger!=null)S.player.hunger=d.hunger;
     if(d.sat!=null)S.sat=d.sat;
     if(d.food!=null)S.food=d.food;
     if(d.builderHappiness!=null)S.builderHappiness=d.builderHappiness;
     if(d.foodChainComplete!=null)S.foodChainComplete=d.foodChainComplete;
     if(d.cornerStoreUpgraded!=null)S.cornerStoreUpgraded=d.cornerStoreUpgraded;
     if(d.terrain){const t=d.terrain;for(let i=0;i<Math.min(t.length,S.terrain.length);i++)S.terrain[i]=t[i]}
+    if(d.terrain3d&&d.terrain3d.initialized&&d.terrain3d.heightmap){
+      const h=d.terrain3d.heightmap;
+      for(let i=0;i<Math.min(h.length,S.terrain3d.heightmap.length);i++)S.terrain3d.heightmap[i]=h[i];
+      S.terrain3d.initialized=true;
+    }
     if(d.bulldozer){
       S.bulldozer.unlocked=!!d.bulldozer.unlocked;
       if(d.bulldozer.x!=null)S.bulldozer.x=d.bulldozer.x;
       if(d.bulldozer.y!=null)S.bulldozer.y=d.bulldozer.y;
       if(d.bulldozer.facing!=null)S.bulldozer.facing=d.bulldozer.facing;
+      if(d.bulldozer.wx!=null)S.bulldozer.wx=d.bulldozer.wx;
+      if(d.bulldozer.wz!=null)S.bulldozer.wz=d.bulldozer.wz;
+      if(d.bulldozer.wAngle!=null)S.bulldozer.wAngle=d.bulldozer.wAngle;
     }
     // Reconstruct module objects from saved IDs
     if(d.modules){

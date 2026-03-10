@@ -1,6 +1,7 @@
 'use strict';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { sampleHeightmap } from '../terrain.js';
 
 /**
  * PlayableBulldozer — driveable bulldozer that deforms terrain.
@@ -55,13 +56,11 @@ const TREAD_W = 0.6;
 const TREAD_H = 0.8;
 const TREAD_L = BODY_L + 0.6;
 
-// ── Physics ──
-const ACCEL_MIN = 3;           // initial acceleration (slow start)
-const ACCEL_MAX = 14;          // acceleration after sustained throttle
-const ACCEL_RAMP = 3.0;       // seconds to reach full acceleration
-const MAX_SPEED = 24;
-const BOOST_MULT = 1.6;
-const TURN_SPEED = 2.5;
+// ── Physics (stunt mode — fast, bouncy, no blade deformation) ──
+const ACCEL = 25;
+const MAX_SPEED = 55;
+const BOOST_SPEED = 80;
+const TURN_SPEED = 3.0;
 const FRICTION = 0.03;         // per-second exponential decay factor
 
 // ── Jump ──
@@ -69,11 +68,7 @@ const JUMP_BASE = 0.08;       // tap jump velocity
 const JUMP_MAX = 0.22;        // full charge jump velocity (lower than player's 0.46)
 const CHARGE_MAX = 60;         // frames to full charge
 const DOZER_GRAVITY = 0.003;   // gravity (heavier than player's 0.0035)
-
-// ── Terrain deformation ──
-const DIG_DEPTH = 0.08;        // how deep each frame pushes vertices
-const DIG_RADIUS = 3.0;        // blade influence radius
-const MAX_DIG = -3.0;          // maximum depth a vertex can be pushed
+const BOUNCE_FACTOR = 0.4;    // bounciness on terrain landing
 
 // ── Bounds ──
 const TREE_LINE_R = 350;       // stop at tree line
@@ -246,6 +241,13 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
   // ════════════════════════════════════════════
   // STATE
   // ════════════════════════════════════════════
+  // Terrain height function — returns Y at (wx, wz). Default: flat at groundY.
+  let _terrainHeightFn = null;
+  function _getGroundAt(wx, wz) {
+    if (_terrainHeightFn) return groundY + _terrainHeightFn(wx, wz);
+    return groundY;
+  }
+
   const state = {
     isOperating: false,
     speed: 0,            // current speed (units/sec, positive = forward)
@@ -253,7 +255,6 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
     bladeDown: false,
     bladeAngle: 0,       // current blade pivot angle (0 = up, negative = down)
     engineIdle: 0,       // idle vibration phase
-    throttleHold: 0,     // seconds W has been held (ramps acceleration)
 
     // Jump
     onGround: true,
@@ -263,6 +264,11 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
     flipAngle: 0,        // current flip rotation (radians)
     flipInitVel: 0,      // initial jump velocity (for flip timing)
     flipCommitted: false, // true only when charge >= 80%
+
+    // Airtime tracking (for trick detection)
+    airFrames: 0,
+    airRotation: 0,
+    lastHeading: 0,
   };
 
   // Blade target angles
@@ -282,29 +288,23 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
   function update(dt, playerPos, keys) {
     // Engine idle vibration (always — even when not operating, only on ground)
     state.engineIdle += dt * 8;
+    const _curGroundY = _getGroundAt(dozerRoot.position.x, dozerRoot.position.z);
     if (state.onGround) {
-      dozerRoot.position.y = groundY + Math.sin(state.engineIdle) * 0.015;
+      dozerRoot.position.y = _curGroundY + Math.sin(state.engineIdle) * 0.015;
     }
 
     if (!state.isOperating) return;
 
-    // ── Acceleration (W/S) — builds inertia the longer you hold ──
-    const boost = (keys['ShiftLeft'] || keys['ShiftRight']) ? BOOST_MULT : 1;
-    const maxSpd = MAX_SPEED * boost;
+    // ── Acceleration (W/S) — immediate, powerful ──
+    const boost = (keys['ShiftLeft'] || keys['ShiftRight']);
+    const maxSpd = boost ? BOOST_SPEED : MAX_SPEED;
 
     if (keys['KeyW'] || keys['ArrowUp']) {
-      state.throttleHold = Math.min(state.throttleHold + dt, ACCEL_RAMP);
-      const ramp = state.throttleHold / ACCEL_RAMP; // 0→1 over ACCEL_RAMP seconds
-      const accel = ACCEL_MIN + (ACCEL_MAX - ACCEL_MIN) * ramp;
-      state.speed = Math.min(maxSpd, state.speed + accel * dt);
+      state.speed = Math.min(maxSpd, state.speed + ACCEL * dt);
     } else if (keys['KeyS'] || keys['ArrowDown']) {
-      state.throttleHold = Math.min(state.throttleHold + dt, ACCEL_RAMP);
-      const ramp = state.throttleHold / ACCEL_RAMP;
-      const accel = ACCEL_MIN + (ACCEL_MAX - ACCEL_MIN) * ramp;
-      state.speed = Math.max(-maxSpd * 0.5, state.speed - accel * dt);
+      state.speed = Math.max(-maxSpd * 0.4, state.speed - ACCEL * dt);
     } else {
-      state.throttleHold = 0; // reset ramp when not pressing
-      // Friction (frame-rate independent)
+      // Friction (frame-rate independent) — slides further
       state.speed *= Math.pow(1 - FRICTION, dt * 60);
       if (Math.abs(state.speed) < 0.1) state.speed = 0;
     }
@@ -370,15 +370,43 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
         state.flipAngle = eased * Math.PI * 2;
       }
 
-      // Ground collision
-      if (dozerRoot.position.y <= groundY) {
-        dozerRoot.position.y = groundY;
-        state.velY = 0;
-        state.onGround = true;
+      // Track airtime and rotation for tricks
+      state.airFrames++;
+      const headingDelta = state.heading - state.lastHeading;
+      state.airRotation += Math.abs(headingDelta);
+
+      // Ground collision (uses terrain height at current position)
+      const _landY = _getGroundAt(dozerRoot.position.x, dozerRoot.position.z);
+      if (dozerRoot.position.y <= _landY) {
+        dozerRoot.position.y = _landY;
+
+        // Bounce off terrain (stronger = more fun)
+        if (state.velY < -0.02) {
+          state.velY = -state.velY * BOUNCE_FACTOR;
+          // Don't fully land — keep in air for bounce
+        } else {
+          state.velY = 0;
+          state.onGround = true;
+          // Trick detection on landing
+          if (state.airFrames > 30 && state.airRotation > Math.PI * 1.5) {
+            // Full flip! (TODO: visual feedback)
+          }
+          state.airFrames = 0;
+          state.airRotation = 0;
+        }
         state.flipAngle = 0;
         state.flipInitVel = 0;
         state.flipCommitted = false;
       }
+    }
+
+    // Track heading for trick detection
+    state.lastHeading = state.heading;
+
+    // Terrain following — when on ground, snap to terrain slope
+    if (state.onGround && _terrainHeightFn) {
+      const gAtPos = _getGroundAt(newX, newZ);
+      dozerRoot.position.y = gAtPos;
     }
 
     // Apply heading + flip rotation
@@ -390,53 +418,8 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
     state.bladeAngle += (bladeTarget - state.bladeAngle) * Math.min(dt * 6, 1);
     bladePivot.rotation.x = -state.bladeAngle;
 
-    // ── Terrain deformation ──
-    if (state.bladeDown && Math.abs(state.speed) > 1 && terrainMesh) {
-      _deformTerrain(newX, newZ, fwdX, fwdZ);
-    }
-  }
-
-  // ── Terrain deformation logic ──
-  function _deformTerrain(wx, wz, fwdX, fwdZ) {
-    const geo = terrainMesh.geometry;
-    const posAttr = geo.attributes.position;
-    const count = posAttr.count;
-
-    // Blade world position (front of bulldozer)
-    const bladeWX = wx + fwdX * (BODY_L / 2 + 1.2);
-    const bladeWZ = wz + fwdZ * (BODY_L / 2 + 1.2);
-
-    // Convert to terrain local space
-    const terrainPos = terrainMesh.position;
-    const localBX = bladeWX - terrainPos.x;
-    const localBZ = bladeWZ - terrainPos.z;
-
-    let modified = false;
-    const rSq = DIG_RADIUS * DIG_RADIUS;
-
-    for (let i = 0; i < count; i++) {
-      const vx = posAttr.getX(i);
-      const vz = posAttr.getZ(i);
-      const dx = vx - localBX;
-      const dz = vz - localBZ;
-      const distSq = dx * dx + dz * dz;
-
-      if (distSq < rSq) {
-        const vy = posAttr.getY(i);
-        const falloff = 1 - distSq / rSq;
-        const push = DIG_DEPTH * falloff * Math.abs(state.speed) / MAX_SPEED;
-        const newY = Math.max(MAX_DIG, vy - push);
-        if (newY !== vy) {
-          posAttr.setY(i, newY);
-          modified = true;
-        }
-      }
-    }
-
-    if (modified) {
-      posAttr.needsUpdate = true;
-      geo.computeVertexNormals();
-    }
+    // ── Terrain deformation (disabled in stunt mode — exterior is read-only) ──
+    // Blade visual still moves but doesn't modify terrain.
   }
 
   // ════════════════════════════════════════════
@@ -516,11 +499,9 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
       // Place player to the side of the bulldozer
       const sideX = Math.cos(state.heading) * 4;
       const sideZ = -Math.sin(state.heading) * 4;
-      return new THREE.Vector3(
-        dozerRoot.position.x + sideX,
-        groundY,
-        dozerRoot.position.z + sideZ
-      );
+      const px = dozerRoot.position.x + sideX;
+      const pz = dozerRoot.position.z + sideZ;
+      return new THREE.Vector3(px, _getGroundAt(px, pz), pz);
     },
 
     /** Update every frame */
@@ -548,6 +529,11 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
       terrainMesh = mesh;
     },
 
+    /** Set terrain height function for ground following */
+    setTerrainHeightFn(fn) {
+      _terrainHeightFn = fn;
+    },
+
     /** Get world position */
     getWorldPos() {
       return dozerRoot.position;
@@ -561,19 +547,18 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
 }
 
 /**
- * Build a deformable terrain mesh.
+ * Build a deformable terrain mesh (flat fallback — used when no heightmap exists).
  * @param {THREE.Scene} scene
  * @param {number} groundY
  * @returns {THREE.Mesh}
  */
 export function buildTerrainMesh(scene, groundY) {
-  const size = 800;   // total terrain size
-  const segs = 100;   // subdivisions
+  const size = 1500;  // covers out to building ring
+  const segs = 120;   // subdivisions
 
   const geo = new THREE.PlaneGeometry(size, size, segs, segs);
-  geo.rotateX(-Math.PI / 2); // lay flat
+  geo.rotateX(-Math.PI / 2);
 
-  // Color the terrain (earthy green-brown)
   const count = geo.attributes.position.count;
   const colors = new Float32Array(count * 3);
   const posAttr = geo.attributes.position;
@@ -584,23 +569,93 @@ export function buildTerrainMesh(scene, groundY) {
     const dist = Math.sqrt(x * x + z * z);
 
     // Base color: earthy brown-green, darker at edges
-    const edgeFade = Math.min(1, dist / (size * 0.45));
-    const r = 0.35 - edgeFade * 0.12;
-    const g = 0.42 - edgeFade * 0.1;
-    const b = 0.22 - edgeFade * 0.08;
+    const edgeFade = Math.min(1, dist / 700);
+    const r = 0.35 - edgeFade * 0.1;
+    const g = 0.42 - edgeFade * 0.08;
+    const b = 0.22 - edgeFade * 0.06;
 
-    // Add some noise variation
-    const noise = Math.sin(x * 0.05) * Math.cos(z * 0.07) * 0.04;
-
-    colors[i * 3] = Math.max(0, r + noise);
-    colors[i * 3 + 1] = Math.max(0, g + noise * 0.5);
+    colors[i * 3] = Math.max(0, r);
+    colors[i * 3 + 1] = Math.max(0, g);
     colors[i * 3 + 2] = Math.max(0, b);
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-  const mat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.y = groundY - 0.05; // just below ground level to avoid z-fighting
+  mesh.position.y = groundY + 0.15;
+  scene.add(mesh);
+
+  return mesh;
+}
+
+/**
+ * Build terrain mesh from the shared 3D heightmap.
+ * Extends to radius ~750 (matching inner ground circle) with heightmap in center.
+ * Uses MeshLambertMaterial so cuts/raises show depth through shading.
+ * @param {THREE.Scene} scene
+ * @param {Float32Array} heightmap - the terrain3d heightmap (201*201)
+ * @param {number} segments - vertices per axis (201 = T3D_SEGS+1)
+ * @param {number} worldSize - world units extent (400 = T3D_SIZE)
+ * @param {number} groundY - Y offset in the exterior scene
+ * @returns {THREE.Mesh}
+ */
+export function buildTerrainMeshFromHeightmap(scene, heightmap, segments, worldSize, groundY) {
+  // Visual mesh extends to 1500×1500 (covers out to building ring)
+  const meshSize = 1500;
+  const meshSegs = 300; // 5 units per cell
+  const hmHalf = worldSize / 2;   // 200 — heightmap extent
+  const hmSegsF = segments - 1;   // 200 subdivisions in heightmap
+
+  const geo = new THREE.PlaneGeometry(meshSize, meshSize, meshSegs, meshSegs);
+  geo.rotateX(-Math.PI / 2);
+
+  const posAttr = geo.attributes.position;
+  const count = posAttr.count;
+  const colors = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    const x = posAttr.getX(i);
+    const z = posAttr.getZ(i);
+
+    // Sample heightmap if inside its bounds
+    let h = 0;
+    if (Math.abs(x) < hmHalf && Math.abs(z) < hmHalf) {
+      h = sampleHeightmap(heightmap, segments, x, z, worldSize, hmSegsF);
+    }
+    posAttr.setY(i, h);
+
+    // Vertex color: earthy green, with height-based variation for deformed areas
+    const dist = Math.sqrt(x * x + z * z);
+    const edgeFade = Math.min(1, dist / 700);
+    const heightFade = Math.max(0, Math.min(1, (h + 4) / 8));
+
+    let r, g, b;
+    if (heightFade < 0.4) {
+      // Low/cut = dark brown/mud
+      r = 0.28 + heightFade * 0.15; g = 0.22 + heightFade * 0.3; b = 0.14;
+    } else if (heightFade < 0.7) {
+      // Mid = green grass
+      r = 0.32; g = 0.38 + (heightFade - 0.4) * 0.3; b = 0.18;
+    } else {
+      // High/raised = tan/rock
+      r = 0.38 + (heightFade - 0.7) * 0.4; g = 0.42; b = 0.22 + (heightFade - 0.7) * 0.2;
+    }
+
+    // Darken edges
+    r -= edgeFade * 0.1; g -= edgeFade * 0.08; b -= edgeFade * 0.06;
+
+    colors[i * 3] = Math.max(0, r);
+    colors[i * 3 + 1] = Math.max(0, g);
+    colors[i * 3 + 2] = Math.max(0, b);
+  }
+
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+
+  // Lambert material so terrain cuts/raises are visible through shading
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.y = groundY + 0.15;
   scene.add(mesh);
 
   return mesh;

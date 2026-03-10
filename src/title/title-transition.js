@@ -166,15 +166,18 @@ export function updateTransition(dt, orbitAngle) {
         TRANSITION.dissolveFloor = Math.max(TRANSITION.dissolveFloor, fi2);
         // Update sim save
         try {
-          const raw = localStorage.getItem('spacetower_v14');
+          const raw = localStorage.getItem('spacetower_v15');
           const d = raw ? JSON.parse(raw) : { ts: Date.now() };
           d.buildout = TC2.buildout.slice(0, 10);
-          localStorage.setItem('spacetower_v14', JSON.stringify(d));
+          localStorage.setItem('spacetower_v15', JSON.stringify(d));
         } catch { /* non-critical */ }
       });
 
-      // Spawn bulldozer and scaffolding game in the exterior
-      spawnBulldozer(_scene);
+      // Spawn bulldozer only if unlocked
+      try {
+        const _sv = localStorage.getItem('spacetower_v15');
+        if (_sv) { const _sd = JSON.parse(_sv); if (_sd.bulldozer?.unlocked) spawnBulldozer(_scene); }
+      } catch {}
       spawnScaffolding(_scene);
 
       // Activate exterior gameplay after a brief delay

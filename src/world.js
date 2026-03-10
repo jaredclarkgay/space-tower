@@ -3,6 +3,7 @@ import { S } from './state.js';
 import { TW, TL, TR, TB, FH, NF, ROOF_Y, PG, BPF, ELEV_X, sr, ri, pk } from './constants.js';
 import { FD, OD } from './floors.js';
 import { HN, AN, AC, BN2, BP2, HM, AM, BM, CWN, CWM, CWM_INDOOR, genAppearance, GENE_DATA } from './npcs.js';
+import { initTerrain } from './terrain.js';
 
 // ═══ PER-FLOOR NPC CONFIG ═══
 // [{t:type, mn:min, mx:max}] — 'c'=casual, 'b'=business, 'w'=worker, 'cb'=pick c or b
@@ -56,6 +57,8 @@ export function genWorld(){
     }
   }
   S.floors.sort((a,b)=>a.y-b.y);
+  // Initialize 3D terrain heightmap (shared between control room topo view and exterior)
+  if(!S.terrain3d.initialized) initTerrain(S.terrain3d);
   for(let b=2;b<BPF;b+=5) S.cranes.push({x:TL+b*PG+PG/2,y:ROOF_Y,angle:0});
   // Construction workers on rooftop
   for(let w=0;w<4;w++){const convo=CWM[w%CWM.length];S.workers.push({x:TL+200+sr()*(TW-400),y:ROOF_Y,w:24,h:48,vx:0,vy:0,spd:0.8+sr()*0.6,name:pk(CWN),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,onF:true,convo,ci:0})}

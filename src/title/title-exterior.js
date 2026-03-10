@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildPlayableCrane } from './playable-crane.js';
-import { buildPlayableBulldozer, buildTerrainMesh } from './playable-bulldozer.js';
+import { buildPlayableBulldozer, buildTerrainMesh, buildTerrainMeshFromHeightmap } from './playable-bulldozer.js';
+import { sampleHeightmap } from '../terrain.js';
 import { buildScaffoldingGame } from './scaffolding-game.js';
 
 // ── Vertex color helper (for merged geometry) ──
@@ -532,6 +533,7 @@ export function setupExteriorInput() {
           PLAYER.pos.copy(exitPos);
           PLAYER.vel.set(0, 0, 0);
           if (playerGroup) playerGroup.visible = true;
+          _syncBulldozerPosToSave();
         }
         return;
       }
@@ -575,7 +577,7 @@ export function setupExteriorInput() {
 
     if (e.code === 'Space' && PLAYER.active && PLAYER.isCharging && !PLAYER.onLadder) {
       const t = PLAYER.chargeT / CHARGE_MAX;
-      PLAYER.vel.y = JUMP_BASE + (JUMP_MAX - JUMP_BASE) * t;
+      PLAYER.vel.y = (JUMP_BASE + (JUMP_MAX - JUMP_BASE) * t) * _hungerMult();
       PLAYER.onGround = false;
       PLAYER.isCharging = false;
       PLAYER.chargeT = 0;
@@ -595,6 +597,46 @@ export function disposeExteriorInput() {
   _keydownHandler = null;
   _keyupHandler = null;
   if (promptEl) { promptEl.remove(); promptEl = null; }
+}
+
+// ── Hunger (shared with sim via localStorage) ──
+let _hunger = 100;
+let _hungerAcc = 0;
+const _HUNGER_TICK = 15; // seconds between hunger decay (matches sim's 900 frames / 60fps)
+let _hungerEl = null;
+
+function _initHunger() {
+  try {
+    const raw = localStorage.getItem('spacetower_v15');
+    if (raw) { const d = JSON.parse(raw); if (d.hunger != null) _hunger = d.hunger; }
+  } catch { /* non-critical */ }
+}
+
+function _syncHungerToSave() {
+  try {
+    const raw = localStorage.getItem('spacetower_v15');
+    const d = raw ? JSON.parse(raw) : { ts: Date.now() };
+    d.hunger = _hunger;
+    localStorage.setItem('spacetower_v15', JSON.stringify(d));
+  } catch { /* non-critical */ }
+}
+
+function _hungerMult() { return _hunger >= 30 ? 1 : 0.5 + _hunger / 60; }
+
+function _updateHungerHUD() {
+  if (!_hungerEl) {
+    _hungerEl = document.createElement('div');
+    _hungerEl.id = 'ext-hunger';
+    _hungerEl.style.cssText = 'position:fixed;top:8px;left:8px;z-index:15;background:rgba(0,0,0,0.4);color:#ff9060;padding:4px 11px;border-radius:12px;font-size:10px;letter-spacing:1px;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.1);font-family:monospace';
+    document.body.appendChild(_hungerEl);
+  }
+  const h = Math.round(_hunger);
+  _hungerEl.textContent = `\ud83c\udf56 ${h}`;
+  _hungerEl.style.color = h < 30 ? '#ff4030' : '#ff9060';
+}
+
+export function disposeHungerHUD() {
+  if (_hungerEl) { _hungerEl.remove(); _hungerEl = null; }
 }
 
 // ── Interaction ──
@@ -1273,6 +1315,14 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   }
   if (!PLAYER.active || !playerGroup) return;
 
+  // ── Hunger tick ──
+  _hungerAcc += dt;
+  if (_hungerAcc >= _HUNGER_TICK) {
+    _hungerAcc -= _HUNGER_TICK;
+    if (_hunger > 0) { _hunger = Math.max(0, _hunger - 1); _syncHungerToSave(); }
+  }
+  _updateHungerHUD();
+
   const crane = siteGroup?.userData?.crane;
 
   // If operating scaffolding game, it controls the player
@@ -1436,7 +1486,7 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     const worldX = rX * nr + fX * nf;
     const worldZ = rZ * nr + fZ * nf;
     const sprint = keys['ShiftLeft'] || keys['ShiftRight'] ? SPRINT_MULT : 1;
-    const spd = (PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED) * sprint;
+    const spd = (PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED) * sprint * _hungerMult();
     pv.x = worldX * spd;
     pv.z = worldZ * spd;
     PLAYER.walkCycle += 0.06;
@@ -1452,7 +1502,7 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     const worldX = rX * nr + fX * nf;
     const worldZ = rZ * nr + fZ * nf;
     const sprint2 = keys['ShiftLeft'] || keys['ShiftRight'] ? SPRINT_MULT : 1;
-    const spd2 = (PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED) * sprint2;
+    const spd2 = (PLAYER.carrying ? MOVE_SPEED * 0.75 : MOVE_SPEED) * sprint2 * _hungerMult();
     pv.x = worldX * spd2;
     pv.z = worldZ * spd2;
     PLAYER.walkCycle += 0.06;
@@ -1504,13 +1554,15 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     } else if (Math.abs(pp.y - BASE_H) < 0.1) {
       if (!_isOnFoundation(pp.x, pp.z)) PLAYER.onGround = false;
     } else if (pp.y > 0.5 && pp.y < BASE_H - 1) {
-      // Vehicle height range — fall if not on a vehicle
-      if (!_isOnVehicle()) PLAYER.onGround = false;
+      // Vehicle or heightmap terrain — fall if not on a vehicle and above terrain
+      const _gH = _getExtTerrainHeight(pp.x, pp.z);
+      if (!_isOnVehicle() && pp.y > _gH + 0.2) PLAYER.onGround = false;
     }
   }
 
-  // ── Ground ──
-  if (pp.y <= 0) { pp.y = 0; pv.y = 0; PLAYER.onGround = true; }
+  // ── Ground (heightmap-aware) ──
+  const _groundH = _getExtTerrainHeight(pp.x, pp.z);
+  if (pp.y <= _groundH) { pp.y = _groundH; pv.y = 0; PLAYER.onGround = true; }
 
   } // end normal movement
 
@@ -1631,6 +1683,7 @@ export function activateExterior() {
   PLAYER.isCharging = false;
   PLAYER.chargeT = 0;
   PLAYER.onLadder = null;
+  _initHunger();
 }
 
 export function deactivateExterior() {
@@ -1640,6 +1693,9 @@ export function deactivateExterior() {
   if (dialogueEl) { dialogueEl.remove(); dialogueEl = null; }
   if (_doorAnim.fadeEl) { _doorAnim.fadeEl.remove(); _doorAnim.fadeEl = null; }
   _doorAnim.active = false; _doorAnim.phase = 0; _doorAnim.elapsed = 0; _doorAnim.callback = null;
+  _syncHungerToSave();
+  _syncBulldozerPosToSave();
+  disposeHungerHUD();
 }
 
 export function setBuiltHeight(topBuilt) {
@@ -1693,9 +1749,79 @@ export function spawnScaffolding(scene) {
   return _scaffolding;
 }
 
+// ── Heightmap data cache (read from save, shared with bulldozer terrain) ──
+let _heightmapData = null;  // Float32Array or null
+// Use constants from terrain system (T3D_SEGS=200 → 201 vertices, T3D_SIZE=400)
+const _HM_SEGS = 201;
+const _HM_SIZE = 400;
+
+function _readHeightmapFromSave() {
+  try {
+    const raw = localStorage.getItem('spacetower_v15');
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (d.terrain3d && d.terrain3d.initialized && d.terrain3d.heightmap) {
+      return new Float32Array(d.terrain3d.heightmap);
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+function _readBulldozerPosFromSave() {
+  try {
+    const raw = localStorage.getItem('spacetower_v15');
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (d.bulldozer && d.bulldozer.wx != null) {
+      return { wx: d.bulldozer.wx, wz: d.bulldozer.wz, wAngle: d.bulldozer.wAngle || 0 };
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+function _syncBulldozerPosToSave() {
+  if (!_bulldozer) return;
+  try {
+    const raw = localStorage.getItem('spacetower_v15');
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    const wp = _bulldozer.getWorldPos();
+    if (!d.bulldozer) d.bulldozer = {};
+    d.bulldozer.wx = wp.x;
+    d.bulldozer.wz = wp.z;
+    d.bulldozer.wAngle = _bulldozer.heading;
+    localStorage.setItem('spacetower_v15', JSON.stringify(d));
+  } catch (e) { /* ignore */ }
+}
+
+/** Get terrain height at world position — delegates to shared bilinear interpolation */
+function _getExtTerrainHeight(wx, wz) {
+  if (!_heightmapData) return 0;
+  return sampleHeightmap(_heightmapData, _HM_SEGS, wx, wz, _HM_SIZE, _HM_SEGS - 1);
+}
+
 export function spawnBulldozer(scene) {
   if (_bulldozer) return _bulldozer;
-  _terrainMesh = buildTerrainMesh(scene, 0);
+
+  // Try to load heightmap from save
+  _heightmapData = _readHeightmapFromSave();
+  if (_heightmapData) {
+    _terrainMesh = buildTerrainMeshFromHeightmap(scene, _heightmapData, _HM_SEGS, _HM_SIZE, 0);
+  } else {
+    _terrainMesh = buildTerrainMesh(scene, 0);
+  }
+
   _bulldozer = buildPlayableBulldozer(scene, 0, _terrainMesh);
+
+  // Read saved 3D position
+  const savedPos = _readBulldozerPosFromSave();
+  if (savedPos) {
+    _bulldozer.setPosition(savedPos.wx, savedPos.wz);
+    _bulldozer.setHeading(savedPos.wAngle);
+  }
+
+  // Provide terrain height function so bulldozer follows heightmap
+  _bulldozer.setTerrainHeightFn(_getExtTerrainHeight);
+
   return _bulldozer;
 }

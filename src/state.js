@@ -1,5 +1,5 @@
 'use strict';
-import { NF, BPF, TB, FH, MOB, isWinBlock, isElevBlock, isFlankBlock } from './constants.js';
+import { NF, BPF, TB, FH, MOB, T3D_SEGS, isWinBlock, isElevBlock, isFlankBlock } from './constants.js';
 
 // ═══ GAME STATE ═══
 export const S={
@@ -8,6 +8,7 @@ export const S={
   player:{x:0,y:TB-FH,w:24,h:48,vx:0,vy:0,spd:5,color:'#FF5722',
     fr:true,cf:0,st:'idle',onF:true,clT:null,clP:0,bob:0,alien:false,suit:false,suitC:'#506070',
     chgT:0,isChg:false,drpT:0,isDrp:false,drpPhase:0,baseZoom:0,crane:-1,
+    hunger:100,
   },
   keys:{},jp:{},iLock:false,msgTmr:null,
   litFloors:new Set(),
@@ -47,10 +48,19 @@ export const S={
   foodChainComplete:false,
   cornerStoreUpgraded:false,
   terrain:new Float32Array(800),
+  terrain3d:{
+    heightmap:new Float32Array((T3D_SEGS+1)*(T3D_SEGS+1)),
+    cutHeat:new Float32Array((T3D_SEGS+1)*(T3D_SEGS+1)),
+    raiseHeat:new Float32Array((T3D_SEGS+1)*(T3D_SEGS+1)),
+    dirty:false,
+    initialized:false,
+  },
   bulldozer:{
     unlocked:false,active:false,
     x:-1800-200,y:2400,vx:0,vy:0,
     facing:1,bladeDown:false,bobT:0,
+    // 3D position (shared between control room topo + exterior)
+    wx:60,wz:60,wAngle:0,wSpeed:0,bladeMode:0,
   },
 };
 
@@ -70,7 +80,7 @@ export function syncLitFloors(){
 }
 
 export function getActiveBuildFloor(){
-  for(let i=0;i<NF;i++) if(S.buildout[i].stage<5) return i;
+  for(let i=0;i<NF;i++) if(S.buildout[i].stage<3) return i;
   return -1;
 }
 

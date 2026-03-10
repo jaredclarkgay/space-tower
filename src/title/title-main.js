@@ -17,7 +17,7 @@ let cityData = null;
 
 // Patch sim save with updated buildout from exterior building
 function _syncBuildoutToSave(buildout) {
-  const key = 'spacetower_v14';
+  const key = 'spacetower_v15';
   try {
     const raw = localStorage.getItem(key);
     const d = raw ? JSON.parse(raw) : { ts: Date.now() };
@@ -61,6 +61,12 @@ export function initTitle(canvas, saveData) {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x060810);
   scene.fog = new THREE.FogExp2(0x060810, 0.000144); // 0.0018 / S
+
+  // Lighting (for Lambert materials — terrain depth shading)
+  scene.add(new THREE.AmbientLight(0xcccccc, 1.2));
+  const _sunLight = new THREE.DirectionalLight(0xffeedd, 0.8);
+  _sunLight.position.set(100, 200, 80);
+  scene.add(_sunLight);
 
   // Camera (FOV 50, near 0.1)
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1.0, 25000);
@@ -505,8 +511,15 @@ export function skipToExterior(placeAtDozer) {
     _syncBuildoutToSave(TC.buildout);
   });
 
-  // Spawn bulldozer and scaffolding game in the exterior
-  const dozer = spawnBulldozer(scene);
+  // Spawn bulldozer only if unlocked (or dev dozer mode)
+  let _dozerUnlocked = placeAtDozer;
+  if (!_dozerUnlocked) {
+    try {
+      const _sv = localStorage.getItem('spacetower_v15');
+      if (_sv) { const _sd = JSON.parse(_sv); _dozerUnlocked = _sd.bulldozer?.unlocked; }
+    } catch {}
+  }
+  const dozer = _dozerUnlocked ? spawnBulldozer(scene) : null;
   spawnScaffolding(scene);
 
   // If dev dozer mode, place player next to the bulldozer

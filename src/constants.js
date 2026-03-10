@@ -37,6 +37,15 @@ export function lerpColor(a,b,t){
   return`#${((1<<24)+(r<<16)+(g<<8)+bl).toString(16).slice(1)}`;
 }
 
+// ═══ 3D TERRAIN (shared heightmap for control room topo + exterior) ═══
+export const T3D_SEGS=200;           // subdivisions per axis (201 vertices)
+export const T3D_SIZE=400;           // world units extent (tower is 75×75 at center)
+export const T3D_CONTOUR=0.8;        // contour line interval
+export const T3D_DEFORM_R=12;        // blade deformation radius
+export const T3D_DEFORM_STR=0.25;    // deformation strength
+export const T3D_BERM_STR=0.08;      // side berm strength
+export const T3D_EXCLUSION_R=90;     // terrain exclusion zone radius (tower + scaffolding)
+
 // ═══ RECKONING CONSTANTS ═══
 export const RK_INTRO_T=180,RK_COUNTDOWN_T=180,RK_ACTIVE_T=5400,RK_FLOOD_T=600;
 export const RK_PLAYER_CLAIM=150,RK_BUILDER_CLAIM=210,RK_SUIT_CLAIM=45;

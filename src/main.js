@@ -12,18 +12,18 @@ const gotoExterior = localStorage.getItem('spacetower_gotoExterior');
 localStorage.removeItem('spacetower_devGoto');
 localStorage.removeItem('spacetower_gotoExterior');
 
-if (devGoto === 'interior' || devGoto === 'control-room') {
-  // Skip title entirely — straight to sim (fresh game)
+if (devGoto === 'interior' || devGoto === 'control-room' || devGoto === 'dozer') {
+  // Skip title entirely — straight to sim
   document.getElementById('titleCanvas').style.display = 'none';
   document.getElementById('gameCanvas').style.display = 'block';
   document.getElementById('game-ui').style.display = '';
-  initGame(null);
+  initGame(devGoto === 'dozer' ? 'dozer' : null);
   startGameLoop();
-  if (devGoto === 'control-room') enterControlRoom();
-} else if (devGoto === 'dozer' || devGoto === 'exterior') {
-  // Fresh exterior — no buildout (dozer mode places player near bulldozer)
+  if (devGoto === 'control-room' || devGoto === 'dozer') enterControlRoom();
+} else if (devGoto === 'exterior') {
+  // Fresh exterior — no buildout
   initTitle(document.getElementById('titleCanvas'), null);
-  requestAnimationFrame(() => { skipToExterior(devGoto === 'dozer'); });
+  requestAnimationFrame(() => { skipToExterior(); });
 } else {
   // Normal flow: launch title screen
   initTitle(document.getElementById('titleCanvas'), saveData);
@@ -51,9 +51,20 @@ document.addEventListener('enter-game', (e) => {
 });
 
 // Dev menu wiring
-document.querySelectorAll('#dev-nav button').forEach(btn => {
+document.querySelectorAll('#dev-nav button[data-goto]').forEach(btn => {
   btn.addEventListener('click', () => {
     localStorage.setItem('spacetower_devGoto', btn.dataset.goto);
     location.reload();
   });
+});
+
+// PURGE button — full save wipe
+document.getElementById('purge-btn')?.addEventListener('click', () => {
+  if (!confirm('PURGE all save data and reset everything?')) return;
+  [
+    'spacetower_v15','spacetower_v14','spacetower_v13','spacetower_v12','spacetower_v11',
+    'spacetower_music','spacetower_sound','spacetower_gotoExterior','spacetower_devGoto',
+    'spacetower_testReckoning','spacetower_scaffolding','rgb_llm_connection',
+  ].forEach(k => localStorage.removeItem(k));
+  location.reload();
 });
