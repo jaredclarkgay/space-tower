@@ -9,7 +9,7 @@ import { setupPanel, renderPanel } from './panel.js';
 import { genWorld } from './world.js';
 import { loadGame, autoSave } from './save.js';
 import { setupCompendium, isCompendiumOpen } from './compendium.js';
-import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, sndBuild, sndTile, sndWhoosh, sndChime, sndBoom, sndGrow, sndData, sndAwe, soundOn, toggleSound, getAudioCtx, sndDoorHumStart, sndDoorHumStop, sndDozerStart, sndDozerStop, sndDozerUpdate } from './sound.js';
+import { ensureAudio, sndStep, sndTalk, sndWarn, sndElev, sndBuild, sndTile, sndWhoosh, sndChime, sndBoom, sndGrow, sndData, sndAwe, sndIncome, soundOn, toggleSound, getAudioCtx, sndDoorHumStart, sndDoorHumStop, sndDozerStart, sndDozerStop, sndDozerUpdate } from './sound.js';
 import { initMusic, saveMusicState, setMuted as setMusicMuted } from './music.js';
 import { setupRadio } from './radio-ui.js';
 import { checkReckoningTrigger, updateReckoning, checkReckoningBell, startRematch, isReckoningFrozen, isReckoningActive, setupTestMode, handleReckoningIntroE, handleReckoningColorLeft, handleReckoningColorRight, handleReckoningColorConfirm, checkColorWheel, openColorWheel } from './reckoning.js';
@@ -426,12 +426,9 @@ function updateEconomy(){
   let _income=0;
   for(let fi=0;fi<NF;fi++){
     if(S.buildout[fi].stage<3)continue;
-    for(let bi=0;bi<BPF;bi++){
-      const m=S.modules[fi]?.[bi];
-      if(m&&m.sat)_income+=m.sat;
-    }
+    for(let bi=0;bi<BPF;bi++){if(S.modules[fi]?.[bi])_income++}
   }
-  if(_income>0)addCredits(_income);
+  if(_income>0){addCredits(_income);sndIncome()}
 
 }
 

@@ -62,16 +62,16 @@ const STARS=Array.from({length:40},(_,i)=>({
 
 // ── Task text for "Next Step" on screen ──
 const TASK_TEXT=[
-  'Build Floor 1 — wire power, open the lobby',
-  'Build Floor 2 — frame quarters, give people a place to sleep',
-  'Build Floor 3 — raise the garden, the tower needs to breathe',
-  'Build Floor 4 — set the research level, connect the rack',
-  'Build Floor 5 — raise the restaurant, you need to eat',
-  'Build Floor 6 — frame the lounge, your people need to gather',
-  'Build Floor 7 — install medical, someone will get hurt up here',
-  'Build Floor 8 — claim storage, secure your territory',
-  'Build Floor 9 — mount the telescope, see how far you\'ve come',
-  'Build Floor 10 — reach command, someone is waiting for you',
+  'Build the lobby — launch crates from the seesaw',
+  'Frame the quarters — give people a place to sleep',
+  'Raise the garden — the tower needs to breathe',
+  'Get research online — connect the server rack',
+  'Open the restaurant — you need to eat',
+  'Build the lounge — your people need space to gather',
+  'Install observation systems — look out, not just up',
+  'Secure the storage level — protect what you have',
+  'Mount the telescope — see how far you\'ve come',
+  'Reach command — someone is waiting for you',
 ];
 
 // ── Floor descriptions for detail panel ──
@@ -130,6 +130,10 @@ const LOG_QUIPS=[
   {text:'Status: operational. Purpose: unclear.'},
   {text:'Floor count: 10. Complaint count: higher.'},
   {text:'The hum you hear is normal. Probably.'},
+  {text:'Seesaw accuracy improving. Roof integrity: questionable.'},
+  {text:'New floor detected. Interior awaiting activation.'},
+  {text:'Builders report: materials received. Mostly intact.'},
+  {text:'The work expands. The job continues.'},
 ];
 
 const CONSOLE_LAND_QUIPS=[
@@ -175,8 +179,14 @@ function _refreshCache(){
   }
   _cache.active=ac;_cache.building=bd;_cache.doneCount=dc;
   _cache.nextTask=null;
+  _cache.builtUnexplored=null;
   for(let i=0;i<NF;i++){
     if(S.buildout[i].stage<3){_cache.nextTask={floor:i,text:TASK_TEXT[i]};break}
+  }
+  // Find first floor that's built (stage>=1) but not fully explored (stage<3)
+  for(let i=0;i<NF;i++){
+    const stg=S.buildout[i].stage;
+    if(stg>=1&&stg<3){_cache.builtUnexplored={floor:i};break}
   }
 }
 
@@ -465,6 +475,12 @@ function _drawNextStepPanel(X,x,y,maxW,headerSz,titleSz,textSz,dotW,dotH,dotGap)
     X.fillText(`FLOOR ${nextTask.floor+1}`,x,y+22);
     X.font=`${textSz}px monospace`;X.fillStyle=CR.white+'dd';
     _wrapText(X,nextTask.text,x,y+22+textSz+8,maxW,textSz+4);
+    // Secondary: built but not explored
+    const bu=_cache.builtUnexplored;
+    if(bu&&bu.floor!==nextTask.floor){
+      X.font=`${Math.max(7,textSz-1)}px monospace`;X.fillStyle=CR.gold+'bb';
+      X.fillText(`Floor ${bu.floor+1} built — enter the tower to bring it online`,x,y+22+textSz*3+16);
+    }
   }
 
   const doneCount=_cache.doneCount;

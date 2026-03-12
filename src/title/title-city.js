@@ -261,6 +261,24 @@ function buildTower(scene) {
   vFloor.rotation.x = -Math.PI / 2;
   vFloor.position.set(0, 0.05, td / 2 - vestD / 2); TC.group.add(vFloor);
 
+  // ── Stepped tiers (ziggurat base leading up to entrance) ──
+  const tierCount = 4, tierH = baseH / (tierCount + 2); // each tier is a fraction of base height
+  const tierMats = [
+    new THREE.MeshBasicMaterial({ color: 0x20242e }),
+    new THREE.MeshBasicMaterial({ color: 0x1e222c }),
+    new THREE.MeshBasicMaterial({ color: 0x1c202a }),
+    new THREE.MeshBasicMaterial({ color: 0x1a1e28 }),
+  ];
+  for (let ti = 0; ti < tierCount; ti++) {
+    const tierW = tw + (tierCount - ti) * 6; // wider at bottom
+    const tierD = 4 + (tierCount - ti) * 2.5; // deeper at bottom
+    const tierY = ti * tierH + tierH / 2;
+    const tierZ = td / 2 + tierD / 2; // extend forward from tower face
+    const tier = new THREE.Mesh(new THREE.BoxGeometry(tierW, tierH, tierD), tierMats[ti]);
+    tier.position.set(0, tierY, tierZ);
+    TC.group.add(tier);
+  }
+
   // ── Industrial pendant lights (work-zone feel) ──
   const lightFixMat = new THREE.MeshBasicMaterial({ color: 0xffe8b0 });
   const lightWireMat = new THREE.MeshBasicMaterial({ color: 0x333333 });

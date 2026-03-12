@@ -1857,6 +1857,21 @@ export function draw(){
   // Scaffolding
   drawScaffold(TL-80,dynRoofY,80,TB-dynRoofY);
   drawScaffold(TR,dynRoofY,80,TB-dynRoofY);
+  // ── Foundation stepped tiers (below lobby) ──
+  if(TB+60>S.cam.y-H/(2*eZoom)-FH*2){
+    const _tierH=15,_tierCount=4;
+    for(let ti=0;ti<_tierCount;ti++){
+      const _tw=TW+((_tierCount-ti)*100); // wider at bottom
+      const _tx=-((_tierCount-ti)*50);     // center offset
+      const _ty=TB+ti*_tierH;
+      const _shade=Math.floor(30+ti*8);
+      X.fillStyle=`rgb(${_shade},${_shade+2},${_shade+6})`;
+      X.fillRect(TL+_tx,_ty,_tw,_tierH);
+      X.fillStyle=`rgba(255,255,255,0.04)`;
+      X.fillRect(TL+_tx,_ty,_tw,2); // top edge highlight
+    }
+  }
+
   // Viewport culling bounds (world Y, with generous margin for slabs/ambient)
   const _vTop=S.cam.y-H/(2*eZoom)-FH*2,_vBot=S.cam.y+H/(2*eZoom)+FH*2;
   S.floors.forEach((f)=>{
