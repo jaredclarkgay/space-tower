@@ -604,14 +604,15 @@ export function disposeExteriorInput() {
 
 // ── Hunger (shared with sim via localStorage) ──
 let _hunger = 100;
+let _hungerActive = false;
 let _hungerAcc = 0;
-const _HUNGER_TICK = 15; // seconds between hunger decay (matches sim's 900 frames / 60fps)
+const _HUNGER_TICK = 10; // seconds between hunger decay (~10s per point)
 let _hungerEl = null;
 
 function _initHunger() {
   try {
     const raw = localStorage.getItem('spacetower_v15');
-    if (raw) { const d = JSON.parse(raw); if (d.hunger != null) _hunger = d.hunger; }
+    if (raw) { const d = JSON.parse(raw); if (d.hunger != null) _hunger = d.hunger; if (d.hungerActive) _hungerActive = true; }
   } catch { /* non-critical */ }
 }
 
@@ -620,22 +621,31 @@ function _syncHungerToSave() {
     const raw = localStorage.getItem('spacetower_v15');
     const d = raw ? JSON.parse(raw) : { ts: Date.now() };
     d.hunger = _hunger;
+    d.hungerActive = _hungerActive;
     localStorage.setItem('spacetower_v15', JSON.stringify(d));
   } catch { /* non-critical */ }
 }
 
-function _hungerMult() { return _hunger >= 30 ? 1 : 0.5 + _hunger / 60; }
+function _hungerMult() { return !_hungerActive ? 1 : _hunger >= 60 ? 1 : _hunger >= 30 ? 0.9 : 0.8; }
 
+let _lastHungerDisplay = -1;
 function _updateHungerHUD() {
+  if (!_hungerActive) {
+    if (_hungerEl) { _hungerEl.style.display = 'none'; }
+    return;
+  }
   if (!_hungerEl) {
     _hungerEl = document.createElement('div');
     _hungerEl.id = 'ext-hunger';
-    _hungerEl.style.cssText = 'position:fixed;top:8px;left:8px;z-index:15;background:rgba(0,0,0,0.4);color:#ff9060;padding:4px 11px;border-radius:12px;font-size:10px;letter-spacing:1px;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.1);font-family:monospace';
+    _hungerEl.style.cssText = 'position:fixed;top:8px;left:8px;z-index:15;background:rgba(0,0,0,0.4);color:#4aba4a;padding:4px 11px;border-radius:12px;font-size:10px;letter-spacing:1px;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.1);font-family:monospace';
     document.body.appendChild(_hungerEl);
   }
+  _hungerEl.style.display = '';
   const h = Math.round(_hunger);
+  if (h === _lastHungerDisplay) return;
+  _lastHungerDisplay = h;
   _hungerEl.textContent = `\ud83c\udf56 ${h}`;
-  _hungerEl.style.color = h < 30 ? '#ff4030' : '#ff9060';
+  _hungerEl.style.color = h < 30 ? '#ff4030' : h < 60 ? '#d4a020' : '#4aba4a';
 }
 
 export function disposeHungerHUD() {
@@ -1175,9 +1185,10 @@ function _updateRooftopWorkers(dt) {
     // Label billboard: face camera
     if (arrow.userData.labelMesh) arrow.userData.labelMesh.rotation.y = -arrow.rotation.y;
   }
-  // Animate BUILD arrow — hide when operating scaffolding
+  // Animate BUILD arrow — hide when operating scaffolding or all floors built
   if (bArrow) {
-    bArrow.visible = !scaffOp;
+    const allBuilt = _scaffolding && _scaffolding.currentFloor >= 10;
+    bArrow.visible = !scaffOp && !allBuilt;
     bArrow.position.y = 8 + Math.sin(t * 1.5 + 1) * 1.5; // offset phase
     bArrow.rotation.y = t * 0.4;
     if (bArrow.userData.labelMesh) bArrow.userData.labelMesh.rotation.y = -bArrow.rotation.y;
@@ -1269,7 +1280,7 @@ function _updateDozerPrompt() {
   let text = 'W/S drive \u2022 A/D turn \u2022 SHIFT boost \u2022 SPACE jump';
   text += _bulldozer.bladeDown ? ' \u2022 F blade up' : ' \u2022 F blade down';
   text += ' \u2022 ESC exit';
-  promptEl.textContent = text;
+  if (promptEl.textContent !== text) promptEl.textContent = text;
   promptEl.style.opacity = '1';
 }
 
@@ -1279,7 +1290,7 @@ function _updatePrompt() {
   const crane = siteGroup?.userData?.crane;
   const nearWorker = _getNearbyWorker();
   if (_scaffolding && !_scaffolding.isOperating && _scaffolding.isNear(pp)) {
-    text = `E \u2014 launch materials (Floor ${_scaffolding.currentFloor + 1})`;
+    text = _scaffolding.currentFloor >= 10 ? 'E \u2014 free launch (aim for 10!)' : `E \u2014 launch materials (Floor ${_scaffolding.currentFloor + 1})`;
   } else if (_bulldozer && !_bulldozer.isOperating && _bulldozer.isNear(pp)) {
     text = 'E \u2014 operate bulldozer';
   } else if (crane && !crane.isOperating && crane.isNear(pp)) {
@@ -1304,8 +1315,9 @@ function _updatePrompt() {
     document.body.appendChild(promptEl);
   }
   if (promptEl) {
-    promptEl.textContent = text;
-    promptEl.style.opacity = text ? '1' : '0';
+    if (promptEl.textContent !== text) promptEl.textContent = text;
+    const op = text ? '1' : '0';
+    if (promptEl.style.opacity !== op) promptEl.style.opacity = op;
   }
 }
 
@@ -1318,11 +1330,13 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   }
   if (!PLAYER.active || !playerGroup) return;
 
-  // ── Hunger tick ──
-  _hungerAcc += dt;
-  if (_hungerAcc >= _HUNGER_TICK) {
-    _hungerAcc -= _HUNGER_TICK;
-    if (_hunger > 0) { _hunger = Math.max(0, _hunger - 1); _syncHungerToSave(); }
+  // ── Hunger tick (only when hungerActive) ──
+  if (_hungerActive) {
+    _hungerAcc += dt;
+    if (_hungerAcc >= _HUNGER_TICK) {
+      _hungerAcc -= _HUNGER_TICK;
+      if (_hunger > 0) { _hunger = Math.max(0, _hunger - 1); _syncHungerToSave(); }
+    }
   }
   _updateHungerHUD();
 

@@ -76,7 +76,7 @@ export function renderPanel(){
   document.getElementById('fn-prev').className='nav'+(fi===0?' dis':'');
   document.getElementById('fn-next').className='nav'+(fi===NF-1?' dis':'');
   bpTitle.textContent=`FLOOR ${fi+1} · ${fd.name}`;
-  bpTitle.style.color=stg>=5?'#00ff88':stg>0?'#ffd700':'#ff6b35';
+  bpTitle.style.color=stg>=3?'#00ff88':stg>0?'#ffd700':'#ff6b35';
 
   let h='';
 
@@ -85,8 +85,8 @@ export function renderPanel(){
 
   // Stage progress dots
   h+='<div style="display:flex;gap:6px;justify-content:center;margin:10px 0">';
-  const labels=['POWER','STRUCTURE','SYSTEMS','FURNISH','ACTIVATE'];
-  for(let s=0;s<5;s++){
+  const labels=['POWER','STRUCTURE','ACTIVATE'];
+  for(let s=0;s<3;s++){
     const done=stg>s,cur=stg===s&&fi===abf;
     const c=done?'#00ff88':cur?'#ffd700':'rgba(255,255,255,0.15)';
     h+=`<div style="display:flex;flex-direction:column;align-items:center;gap:3px">`;
@@ -97,7 +97,7 @@ export function renderPanel(){
   h+='</div>';
 
   // Status text + module UI for complete floors
-  if(stg>=5){
+  if(stg>=3){
     // Count placed modules
     let placed=0,total=0;
     for(let bi=0;bi<BPF;bi++){
@@ -163,7 +163,7 @@ export function renderPanel(){
     const s=S.buildout[i].stage;
     if(s<1)continue; // hide unreached floors
     const isCur=i===fi;
-    const c=s>=5?'#00ff88':s>0?'#ffd700':'rgba(255,255,255,0.2)';
+    const c=s>=3?'#00ff88':s>0?'#ffd700':'rgba(255,255,255,0.2)';
     h+=`<div class="fp-row" data-fi="${i}" style="display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:3px;cursor:pointer;${isCur?'background:rgba(255,255,255,0.06);':''}margin-bottom:1px">`;
     h+=`<div style="font-size:9px;opacity:0.4;width:20px">F${i+1}</div>`;
     h+=`<div style="font-size:10px;flex:1;opacity:${isCur?1:0.5}">${FD[i].name}</div>`;

@@ -78,6 +78,19 @@ export function getInter(){const p=S.player;
     const stg=S.buildout[abf].stage;
     if(stg<3){const sd=STAGES[abf][stg];if(Math.abs(p.x-sd.x)<90)return{t:'build',v:{floor:abf,stage:stg,def:sd}}}
   }
+  // Eat fruit — Floor 3 (Garden, index 2), stage >= 2, near a ripe planter bed
+  if(p.cf===2&&S.buildout[2].stage>=2&&(p.hunger<100||!p.hungerActive)){
+    let _bi=0;for(let bx=TL+300;bx<TR-200;bx+=500,_bi++){
+      if(p.gardenTomatoes[_bi]<=0&&Math.abs(p.x-(bx+40))<60)return{t:'eat_fruit',v:{bed:_bi}}}
+  }
+  // Eat at diner — Floor 2 (Quarters, index 1), stage >= 2, food chain complete
+  if(p.cf===1&&S.buildout[1].stage>=2&&S.foodChainComplete&&p.hungerActive&&p.hunger<100){
+    const dinerX=TL+7*PG+PG/2;if(Math.abs(p.x-dinerX)<90)return{t:'eat',v:{loc:'diner'}}
+  }
+  // Eat at restaurant — Floor 5 (Restaurant, index 4), stage >= 2
+  if(p.cf===4&&S.buildout[4].stage>=2&&p.hungerActive&&p.hunger<100){
+    const barX=TL+7*PG+PG/2;if(Math.abs(p.x-barX)<120)return{t:'eat',v:{loc:'restaurant'}}
+  }
   // Objects — only at stage >= 2
   for(let o of S.objs){if(S.buildout[o.floor].stage<2)continue;if(Math.abs(p.y-o.y)<20&&Math.abs(p.x-o.x)<50)return{t:'obj',v:o}}
   // NPCs — only at stage >= 3, and only once tower has 3+ floors built
@@ -1082,6 +1095,45 @@ function drawFloorLife(i,stage,fy){
         X.fillStyle='#808888';X.fillRect(TL+150,fy-FH+20,30,24);X.fillStyle='rgba(80,160,200,0.3)';X.fillRect(TL+154,fy-FH+26,22,12);
         // UV ceiling strip
         X.fillStyle='rgba(200,100,255,0.06)';X.fillRect(TL+100,fy-FH+2,TW-200,6);X.globalAlpha=0.04;X.fillStyle='#c864ff';X.fillRect(TL,fy-FH,TW,FH*0.3);X.globalAlpha=1;
+        // Visible water pipes along bottom of planter beds
+        X.strokeStyle='rgba(80,160,220,0.35)';X.lineWidth=3;
+        X.beginPath();X.moveTo(TL+150,fy-6);X.lineTo(TR-150,fy-6);X.stroke();
+        // Flowing water effect — animated blue pulses
+        for(let wi=0;wi<6;wi++){
+          const wx=TL+200+((wi*550+t*80)%(TW-400));
+          const pulse=0.3+Math.sin(t*3+wi*1.5)*0.15;
+          X.fillStyle=`rgba(80,180,240,${pulse})`;
+          X.beginPath();X.arc(wx,fy-6,4,0,Math.PI*2);X.fill();
+        }
+        // Vertical pipe connections to planters
+        X.strokeStyle='rgba(80,160,220,0.2)';X.lineWidth=2;
+        for(let bx=TL+300;bx<TR-200;bx+=500){X.beginPath();X.moveTo(bx+40,fy-6);X.lineTo(bx+40,fy-28);X.stroke()}
+        // Tomatoes on planter beds — the Eden fruit
+        {let _ti=0;for(let bx=TL+300;bx<TR-200;bx+=500,_ti++){
+          const tx=bx+40,ty=fy-32;
+          const timer=S.player.gardenTomatoes[_ti]||0;
+          if(timer<=0){
+            // Ripe — bright red tomato
+            // Green stem
+            X.strokeStyle='#4a8a2a';X.lineWidth=2;X.beginPath();X.moveTo(tx,ty);X.lineTo(tx,ty-12);X.stroke();
+            // Leaf
+            X.fillStyle='#5aa030';X.beginPath();X.ellipse(tx+5,ty-8,6,3,0.3,0,Math.PI*2);X.fill();
+            // Tomato — big, bright, unmissable
+            const bob=Math.sin(t*2+bx*0.01)*1.5;
+            X.fillStyle='#e03020';X.beginPath();X.arc(tx,ty+bob,7,0,Math.PI*2);X.fill();
+            // Highlight
+            X.fillStyle='rgba(255,255,255,0.35)';X.beginPath();X.arc(tx-2,ty+bob-2,2.5,0,Math.PI*2);X.fill();
+            // Calyx (star-shaped top)
+            X.fillStyle='#3a7a20';X.beginPath();X.moveTo(tx,ty+bob-7);X.lineTo(tx-3,ty+bob-9);X.lineTo(tx,ty+bob-6);X.lineTo(tx+3,ty+bob-9);X.closePath();X.fill();
+          } else {
+            // Regrowing — small green bud that grows over time
+            const prog=1-(timer/7200); // 0=just picked, 1=almost ripe
+            const sz=1+prog*4;
+            X.strokeStyle='#4a8a2a';X.lineWidth=1.5;X.beginPath();X.moveTo(tx,ty);X.lineTo(tx,ty-6-prog*6);X.stroke();
+            X.fillStyle=prog>0.7?`rgb(${Math.floor(80+140*((prog-0.7)/0.3))},${Math.floor(140-80*((prog-0.7)/0.3))},30)`:'#5a9a30';
+            X.beginPath();X.arc(tx,ty-2,sz,0,Math.PI*2);X.fill();
+          }
+        }}
         // Pollen
         X.fillStyle='rgba(140,220,100,0.25)';for(let mi=0;mi<8;mi++){const mx=TL+200+((mi*457+Math.sin(t+mi*2.1)*80)%(TW-400)),my=fy-20-((t*8+mi*37)%120);X.beginPath();X.arc(mx,my,1.5+Math.sin(t*2+mi)*0.5,0,Math.PI*2);X.fill()}
       }
@@ -1514,11 +1566,11 @@ function drawReckoningOverlay(W,H,_now2){
       break;
     }
     case 'COLOR_PICK':{
-      X.fillStyle='rgba(0,0,0,0.6)';X.fillRect(0,0,W,H);
-      X.fillStyle='#fff';X.font='bold 22px monospace';X.textAlign='center';
-      X.fillText('CHOOSE YOUR COLOR',W/2,H*0.28);
-      X.fillStyle='rgba(255,255,255,0.4)';X.font='13px monospace';
-      X.fillText('This is how your territory looks on the tower.',W/2,H*0.34);
+      X.fillStyle='rgba(0,0,0,0.75)';X.fillRect(0,0,W,H);
+      X.fillStyle='#FFD700';X.font='bold 28px monospace';X.textAlign='center';
+      X.fillText('CHOOSE YOUR COLOR',W/2,H*0.24);
+      X.fillStyle='rgba(255,255,255,0.5)';X.font='14px monospace';
+      X.fillText('This is how your territory looks on the tower.',W/2,H*0.32);
       // Color swatches
       const cp=getColorPickState();
       const swSize=36,swGap=12,totalW=cp.colors.length*(swSize+swGap)-swGap;
@@ -1531,9 +1583,11 @@ function drawReckoningOverlay(W,H,_now2){
         if(sel){X.strokeStyle='#000';X.lineWidth=2;X.beginPath();X.roundRect(sx,sy,swSize,swSize,4);X.stroke()}
       }
       // Navigation hint
-      const pulse2=0.5+Math.sin(_now2*0.005)*0.3;
-      X.fillStyle=`rgba(255,255,255,${pulse2})`;X.font='bold 14px monospace';X.textAlign='center';
-      X.fillText('\u25C0 A/D \u25B6       [E] CONFIRM',W/2,H*0.62);
+      const pulse2=0.6+Math.sin(_now2*0.004)*0.4;
+      X.fillStyle=`rgba(255,215,0,${pulse2})`;X.font='bold 18px monospace';X.textAlign='center';
+      X.fillText('\u25C0  A / D  \u25B6',W/2,H*0.58);
+      X.fillStyle=`rgba(255,255,255,${pulse2*0.8})`;X.font='bold 14px monospace';
+      X.fillText('press  E  to confirm',W/2,H*0.65);
       break;
     }
   }

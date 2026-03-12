@@ -171,7 +171,7 @@ function _refreshCache(){
     const stg=S.buildout[i].stage;
     let mc=0;for(let bi=0;bi<BPF;bi++)if(S.modules[i][bi])mc++;
     _cache.floors[i].name=FD[i].name;_cache.floors[i].stage=stg;_cache.floors[i].mods=mc;
-    if(stg>=5){ac++;dc++}else if(stg>0)bd++;
+    if(stg>=3){ac++;dc++}else if(stg>0)bd++;
   }
   _cache.active=ac;_cache.building=bd;_cache.doneCount=dc;
   _cache.nextTask=null;

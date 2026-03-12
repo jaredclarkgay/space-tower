@@ -36,6 +36,8 @@ export function saveGame(){
       modules:mods,
       credits:S.credits,
       hunger:S.player.hunger,
+      hungerActive:S.player.hungerActive,
+      gardenTomatoes:S.player.gardenTomatoes,
       sat:S.sat,
       food:S.food,
       builderHappiness:S.builderHappiness,
@@ -68,6 +70,8 @@ export function loadGame(){
     if(d.compendium)S.compendium.entries=d.compendium;
     if(d.credits!=null)setCredits(d.credits);
     if(d.hunger!=null)setHunger(d.hunger);
+    if(d.hungerActive!=null)S.player.hungerActive=!!d.hungerActive;
+    if(d.gardenTomatoes){for(let i=0;i<Math.min(d.gardenTomatoes.length,7);i++)S.player.gardenTomatoes[i]=d.gardenTomatoes[i]||0}
     if(d.sat!=null)setSat(d.sat);
     if(d.food!=null)setFood(d.food);
     if(d.builderHappiness!=null)setHappiness(d.builderHappiness);

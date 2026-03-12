@@ -208,7 +208,7 @@ function buildTower(scene) {
   TC.litFloors = [];
   for (let i = 0; i < nf; i++) {
     if (i < 10) {
-      TC.litFloors.push((TC.buildout[i] || 0) >= 2);
+      TC.litFloors.push((TC.buildout[i] || 0) >= 1);
     } else {
       const ch = i < 12 ? 0.9 : i < 25 ? 0.75 : i < 40 ? 0.5 : i < 55 ? 0.25 : 0.05;
       TC.litFloors.push(sr() < ch);
@@ -1242,15 +1242,15 @@ function applyPlayerLighting() {
 export function updateBuildingHover(camera, mouseX, mouseY, skip, t) {
   if (skip || !bldgHoverMesh || !bldgHoverMesh.instanceColor) return;
   const hw = innerWidth / 2, hh = innerHeight / 2;
-  const radius = 120;
+  const radius = 120, radiusSq = radius * radius;
   const arr = bldgHoverMesh.instanceColor.array;
   for (const wd of bldgWinData) {
     _v3.copy(wd.worldPos).project(camera);
     let glow = 0;
     if (_v3.z <= 1) {
       const sx = _v3.x * hw + hw, sy = -_v3.y * hh + hh;
-      const dist = Math.sqrt((sx - mouseX) ** 2 + (sy - mouseY) ** 2);
-      glow = dist < radius ? (1 - dist / radius) * 0.5 : 0;
+      const dSq = (sx - mouseX) ** 2 + (sy - mouseY) ** 2;
+      glow = dSq < radiusSq ? (1 - Math.sqrt(dSq) / radius) * 0.5 : 0;
     }
     // Shimmer: lit windows pulse on/off via half-wave sin (visible even against bright daytime sky)
     let shimmer = wd.baseBright;
@@ -1270,7 +1270,7 @@ export function updateBuildingHover(camera, mouseX, mouseY, skip, t) {
 export function updateTowerHover(camera, mouseX, mouseY) {
   if (!towerWinMesh || !towerWinMesh.instanceColor) return;
   const hw = innerWidth / 2, hh = innerHeight / 2;
-  const radius = 13;
+  const radius = 13, radiusSq = radius * radius;
   const arr = towerWinMesh.instanceColor.array;
   let changed = false;
   for (const wd of towerWinData) {
@@ -1278,8 +1278,8 @@ export function updateTowerHover(camera, mouseX, mouseY) {
     _v3.copy(wd.worldPos).project(camera);
     if (_v3.z > 1) { wd.wasHovered = false; continue; }
     const sx = (_v3.x * hw) + hw, sy = -(_v3.y * hh) + hh;
-    const dist = Math.sqrt((sx - mouseX) ** 2 + (sy - mouseY) ** 2);
-    const isHovered = dist < radius;
+    const dSq = (sx - mouseX) ** 2 + (sy - mouseY) ** 2;
+    const isHovered = dSq < radiusSq;
     if (isHovered && !wd.wasHovered) {
       wd.toggled = !wd.toggled;
       arr[wd.idx * 3] = wd.toggled ? wd.litR : 0x14 / 255;

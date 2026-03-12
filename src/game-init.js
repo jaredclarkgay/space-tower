@@ -243,8 +243,9 @@ const ECON_TICK=60; // frames per economy tick (~1 second at 60fps)
 let _cropAcc=0;
 const CROP_TICK=1800; // frames per crop growth stage (~30 seconds at 60fps)
 let _hudFood=null,_hudHappy=null,_hudHunger=null;
+let _lastFoodVal=-1,_lastHappyVal=-1,_lastHungerVal=-1,_lastHungerActive=false;
 let _hungerAcc=0;
-const HUNGER_TICK=900; // frames per hunger decay (~15 seconds at 60fps)
+const HUNGER_TICK=600; // frames per hunger decay (~10 seconds at 60fps)
 
 function terrainIndex(worldX){
   const t=(worldX-TERRAIN_X_MIN)/(TERRAIN_X_MAX-TERRAIN_X_MIN);
@@ -255,6 +256,32 @@ function terrainHeight(worldX){
 }
 
 function updateEconomy(){
+  // ── Garden tomato regrow (runs every frame) ──
+  const gt=S.player.gardenTomatoes;
+  for(let i=0;i<gt.length;i++){if(gt[i]>0)gt[i]--}
+  // ── Hunger decay (runs every frame, only when hungerActive) ──
+  if(S.player.hungerActive){
+    _hungerAcc++;
+    if(_hungerAcc>=HUNGER_TICK){
+      _hungerAcc=0;
+      if(S.player.hunger>0)setHunger(S.player.hunger-1);
+    }
+  }
+  // ── HUD update (cached — only write DOM when values change) ──
+  if(!_hudFood)_hudFood=document.getElementById('hud-food');
+  if(!_hudHappy)_hudHappy=document.getElementById('hud-happy');
+  if(!_hudHunger)_hudHunger=document.getElementById('hud-hunger');
+  if(_hudFood&&S.food!==_lastFoodVal){_lastFoodVal=S.food;_hudFood.textContent=`\ud83c\udf5e ${S.food}`}
+  if(_hudHappy&&S.builderHappiness!==_lastHappyVal){_lastHappyVal=S.builderHappiness;_hudHappy.textContent=`\ud83d\ude0a ${S.builderHappiness}`}
+  if(_hudHunger){
+    const h=S.player.hunger,ha=S.player.hungerActive;
+    if(ha!==_lastHungerActive){_lastHungerActive=ha;_hudHunger.style.display=ha?'':'none'}
+    if(ha&&h!==_lastHungerVal){
+      _lastHungerVal=h;
+      _hudHunger.textContent=`\ud83c\udf56 ${h}`;
+      _hudHunger.style.color=h<30?'#ff4030':h<60?'#d4a020':'#4aba4a';
+    }
+  }
   // Crop growth (every ~30 seconds)
   _cropAcc++;
   if(_cropAcc>=CROP_TICK){
@@ -279,7 +306,7 @@ function updateEconomy(){
 
   // Count food production
   let foodProd=0;
-  // Floor 1 diner (right flank, block 7) — active at stage 4+
+  // Floor 1 diner (right flank, block 7) — active at stage 2+
   if(S.buildout[1].stage>=2){
     foodProd+=S.foodChainComplete?2:1;
   }
@@ -342,28 +369,6 @@ function updateEconomy(){
   }
   if(_income>0)addCredits(_income);
 
-  // ── Hunger decay ──
-  _hungerAcc++;
-  if(_hungerAcc>=HUNGER_TICK){
-    _hungerAcc=0;
-    if(S.player.hunger>0)setHunger(S.player.hunger-1);
-  }
-  // Floor 5 restaurant refill — standing on floor 5 with food available restores hunger
-  if(S.player.cf===4&&S.buildout[4].stage>=3&&S.food>0&&S.player.hunger<100){
-    setHunger(S.player.hunger+2);
-  }
-
-  // Update HUD (cached refs)
-  if(!_hudFood)_hudFood=document.getElementById('hud-food');
-  if(!_hudHappy)_hudHappy=document.getElementById('hud-happy');
-  if(!_hudHunger)_hudHunger=document.getElementById('hud-hunger');
-  if(_hudFood)_hudFood.textContent=`\ud83c\udf5e ${S.food}`;
-  if(_hudHappy)_hudHappy.textContent=`\ud83d\ude0a ${S.builderHappiness}`;
-  if(_hudHunger){
-    const h=S.player.hunger;
-    _hudHunger.textContent=`\ud83c\udf56 ${h}`;
-    _hudHunger.style.color=h<30?'#ff4030':h<60?'#ff9060':'#ff9060';
-  }
 }
 
 // ═══ UPDATE ═══
@@ -533,7 +538,8 @@ function update(){
   const jk=k['ArrowUp']||k['KeyW'],dk=k['ArrowDown']||k['KeyS'];
   const stUp=inter&&inter.t==='up',stDn=inter&&inter.t==='dn';
   // Hunger debuff: below 30, movement and jump scale down (min 0.5x at 0)
-  const _hm=p.hunger>=30?1:0.5+p.hunger/60;
+  // Hunger multiplier: green (60-100) = 1x, yellow (30-60) = 0.9x, red (0-30) = 0.8x
+  const _hm=!p.hungerActive?1:p.hunger>=60?1:p.hunger>=30?0.9:0.8;
   if(p.st!=='climb'){
     p.vx=0;
     const _spr=k['ShiftLeft']||k['ShiftRight']?2:1;
@@ -562,7 +568,30 @@ function update(){
     if(dk&&p.onF&&!stDn){if(!p.isDrp)p.baseZoom=p.baseZoom||tZoom;p.isDrp=true;p.drpT=Math.min(p.drpT+1,DROP_MX);setTZoom(p.baseZoom-p.drpT/DROP_MX*0.25)}
     else if(dk&&stDn){p.st='climb';p.clT=inter.v;p.clP=1;p.x=inter.v.tx;p.vx=0;p.isDrp=false;p.drpT=0;setTZoom(p.baseZoom||tZoom)}
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
-    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;advanceBuildout(floor,stage+1,0);syncLitFloors();if(stage+1>=3)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
+    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){
+        const{floor,stage,def}=inter.v;
+        // Floor 3 (Garden) progression gate: must eat fruit before activating
+        if(floor===2&&stage+1===3&&!S.player.hungerActive){
+          showMsg('\ud83c\udf31 EAT FIRST','The garden has fruit. Take some.');
+        } else {
+          advanceBuildout(floor,stage+1,0);syncLitFloors();
+          if(stage+1>=3)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave();
+        }
+      }else if(inter.t==='eat_fruit'){
+        setHunger(100);
+        // Harvest this tomato — regrows in ~2 minutes (7200 frames)
+        if(inter.v.bed!=null)S.player.gardenTomatoes[inter.v.bed]=7200;
+        if(!S.player.hungerActive){
+          S.player.hungerActive=true;
+          showMsg('\ud83c\udf4e THE FIRST BITE','You feel... finite.');
+        } else {
+          showMsg('\ud83c\udf4e FED','Fresh from the garden.');
+        }
+        sndChime();
+      }else if(inter.t==='eat'){
+        setHunger(100);sndChime();
+        showMsg('\ud83c\udf5e FED',inter.v.loc==='diner'?'Hot meal from the diner.':'Something from the bar.');
+      }else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
       else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
       }else if(inter.t==='upgrade_store'){
         if(canAfford(inter.v.cost)){addCredits(-inter.v.cost);S.cornerStoreUpgraded=true;addHappiness(10);showMsg('\ud83c\uded2 GROCERY STORE','Corner store upgraded. Fresh produce.');sndChime();autoSave()}

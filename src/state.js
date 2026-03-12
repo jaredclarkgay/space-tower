@@ -8,7 +8,8 @@ export const S={
   player:{x:0,y:TB-FH,w:24,h:48,vx:0,vy:0,spd:5,color:'#FF5722',
     fr:true,cf:0,st:'idle',onF:true,clT:null,clP:0,bob:0,alien:false,suit:false,suitC:'#506070',
     chgT:0,isChg:false,drpT:0,isDrp:false,drpPhase:0,baseZoom:0,crane:-1,
-    hunger:100,
+    hunger:100,hungerActive:false,
+    gardenTomatoes:[0,0,0,0,0,0,0], // regrow timers per planter bed (0=ripe, >0=regrowing)
   },
   keys:{},jp:{},iLock:false,msgTmr:null,
   litFloors:new Set(),

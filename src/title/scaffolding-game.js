@@ -374,6 +374,16 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     const r = document.createElement('div');
     r.style.cssText = `position:absolute;bottom:0;left:0;right:0;height:${YELLOW_MIN * 100}%;background:rgba(200,60,60,0.2)`;
     meterEl.appendChild(r);
+    // Center line marking the perfect "10" spot
+    const sweet = document.createElement('div');
+    const sweetTop = ((1 - PERFECT_POWER) * 100);
+    sweet.style.cssText = `position:absolute;top:${sweetTop}%;left:0;right:0;height:2px;background:rgba(255,255,255,0.6);pointer-events:none`;
+    meterEl.appendChild(sweet);
+    // Small "10" label next to the line
+    const sweetLbl = document.createElement('div');
+    sweetLbl.style.cssText = `position:absolute;top:${sweetTop - 1}%;right:-18px;font-size:7px;color:rgba(255,255,255,0.5);font-family:monospace;pointer-events:none`;
+    sweetLbl.textContent = '10';
+    meterEl.appendChild(sweetLbl);
     meterLine = document.createElement('div');
     meterLine.style.cssText = 'position:absolute;left:-3px;right:-3px;height:3px;background:#fff;border-radius:2px;box-shadow:0 0 4px rgba(255,255,255,0.5)';
     meterEl.appendChild(meterLine);
@@ -425,66 +435,218 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     // Scale everything up — character is drawn in a 200×260 canvas
     const cx = w / 2; // 100 = center x
 
-    // Body (suit)
-    ctx.fillStyle = '#2a2a3a';
-    ctx.fillRect(cx - 36, 114, 72, 80); // torso
-    ctx.fillRect(cx - 42, 194, 36, 56); // left leg
-    ctx.fillRect(cx + 6, 194, 36, 56);  // right leg
+    // Long dark hair (behind body — drawn first)
+    ctx.fillStyle = '#1a1018';
+    ctx.beginPath();
+    ctx.moveTo(cx - 28, 72);
+    ctx.quadraticCurveTo(cx - 36, 100, cx - 34, 155);
+    ctx.quadraticCurveTo(cx - 30, 168, cx - 22, 170);
+    ctx.lineTo(cx - 18, 110);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 28, 72);
+    ctx.quadraticCurveTo(cx + 36, 100, cx + 34, 155);
+    ctx.quadraticCurveTo(cx + 30, 168, cx + 22, 170);
+    ctx.lineTo(cx + 18, 110);
+    ctx.closePath();
+    ctx.fill();
 
-    // Shirt / tie
-    ctx.fillStyle = '#e8e8f0';
-    ctx.fillRect(cx - 20, 114, 40, 32);
-    ctx.fillStyle = '#cc3030';
-    ctx.fillRect(cx - 5, 114, 10, 48); // tie
+    // Body (suit jacket — dark navy, fitted)
+    ctx.fillStyle = '#1e2030';
+    ctx.beginPath();
+    ctx.moveTo(cx - 34, 116);
+    ctx.lineTo(cx - 38, 194);
+    ctx.lineTo(cx + 38, 194);
+    ctx.lineTo(cx + 34, 116);
+    ctx.closePath();
+    ctx.fill();
 
-    // Arms (upper, always visible)
-    ctx.fillStyle = '#2a2a3a';
-    ctx.fillRect(cx - 56, 118, 20, 14); // left shoulder
-    ctx.fillRect(cx + 36, 118, 20, 14); // right shoulder
+    // Lapels
+    ctx.fillStyle = '#282840';
+    ctx.beginPath();
+    ctx.moveTo(cx - 14, 116); ctx.lineTo(cx - 28, 116); ctx.lineTo(cx - 24, 155); ctx.lineTo(cx - 10, 148);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 14, 116); ctx.lineTo(cx + 28, 116); ctx.lineTo(cx + 24, 155); ctx.lineTo(cx + 10, 148);
+    ctx.closePath();
+    ctx.fill();
 
-    // Raised arms holding card — higher raise for better scores
-    const armRaise = score >= 8 ? 48 : score >= 4 ? 24 : 0;
-    ctx.fillStyle = '#2a2a3a';
-    ctx.fillRect(cx - 56, 72 + (48 - armRaise), 18, 60 - (48 - armRaise)); // left arm
-    ctx.fillRect(cx + 38, 72 + (48 - armRaise), 18, 60 - (48 - armRaise)); // right arm
+    // Shirt
+    ctx.fillStyle = '#d8d8e4';
+    ctx.fillRect(cx - 14, 116, 28, 40);
+
+    // Tie
+    ctx.fillStyle = '#882222';
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, 116); ctx.lineTo(cx + 5, 116); ctx.lineTo(cx + 3, 136);
+    ctx.lineTo(cx, 160); ctx.lineTo(cx - 3, 136);
+    ctx.closePath();
+    ctx.fill();
+    // Tie knot
+    ctx.fillStyle = '#6a1818';
+    ctx.beginPath();
+    ctx.ellipse(cx, 118, 6, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Legs
+    ctx.fillStyle = '#1e2030';
+    ctx.fillRect(cx - 38, 194, 34, 56); // left leg
+    ctx.fillRect(cx + 4, 194, 34, 56);  // right leg
+    // Shoes
+    ctx.fillStyle = '#181818';
+    ctx.fillRect(cx - 40, 244, 38, 10);
+    ctx.fillRect(cx + 2, 244, 38, 10);
+
+    // Arms — longer, wider spread so card + hat are both visible
+    ctx.fillStyle = '#1e2030';
+    ctx.fillRect(cx - 62, 118, 28, 16); // left shoulder
+    ctx.fillRect(cx + 34, 118, 28, 16); // right shoulder
+
+    // Raised arms holding card — continuous raise based on score
+    const armRaise = Math.min(60, score * 6);
+    ctx.fillStyle = '#1e2030';
+    // Left arm
+    ctx.fillRect(cx - 62, 72 + (60 - armRaise), 20, 62 - (60 - armRaise));
+    // Right arm
+    ctx.fillRect(cx + 42, 72 + (60 - armRaise), 20, 62 - (60 - armRaise));
+
+    // Forearm angle detail (sleeve cuff)
+    ctx.fillStyle = '#d8d8e4';
+    const cuffY = 66 + (60 - armRaise);
+    ctx.fillRect(cx - 62, cuffY, 20, 4);
+    ctx.fillRect(cx + 42, cuffY, 20, 4);
 
     // Hands (skin)
-    ctx.fillStyle = '#d4a574';
-    const handY = 64 + (48 - armRaise);
-    ctx.fillRect(cx - 56, handY, 18, 14);
-    ctx.fillRect(cx + 38, handY, 18, 14);
+    ctx.fillStyle = '#c49464';
+    const handY = 58 + (60 - armRaise);
+    ctx.beginPath(); ctx.arc(cx - 52, handY + 7, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 52, handY + 7, 10, 0, Math.PI * 2); ctx.fill();
 
     // Head
-    ctx.fillStyle = '#d4a574';
+    ctx.fillStyle = '#c49464';
     ctx.beginPath();
     ctx.arc(cx, 88, 26, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eyes
-    ctx.fillStyle = '#222';
-    ctx.fillRect(cx - 10, 83, 6, 6);
-    ctx.fillRect(cx + 4, 83, 6, 6);
-
-    // Expression
-    ctx.strokeStyle = '#222'; ctx.lineWidth = 3;
+    // Long dark hair (front strands over shoulders)
+    ctx.fillStyle = '#1a1018';
+    // Left side bangs
     ctx.beginPath();
-    if (score >= 8) {
-      ctx.arc(cx, 92, 12, 0.15, Math.PI - 0.15);
-    } else if (score >= 4) {
-      ctx.arc(cx, 92, 8, 0.2, Math.PI - 0.2);
-    } else {
-      ctx.moveTo(cx - 10, 98); ctx.lineTo(cx + 10, 98);
-    }
-    ctx.stroke();
-
-    // Hard hat (yellow)
-    ctx.fillStyle = '#f0c020';
-    ctx.beginPath();
-    ctx.ellipse(cx, 68, 32, 12, 0, 0, Math.PI * 2);
+    ctx.moveTo(cx - 26, 68);
+    ctx.quadraticCurveTo(cx - 30, 78, cx - 28, 90);
+    ctx.quadraticCurveTo(cx - 24, 96, cx - 20, 88);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillRect(cx - 24, 56, 48, 16);
+    // Right side bangs
+    ctx.beginPath();
+    ctx.moveTo(cx + 26, 68);
+    ctx.quadraticCurveTo(cx + 30, 78, cx + 28, 90);
+    ctx.quadraticCurveTo(cx + 24, 96, cx + 20, 88);
+    ctx.closePath();
+    ctx.fill();
+    // Top hair volume
+    ctx.beginPath();
+    ctx.ellipse(cx, 66, 28, 14, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+
+    // Sunglasses
+    ctx.fillStyle = '#111';
+    // Left lens
+    ctx.beginPath();
+    ctx.roundRect(cx - 19, 79, 16, 12, 3);
+    ctx.fill();
+    // Right lens
+    ctx.beginPath();
+    ctx.roundRect(cx + 3, 79, 16, 12, 3);
+    ctx.fill();
+    // Bridge
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 3, 84); ctx.lineTo(cx + 3, 84);
+    ctx.stroke();
+    // Lens shine
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(cx - 16, 81, 5, 3);
+    ctx.fillRect(cx + 6, 81, 5, 3);
+
+    // Nose
+    ctx.fillStyle = '#b08050';
+    ctx.beginPath();
+    ctx.moveTo(cx - 2, 90); ctx.lineTo(cx, 96); ctx.lineTo(cx + 2, 90);
+    ctx.closePath();
+    ctx.fill();
+
+    // Expression (mouth) — varies per score
+    ctx.lineWidth = 2.5;
+    if (score === 10) {
+      // Ecstatic open-mouth grin with teeth
+      ctx.fillStyle = '#3a1a10';
+      ctx.beginPath();
+      ctx.arc(cx, 97, 11, 0.1, Math.PI - 0.1);
+      ctx.closePath();
+      ctx.fill();
+      // Teeth
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(cx - 8, 97, 16, 5);
+      ctx.strokeStyle = '#7a4a30';
+      ctx.beginPath();
+      ctx.arc(cx, 97, 11, 0.1, Math.PI - 0.1);
+      ctx.stroke();
+    } else if (score >= 8) {
+      // Big grin
+      ctx.strokeStyle = '#7a4a30';
+      ctx.beginPath();
+      ctx.arc(cx, 96, 10, 0.15, Math.PI - 0.15);
+      ctx.stroke();
+    } else if (score >= 6) {
+      // Pleased smile
+      ctx.strokeStyle = '#7a4a30';
+      ctx.beginPath();
+      ctx.arc(cx, 97, 7, 0.2, Math.PI - 0.2);
+      ctx.stroke();
+    } else if (score >= 4) {
+      // Slight smirk (asymmetric)
+      ctx.strokeStyle = '#7a4a30';
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, 100);
+      ctx.quadraticCurveTo(cx + 2, 100, cx + 8, 96);
+      ctx.stroke();
+    } else if (score >= 2) {
+      // Flat disappointed
+      ctx.strokeStyle = '#7a4a30';
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, 100); ctx.lineTo(cx + 8, 100);
+      ctx.stroke();
+    } else {
+      // Grimace / frown
+      ctx.strokeStyle = '#7a4a30';
+      ctx.beginPath();
+      ctx.arc(cx, 106, 8, Math.PI + 0.3, -0.3);
+      ctx.stroke();
+    }
+
+    // Hard hat (yellow, big and prominent)
+    ctx.fillStyle = '#f0c020';
+    // Wide brim
+    ctx.beginPath();
+    ctx.ellipse(cx, 60, 38, 13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Dome
+    ctx.beginPath();
+    ctx.ellipse(cx, 50, 28, 18, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(cx - 28, 46, 56, 16);
+    // Brim shadow
     ctx.fillStyle = '#d4a010';
-    ctx.fillRect(cx - 24, 66, 48, 5); // brim shadow
+    ctx.fillRect(cx - 36, 58, 72, 5);
+    // Hat band
+    ctx.fillStyle = '#c89010';
+    ctx.fillRect(cx - 26, 50, 52, 4);
+    // Top ridge
+    ctx.fillStyle = '#e0b418';
+    ctx.fillRect(cx - 4, 36, 8, 18);
 
     // ── SCORE CARD (big, prominent) ──
     const cardW = 80, cardH = 50;
@@ -617,7 +779,10 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     st.skipRequested = false;
     _loadCrateOnSeesaw();
     _showMeter();
-    _showHint(`SPACE — launch  ·  ESC — exit  ·  Floor ${st.floor + 1}  (${st.delivered}/${st.required})  ·  Aim for center!`);
+    const hintText = st.floor >= 10
+      ? 'SPACE — launch  ·  ESC — exit  ·  FREE PLAY — aim for 10!'
+      : `SPACE — launch  ·  ESC — exit  ·  Floor ${st.floor + 1}  (${st.delivered}/${st.required})  ·  Aim for center!`;
+    _showHint(hintText);
   }
 
   function _goJump(power) {
@@ -710,11 +875,17 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
       st.phase = 'birdseye'; st.timer = 0; st.skipRequested = false;
       st._floorCompleted = false;
       sndCrateHit();
-      st.delivered++;
-      _saveProgress(st.floor, st.delivered);
+      const freePlay = st.floor >= 10;
+      if (!freePlay) {
+        st.delivered++;
+        _saveProgress(st.floor, st.delivered);
+      }
       // Show score judge
       _showJudge(score);
-      if (st.delivered >= st.required) {
+      if (freePlay) {
+        const label = score === 10 ? 'PERFECT!' : score >= 8 ? 'GREAT!' : score >= 6 ? 'GOOD' : 'CAUGHT';
+        _banner(label, `Score: ${score}`);
+      } else if (st.delivered >= st.required) {
         const [title, sub] = FLOOR_MSGS[st.floor] || ['MATERIALS DELIVERED', ''];
         _banner(title, sub);
       } else {
@@ -841,22 +1012,24 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
         }
       }
 
-      // Phase 2: crate opens — show reveal + construction stage
+      // Phase 2: crate opens — show reveal + construction stage (skip in free play)
       if (st.timer >= 1.2 && crateMesh.visible) {
         crateMesh.visible = false;
-        const stageIdx = st.delivered - 1;
-        if (stageIdx >= 0 && stageIdx < _stages.length) {
-          _stages[stageIdx].forEach(m => { m.visible = true; });
+        if (st.floor < 10) {
+          const stageIdx = st.delivered - 1;
+          if (stageIdx >= 0 && stageIdx < _stages.length) {
+            _stages[stageIdx].forEach(m => { m.visible = true; });
+          }
+          _showReveal(stageIdx, st.required);
         }
-        _showReveal(stageIdx, st.required);
       }
 
       // Phase 2-3: animate reveal
       _calcOverheadView();
       _updateReveal(dt, _overPos);
 
-      // Phase 3: floor complete trigger
-      if (st.timer >= 3.5 && st.delivered >= st.required && st.phase === 'birdseye') {
+      // Phase 3: floor complete trigger (skip in free play)
+      if (st.floor < 10 && st.timer >= 3.5 && st.delivered >= st.required && st.phase === 'birdseye') {
         if (!st._floorCompleted) {
           st._floorCompleted = true;
           sndFloorDone();
@@ -875,9 +1048,13 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
         st.seesawTarget = 0;
         _hideReveal();
         _stages.forEach(s => s.forEach(m => { m.visible = false; }));
-        if (st.floor >= 10) { _doExit(); return; }
-        _buildStages(_roofY, st.required);
-        _goReady();
+        if (st.floor >= 10) {
+          // Free play — go back to ready for another launch
+          _goReady();
+        } else {
+          _buildStages(_roofY, st.required);
+          _goReady();
+        }
       }
       break;
     }
@@ -995,9 +1172,11 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   // ═══════════════════════════════════════
   function _doEnter(playerGroup) {
     st.operating = true; st._pg = playerGroup; _entryFrames = 10;
-    _buildStages(_roofY, st.required);
-    for (let i = 0; i < st.delivered; i++) {
-      if (i < _stages.length) _stages[i].forEach(m => { m.visible = true; });
+    if (st.floor < 10) {
+      _buildStages(_roofY, st.required);
+      for (let i = 0; i < st.delivered; i++) {
+        if (i < _stages.length) _stages[i].forEach(m => { m.visible = true; });
+      }
     }
     bullseyeGroup.visible = true;
     _goReady();
@@ -1055,7 +1234,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     getCameraTarget,
 
     isNear(pos) {
-      if (st.floor >= 10 || _exitCooldown > 0) return false;
+      if (_exitCooldown > 0) return false;
       const dx = pos.x - SEESAW_X, dz = pos.z - SEESAW_Z;
       return Math.sqrt(dx * dx + dz * dz) < 8 && Math.abs(pos.y) < 3;
     },
