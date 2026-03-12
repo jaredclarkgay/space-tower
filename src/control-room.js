@@ -4,24 +4,24 @@ import { NF, BPF, TB, FH, ELEV_X } from './constants.js';
 import { FD } from './floors.js';
 import { sndElev, sndCrAlarm, sndCrChunk, sndCrThud } from './sound.js';
 import { initTerrain } from './terrain.js';
-import { initTopoView } from './bulldozer-topo.js';
-
 // ═══ CONTROL ROOM ═══
 // Basement scene below Floor 1. Elevator doors → dark room → screen boots → interactive.
 
 // ── Topo bulldozer view (full-screen overlay) ──
+// Dynamic import — keeps Three.js out of the sim chunk until player actually enters topo
 let _topoAPI = null;
 let _topoActive = false;
 
 export function isTopoActive() { return _topoActive; }
 
-export function enterTopo() {
+export async function enterTopo() {
   // Initialize terrain if first time
   if (!S.terrain3d.initialized) initTerrain(S.terrain3d);
-  // Lazy-init the topo renderer
+  // Lazy-init the topo renderer (dynamic import keeps Three.js out of sim chunk)
   if (!_topoAPI) {
     const canvas = document.getElementById('topoCanvas');
     if (!canvas) return;
+    const { initTopoView } = await import('./bulldozer-topo.js');
     _topoAPI = initTopoView(canvas);
   }
   _topoAPI.enter(S.terrain3d, S.bulldozer);

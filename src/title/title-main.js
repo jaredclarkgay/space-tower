@@ -5,7 +5,7 @@ import { buildCityScene, DIMS, updateBuildingHover, updateTowerHover, setSkyBlen
 import { createTitleUI, removeTitleUI, showArrivalText, showHomeBtn, setCamDistCallbacks } from './title-ui.js';
 import { initConstellation, disposeConstellation, handleStarClick, updateConstellationLines } from './title-constellation.js';
 import { playTransition, playReverseTransition, updateTransition, updateReverseTransition, isTransitionActive, getVisibleFloors, TRANSITION, SKY, setTransitionRefs } from './title-transition.js';
-import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setOnFloorBuilt, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive, getCrane, getBulldozer, spawnBulldozer, getScaffolding, spawnScaffolding } from './title-exterior.js';
+import { setupExteriorInput, disposeExteriorInput, updateExterior, isExteriorActive, getPlayerPos, getPlayerVel, activateExterior, setBuiltHeight, isWalkingBackward, setEnterDoorCallback, setOnFloorBuilt, setOnBuiltHeightChange, setGroundNPCs, setBizPeople, setDoorMeshes, isDoorAnimActive, getCrane, getBulldozer, spawnBulldozer, getScaffolding, spawnScaffolding } from './title-exterior.js';
 import { ThirdPersonCamera } from './third-person-camera.js';
 import { initMusic, play, isInitialized as isMusicInitialized } from '../music.js';
 import { ensureAudioCtx, getAudioCtx } from '../sound.js';
@@ -461,14 +461,50 @@ export function skipToExterior(placeAtDozer) {
     cityData.dissolveTowerFloor(fi);
   }
 
-  // Scale structural columns to match highest built floor
+  // Scale structural columns to match highest built floor (hide when zero)
   const fh = TC.floorH;
   const baseH = fh * 3;
   const fullH = baseH + TC.maxFloors * fh;
   const visH = baseH + Math.max(1, topBuilt) * fh;
   cityData.structColumns.forEach(c => {
+    c.visible = topBuilt > 0;
     c.scale.y = visH / fullH;
     c.position.y = visH / 2;
+  });
+
+  // Foundation: show pad when zero floors, show stepped base when >= 1
+  if (TC.foundationParts) TC.foundationParts.forEach(m => { m.visible = topBuilt > 0; });
+  if (TC.padMesh) TC.padMesh.visible = topBuilt === 0;
+
+  // Beam mesh: hide entirely when zero floors
+  if (cityData.TC.group) {
+    cityData.TC.group.children.forEach(child => {
+      if (child.isInstancedMesh) child.visible = topBuilt > 0;
+    });
+  }
+
+  // Register built-height callback so tower base appears when first floor is built
+  setOnBuiltHeightChange((newTop) => {
+    const fhC = TC.floorH, baseHC = fhC * 3, fullHC = baseHC + TC.maxFloors * fhC;
+    const visHC = baseHC + Math.max(1, newTop) * fhC;
+    // Foundation: stepped base vs flat pad
+    if (TC.foundationParts) TC.foundationParts.forEach(m => { m.visible = newTop > 0; });
+    if (TC.padMesh) TC.padMesh.visible = newTop === 0;
+    // Structural columns
+    cityData.structColumns.forEach(c => {
+      c.visible = newTop > 0;
+      c.scale.y = visHC / fullHC;
+      c.position.y = visHC / 2;
+    });
+    // Instanced beam meshes
+    if (TC.group) {
+      TC.group.children.forEach(child => {
+        if (child.isInstancedMesh) child.visible = newTop > 0;
+      });
+    }
+    // Show/hide "Enter Tower" button
+    const btn = document.getElementById('enter-tower-btn');
+    if (btn) btn.style.display = newTop > 0 ? '' : 'none';
   });
 
   // Wire transition refs so reverse transition can access scene/camera/cityData
@@ -531,6 +567,11 @@ export function skipToExterior(placeAtDozer) {
 
   // Show arrival text, home button, and activate exterior
   showArrivalText(onEnterGame);
+  // Hide "Enter Tower" button until at least 1 floor is built
+  if (topBuilt < 1) {
+    const btn = document.getElementById('enter-tower-btn');
+    if (btn) btn.style.display = 'none';
+  }
   showHomeBtn(() => { playReverseTransition(); });
   activateExterior();
 

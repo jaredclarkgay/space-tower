@@ -41,10 +41,10 @@ const PLAYER = {
   chargeT: 0,
 };
 
-const MOVE_SPEED = 0.075;
+const MOVE_SPEED = 0.15;
 const SPRINT_MULT = 2.5;
-const JUMP_BASE = 0.18;
-const JUMP_MAX = 0.46;
+const JUMP_BASE = 0.22;
+const JUMP_MAX = 0.55;
 const CHARGE_MAX = 80;
 const GRAVITY = 0.0035;
 
@@ -59,6 +59,11 @@ const BEAM_HALF = BEAM_DEPTH / 2;    // 0.25
 const OUTER_EDGE = TOWER_HALF + BEAM_HALF; // 37.75
 const INNER_EDGE = TOWER_HALF - BEAM_HALF; // 37.25
 const FOUNDATION_HALF = TOWER_HALF;
+
+// Stepped foundation tiers (must match title-city.js TIER_N/TIER_EXT)
+const TIER_N = 3, TIER_EXT = 5;       // 3 tiers, 5 units extension per step
+const TIER_H = BASE_H / TIER_N;        // ~3.333 per tier
+const VEST_HALF_W = 10;                // vestW / 2 from title-city.js
 
 // Column positions (the 4 corners)
 const COLUMNS = [
@@ -108,6 +113,10 @@ let promptEl = null;
 // ── Door enter callback ──
 let _enterDoorCallback = null;
 export function setEnterDoorCallback(fn) { _enterDoorCallback = fn; }
+
+// ── Foundation visibility callback (set by skipToExterior to toggle tower base) ──
+let _onBuiltHeightChange = null;
+export function setOnBuiltHeightChange(fn) { _onBuiltHeightChange = fn; }
 
 // ── Door meshes (set from title-main after city build) ──
 let _doorLeft = null, _doorRight = null;
@@ -561,7 +570,7 @@ export function setupExteriorInput() {
 
     if (e.code === 'Space') e.preventDefault();
     if (e.code === 'KeyE') handleInteract();
-    if (e.code === 'Tab') { e.preventDefault(); if (_enterDoorCallback && _isNearDoor()) _startDoorAnim(); }
+    if (e.code === 'Tab') { e.preventDefault(); if (floorsBuilt >= 1 && _enterDoorCallback && _isNearDoor()) _startDoorAnim(); else if (floorsBuilt < 1 && _isNearDoor()) _showDialogue('', 'Nothing here yet. Go build something.'); }
   };
   _keyupHandler = (e) => {
     keys[e.code] = false;
@@ -716,9 +725,13 @@ function handleInteract() {
     nearWorker.ci = (nearWorker.ci + 1) % lines.length;
     return;
   }
-  // Enter the tower through the front door
-  if (_isNearDoor() && _enterDoorCallback) {
-    _startDoorAnim();
+  // Enter the tower through the front door (only when at least 1 floor built)
+  if (_isNearDoor()) {
+    if (floorsBuilt >= 1 && _enterDoorCallback) {
+      _startDoorAnim();
+    } else if (floorsBuilt < 1) {
+      _showDialogue('', 'Nothing here yet. Go build something.');
+    }
     return;
   }
   // Pick up materials from the construction site (disabled when scaffolding game exists)
@@ -759,6 +772,23 @@ function _isOnBeam(x, z) {
 // Is (x,z) on the foundation?
 function _isOnFoundation(x, z) {
   return Math.abs(x) <= FOUNDATION_HALF && Math.abs(z) <= FOUNDATION_HALF;
+}
+
+// Get the tier step surface height at (x,z) appropriate for a player at height y
+// Returns the lowest tier surface that is >= the player, or -1 if not on any step
+function _getTierSurfaceY(x, z, y) {
+  // Skip vestibule gap on front face
+  if (z > FOUNDATION_HALF && Math.abs(x) < VEST_HALF_W + PLAYER_R) return -1;
+  // Check from bottom tier up — return the first surface the player should land on
+  for (let ti = 0; ti < TIER_N; ti++) {
+    const ext = (TIER_N - 1 - ti) * TIER_EXT;
+    if (ext === 0) continue; // top tier has no extension
+    const half = FOUNDATION_HALF + ext;
+    if (Math.abs(x) > half || Math.abs(z) > half) continue; // outside this tier
+    const topY = (ti + 1) * TIER_H;
+    if (y <= topY) return topY; // this is the tier the player is on or below
+  }
+  return -1;
 }
 
 // Land on beams (one-way platforms — pass through from below, land from above)
@@ -802,16 +832,33 @@ function _checkTowerCollision() {
       return;
     }
   }
+
+  // Stepped foundation tiers — land from above OR step up one tier max
+  const tierY = _getTierSurfaceY(pp.x, pp.z, pp.y);
+  if (tierY > 0 && pp.y <= tierY && tierY - pp.y <= TIER_H + 0.5) {
+    pp.y = tierY;
+    pv.y = 0;
+    PLAYER.onGround = true;
+    return;
+  }
 }
 
-// Foundation sides are solid walls
+// Foundation sides are solid walls (stepped: wider at ground level)
 function _checkFoundationWalls() {
   const pp = PLAYER.pos;
   const pv = PLAYER.vel;
 
   if (pp.y >= BASE_H - 0.01) return;
 
-  const fh = FOUNDATION_HALF + PLAYER_R;
+  // Determine tier extension at player's height (bottom=10, mid=5, top=0)
+  const ti = Math.min(TIER_N - 1, Math.floor(pp.y / TIER_H));
+  const ext = (TIER_N - 1 - ti) * TIER_EXT;
+
+  // Front vestibule gap: if player is in front center, use tower width only
+  const inVestibule = pp.z > 0 && Math.abs(pp.x) < (VEST_HALF_W + PLAYER_R);
+  const effExt = inVestibule ? 0 : ext;
+
+  const fh = FOUNDATION_HALF + effExt + PLAYER_R;
   if (Math.abs(pp.x) < fh && Math.abs(pp.z) < fh) {
     const dxP = fh - pp.x;
     const dxN = pp.x + fh;
@@ -1194,7 +1241,7 @@ function _updateRooftopWorkers(dt) {
   const t = performance.now() * 0.001;
   const scaffOp = _scaffolding && _scaffolding.isOperating;
   if (arrow) {
-    arrow.visible = !scaffOp && floorsBuilt >= 3;
+    arrow.visible = !scaffOp && floorsBuilt >= 1;
     arrow.position.y = BASE_H + 8 + Math.sin(t * 1.5) * 1.5;
     arrow.rotation.y = t * 0.4;
     // Label billboard: face camera
@@ -1587,9 +1634,15 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     } else if (Math.abs(pp.y - BASE_H) < 0.1) {
       if (!_isOnFoundation(pp.x, pp.z)) PLAYER.onGround = false;
     } else if (pp.y > 0.5 && pp.y < BASE_H - 1) {
-      // Vehicle or heightmap terrain — fall if not on a vehicle and above terrain
-      const _gH = _getExtTerrainHeight(pp.x, pp.z);
-      if (!_isOnVehicle() && pp.y > _gH + 0.2) PLAYER.onGround = false;
+      // Check if standing on a tier step
+      const stepY = _getTierSurfaceY(pp.x, pp.z, pp.y);
+      if (stepY > 0 && Math.abs(pp.y - stepY) < 0.5) {
+        // On a tier step — stay grounded
+      } else {
+        // Vehicle or heightmap terrain — fall if not on a vehicle and above terrain
+        const _gH = _getExtTerrainHeight(pp.x, pp.z);
+        if (!_isOnVehicle() && pp.y > _gH + 0.2) PLAYER.onGround = false;
+      }
     }
   }
 
@@ -1736,7 +1789,7 @@ export function deactivateExterior() {
 
 export function setBuiltHeight(topBuilt) {
   activeMaxFloor = Math.max(0, topBuilt - 1);
-  activeRoofY = BASE_H + Math.max(1, topBuilt) * FLOOR_H;
+  activeRoofY = BASE_H + Math.max(0, topBuilt) * FLOOR_H;
   floorsBuilt = topBuilt;
   if (!siteGroup) return;
   const ud = siteGroup.userData;
@@ -1750,8 +1803,11 @@ export function setBuiltHeight(topBuilt) {
   }
   // Scale ladders to match built height
   if (ud.ladderMesh) {
-    ud.ladderMesh.scale.y = activeRoofY / ROOF_Y;
+    ud.ladderMesh.visible = topBuilt > 0;
+    ud.ladderMesh.scale.y = topBuilt > 0 ? activeRoofY / ROOF_Y : 0;
   }
+  // Notify tower visibility callback (shows foundation, columns when first floor built)
+  if (_onBuiltHeightChange) _onBuiltHeightChange(topBuilt);
 }
 
 export function isExteriorActive() { return PLAYER.active; }

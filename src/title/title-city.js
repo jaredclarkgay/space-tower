@@ -215,30 +215,62 @@ function buildTower(scene) {
     }
   }
 
-  // ── Foundation with vestibule interior ──
+  // ── Stepped foundation (ziggurat base) with vestibule interior ──
+  // 3 tiers: bottom widest, top = tower footprint. Vestibule gap on front face.
+  // All foundation meshes tracked in TC.foundationParts so they can be hidden when 0 floors built.
   const vestW = 20, vestD = 15;
   const doorH = baseH * 0.75, doorW = 6;
-  const baseMat = new THREE.MeshBasicMaterial({ color: 0x1a1e28 });
   const vestMat = new THREE.MeshBasicMaterial({ color: 0x0e1218 });
+  TC.foundationParts = [];
 
-  // Back section: full width, stops before vestibule
-  const backD = td - vestD;
-  const backSec = new THREE.Mesh(new THREE.BoxGeometry(tw, baseH, backD), baseMat);
-  backSec.position.set(0, baseH / 2, -vestD / 2); TC.group.add(backSec);
-
-  // Left section: fills +Z zone left of vestibule opening
-  const sideW = (tw - vestW) / 2;
-  const leftSec = new THREE.Mesh(new THREE.BoxGeometry(sideW, baseH, vestD), baseMat);
-  leftSec.position.set(-(vestW / 2 + sideW / 2), baseH / 2, td / 2 - vestD / 2); TC.group.add(leftSec);
-
-  // Right section
-  const rightSec = new THREE.Mesh(new THREE.BoxGeometry(sideW, baseH, vestD), baseMat);
-  rightSec.position.set(vestW / 2 + sideW / 2, baseH / 2, td / 2 - vestD / 2); TC.group.add(rightSec);
-
-  // Top section: above vestibule opening
+  const TIER_N = 3, TIER_EXT = 5; // each tier steps 5 units per side
+  const tierH = baseH / TIER_N;
+  const tierMats = [
+    new THREE.MeshBasicMaterial({ color: 0x141820 }), // bottom — darkest
+    new THREE.MeshBasicMaterial({ color: 0x1a1e28 }), // mid
+    new THREE.MeshBasicMaterial({ color: 0x1e222c }), // top — lightest
+  ];
+  for (let ti = 0; ti < TIER_N; ti++) {
+    const ext = (TIER_N - 1 - ti) * TIER_EXT; // bottom=10, mid=5, top=0
+    const tW = tw + ext * 2;
+    const tY = ti * tierH + tierH / 2;
+    const geos = [];
+    // Back section: full tier width, from rear edge to vestibule zone
+    const backD = td - vestD + ext;
+    const backZ = -(td / 2 + ext) + backD / 2;
+    const bg = new THREE.BoxGeometry(tW, tierH, backD);
+    bg.translate(0, tY, backZ);
+    geos.push(bg);
+    // Left section: front zone, left of vestibule, extends 'ext' forward
+    const sideD = vestD + ext;
+    const sideW = (tW - vestW) / 2;
+    const sideZ = (td / 2 - vestD) + sideD / 2;
+    const lg = new THREE.BoxGeometry(sideW, tierH, sideD);
+    lg.translate(-(vestW / 2 + sideW / 2), tY, sideZ);
+    geos.push(lg);
+    // Right section (mirror)
+    const rg = new THREE.BoxGeometry(sideW, tierH, sideD);
+    rg.translate(vestW / 2 + sideW / 2, tY, sideZ);
+    geos.push(rg);
+    const tierMesh = new THREE.Mesh(mergeGeometries(geos), tierMats[ti]);
+    TC.group.add(tierMesh);
+    TC.foundationParts.push(tierMesh);
+  }
+  // Top section: above vestibule opening (at tower width, no extension)
   const topH = baseH - doorH;
-  const topSec = new THREE.Mesh(new THREE.BoxGeometry(vestW, topH, vestD), baseMat);
+  const topSec = new THREE.Mesh(new THREE.BoxGeometry(vestW, topH, vestD), tierMats[2]);
   topSec.position.set(0, doorH + topH / 2, td / 2 - vestD / 2); TC.group.add(topSec);
+  TC.foundationParts.push(topSec);
+
+  // ── Flat concrete pad (visible when zero floors built — construction site ground) ──
+  const padMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(tw + 10, 0.25, td + 10),
+    new THREE.MeshBasicMaterial({ color: 0x6a7080 })
+  );
+  padMesh.position.set(0, 0.125, 0);
+  TC.group.add(padMesh);
+  TC.padMesh = padMesh;
+  TC.padMesh.visible = false; // hidden by default (title screen shows full tower)
 
   // ── Vestibule interior walls (slightly different shade for depth) ──
   const vBack = new THREE.Mesh(new THREE.PlaneGeometry(vestW, doorH), vestMat);
@@ -261,23 +293,7 @@ function buildTower(scene) {
   vFloor.rotation.x = -Math.PI / 2;
   vFloor.position.set(0, 0.05, td / 2 - vestD / 2); TC.group.add(vFloor);
 
-  // ── Stepped tiers (ziggurat base leading up to entrance) ──
-  const tierCount = 4, tierH = baseH / (tierCount + 2); // each tier is a fraction of base height
-  const tierMats = [
-    new THREE.MeshBasicMaterial({ color: 0x20242e }),
-    new THREE.MeshBasicMaterial({ color: 0x1e222c }),
-    new THREE.MeshBasicMaterial({ color: 0x1c202a }),
-    new THREE.MeshBasicMaterial({ color: 0x1a1e28 }),
-  ];
-  for (let ti = 0; ti < tierCount; ti++) {
-    const tierW = tw + (tierCount - ti) * 6; // wider at bottom
-    const tierD = 4 + (tierCount - ti) * 2.5; // deeper at bottom
-    const tierY = ti * tierH + tierH / 2;
-    const tierZ = td / 2 + tierD / 2; // extend forward from tower face
-    const tier = new THREE.Mesh(new THREE.BoxGeometry(tierW, tierH, tierD), tierMats[ti]);
-    tier.position.set(0, tierY, tierZ);
-    TC.group.add(tier);
-  }
+  TC.foundationParts.push(vBack, vLeftWall, vRightWall, vCeil, vFloor);
 
   // ── Industrial pendant lights (work-zone feel) ──
   const lightFixMat = new THREE.MeshBasicMaterial({ color: 0xffe8b0 });
@@ -287,20 +303,16 @@ function buildTower(scene) {
   const nLights = 4, lightSpace = vestD / (nLights + 1);
   for (let li = 0; li < nLights; li++) {
     const lz = td / 2 - vestD + lightSpace * (li + 1);
-    // Wire
     const wire = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), lightWireMat);
-    wire.position.set(0, doorH - 0.3, lz); TC.group.add(wire);
-    // Fixture housing
+    wire.position.set(0, doorH - 0.3, lz); TC.group.add(wire); TC.foundationParts.push(wire);
     const fix = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.35, 1.4), lightFixMat);
-    fix.position.set(0, doorH - 0.8, lz); TC.group.add(fix);
-    // Ceiling glow halo
+    fix.position.set(0, doorH - 0.8, lz); TC.group.add(fix); TC.foundationParts.push(fix);
     const cGlow = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), lightCeilGlow.clone());
     cGlow.rotation.x = Math.PI / 2;
-    cGlow.position.set(0, doorH - 0.06, lz); TC.group.add(cGlow);
-    // Floor glow patch
+    cGlow.position.set(0, doorH - 0.06, lz); TC.group.add(cGlow); TC.foundationParts.push(cGlow);
     const fGlow = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), lightGlowFloor.clone());
     fGlow.rotation.x = -Math.PI / 2;
-    fGlow.position.set(0, 0.06, lz); TC.group.add(fGlow);
+    fGlow.position.set(0, 0.06, lz); TC.group.add(fGlow); TC.foundationParts.push(fGlow);
   }
 
   // ── Doors (narrower, more door-like) ──
@@ -311,27 +323,26 @@ function buildTower(scene) {
   for (const side of [-4.5, 4.5]) {
     const door = new THREE.Mesh(new THREE.PlaneGeometry(doorW, doorH), doorMat);
     door.position.set(side, doorH / 2, td / 2 + 0.2); TC.group.add(door);
-    // Subtle glow behind each door
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 0.85, doorH * 0.9), doorGlowMat.clone());
     glow.position.set(side, doorH / 2, td / 2 + 0.15); TC.group.add(glow);
-    // Door handle
     const handle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), doorHandleMat);
     handle.position.set(side + (side < 0 ? doorW / 2 - 0.8 : -doorW / 2 + 0.8), doorH * 0.45, td / 2 + 0.35);
     TC.group.add(handle);
     if (side < 0) doorLeft = door; else doorRight = door;
+    TC.foundationParts.push(door, glow, handle);
   }
-  // Door frame
   const frameW = doorW * 2 + 5;
   const frameTop = new THREE.Mesh(new THREE.BoxGeometry(frameW, 1.2, 0.8), doorFrameMat);
   frameTop.position.set(0, doorH + 0.6, td / 2 + 0.2); TC.group.add(frameTop);
-  // Frame sides
+  TC.foundationParts.push(frameTop);
   for (const sx of [-(frameW / 2 - 0.4), frameW / 2 - 0.4]) {
     const frameSide = new THREE.Mesh(new THREE.BoxGeometry(0.8, doorH, 0.8), doorFrameMat);
     frameSide.position.set(sx, doorH / 2, td / 2 + 0.2); TC.group.add(frameSide);
+    TC.foundationParts.push(frameSide);
   }
-  // Transom window above doors
   const transom = new THREE.Mesh(new THREE.PlaneGeometry(frameW - 2, 3), new THREE.MeshBasicMaterial({ color: 0xdcbe82, transparent: true, opacity: 0.25 }));
   transom.position.set(0, doorH + 3, td / 2 + 0.3); TC.group.add(transom);
+  TC.foundationParts.push(transom);
 
   // Corner columns
   const colThick = 3.125; // 0.25 × S

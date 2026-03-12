@@ -36,7 +36,7 @@ let _argSpaceNeedInjected = false; // post-Floor-5 dialogue injection
 function _updateArgument() {
   const p = S.player;
   // Only active when Floor 5 (index 4) is stage 3 and player is on floor 4
-  if (S.buildout[4].stage < 3) return;
+  if (S.buildout[4].stage < 3 || p.cf !== 4) return;
   // Find the arguing NPCs
   const arguers = S.npcs.filter(n => n.isArguing && n.floor === 4 && n.arrived);
   if (arguers.length < 2) return;
@@ -841,8 +841,8 @@ export function initGame(saveData){
     // Test mode: jump straight to reckoning
     const _testFlag=localStorage.getItem('spacetower_testReckoning');
     if(_testFlag){localStorage.removeItem('spacetower_testReckoning');setupTestMode()}
-    // Always enter through the elevator doors
-    S.player.x=ELEV_X;S.player.y=TB;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
+    // Enter at left wall of Floor 1 (facing right), not the elevator
+    S.player.x=TL+30;S.player.y=TB;S.player.fr=true;S.cam.x=S.player.x;S.cam.y=S.player.y-60;
   }
   // Finalize arrivals for already-completed floors (post-load)
   S.npcs.forEach(n=>{

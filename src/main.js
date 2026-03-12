@@ -1,8 +1,5 @@
 'use strict';
-import { initTitle, disposeTitle, skipToExterior } from './title/title-main.js';
-import { initGame, startGameLoop } from './game-init.js';
 import { peekSave } from './save.js';
-import { enterControlRoom } from './control-room.js';
 
 const saveData = peekSave();
 
@@ -12,31 +9,44 @@ const gotoExterior = localStorage.getItem('spacetower_gotoExterior');
 localStorage.removeItem('spacetower_devGoto');
 localStorage.removeItem('spacetower_gotoExterior');
 
-if (devGoto === 'interior' || devGoto === 'control-room' || devGoto === 'dozer') {
-  // Skip title entirely — straight to sim
+// ═══ DYNAMIC MODE LOADING ═══
+// Each mode boundary uses dynamic import() so the browser only downloads
+// the code it needs. Title/exterior pulls in Three.js (~800KB), sim pulls
+// in Canvas 2D + reckoning + keeper (~300KB). Neither pays for the other.
+
+async function bootSim(initArg, thenControlRoom) {
   document.getElementById('titleCanvas').style.display = 'none';
   document.getElementById('gameCanvas').style.display = 'block';
   document.getElementById('game-ui').style.display = '';
-  initGame(devGoto === 'dozer' ? 'dozer' : null);
+  const { initGame, startGameLoop } = await import('./game-init.js');
+  initGame(initArg);
   startGameLoop();
-  if (devGoto === 'control-room' || devGoto === 'dozer') enterControlRoom();
-} else if (devGoto === 'exterior') {
-  // Fresh exterior — no buildout
-  initTitle(document.getElementById('titleCanvas'), null);
-  requestAnimationFrame(() => { skipToExterior(); });
-} else {
-  // Normal flow: launch title screen
-  initTitle(document.getElementById('titleCanvas'), saveData);
-  if (gotoExterior) {
-    requestAnimationFrame(() => { skipToExterior(); });
+  if (thenControlRoom) {
+    const { enterControlRoom } = await import('./control-room.js');
+    enterControlRoom();
   }
 }
 
+async function bootTitle(save, skipToExt) {
+  const { initTitle, skipToExterior } = await import('./title/title-main.js');
+  initTitle(document.getElementById('titleCanvas'), save);
+  if (skipToExt) requestAnimationFrame(() => { skipToExterior(); });
+}
+
+if (devGoto === 'interior' || devGoto === 'control-room' || devGoto === 'dozer') {
+  bootSim(devGoto === 'dozer' ? 'dozer' : null, devGoto === 'control-room' || devGoto === 'dozer');
+} else if (devGoto === 'exterior') {
+  bootTitle(null, true);
+} else {
+  bootTitle(saveData, !!gotoExterior);
+}
+
 // When title screen signals game start
-document.addEventListener('enter-game', (e) => {
+document.addEventListener('enter-game', async (e) => {
   const isNew = e.detail?.isNew;
 
   // Tear down title
+  const { disposeTitle } = await import('./title/title-main.js');
   disposeTitle();
   document.getElementById('titleCanvas')?.remove();
   document.getElementById('title-overlay')?.remove();
@@ -46,6 +56,7 @@ document.addEventListener('enter-game', (e) => {
   document.getElementById('game-ui').style.display = '';
 
   // Init and start game
+  const { initGame, startGameLoop } = await import('./game-init.js');
   initGame(isNew ? null : saveData);
   startGameLoop();
 });

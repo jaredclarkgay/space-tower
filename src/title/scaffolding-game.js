@@ -312,11 +312,11 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
 
   // Floating text label (canvas texture on a plane)
   const _labelCanvas = document.createElement('canvas');
-  _labelCanvas.width = 512; _labelCanvas.height = 128;
+  _labelCanvas.width = 768; _labelCanvas.height = 128;
   const _labelTex = new THREE.CanvasTexture(_labelCanvas);
   _labelTex.minFilter = THREE.LinearFilter;
   const _labelMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(16, 4),
+    new THREE.PlaneGeometry(24, 4),
     new THREE.MeshBasicMaterial({ map: _labelTex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
   );
   _labelMesh.position.y = 6;
@@ -327,14 +327,14 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     const label = labels[stageIdx] || 'MATERIALS';
     // Draw text on canvas
     const ctx = _labelCanvas.getContext('2d');
-    ctx.clearRect(0, 0, 512, 128);
+    ctx.clearRect(0, 0, 768, 128);
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 48px monospace';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(label, 256, 52);
+    ctx.fillText(label, 384, 52);
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = '24px monospace';
-    ctx.fillText(`${stageIdx + 1}/${matCount}`, 256, 100);
+    ctx.fillText(`${stageIdx + 1}/${matCount}`, 384, 100);
     _labelTex.needsUpdate = true;
     // Position at crate landing (bullseye center, on roof)
     _revealGroup.position.set(0, _roofY, 0);
@@ -1188,7 +1188,6 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     _exitCooldown = 0.5; // prevent immediate re-entry
     _hideMeter(); _hideHint(); _hideJudge();
     crateMesh.visible = false; loadedCrate.visible = false;
-    bullseyeGroup.visible = false;
     _stages.forEach(s => s.forEach(m => { m.visible = false; }));
     if (st._pg) {
       st._pg.position.set(SEESAW_X + _backDir.x * 5, 0, SEESAW_Z + _backDir.z * 5);
@@ -1216,8 +1215,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   // ═══════════════════════════════════════
   // PUBLIC API
   // ═══════════════════════════════════════
-  // Hide bullseye initially (shown when operating)
-  bullseyeGroup.visible = false;
+  // Bullseye always visible on roof (landmark for the player)
 
   return {
     group: root,
