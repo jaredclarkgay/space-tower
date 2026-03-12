@@ -593,6 +593,7 @@ function buildVehicles(scene) {
     const personParts = [
       [new THREE.BoxGeometry(0.22, 0.28, 0.14), bd.color, 0, 0.50, 0],
       [new THREE.BoxGeometry(0.14, 0.14, 0.14), 0xd4a574, 0, 0.75, 0],
+      [new THREE.BoxGeometry(0.15, 0.05, 0.15), 0x1a1a1a, 0, 0.84, 0],   // dark hair
       [new THREE.BoxGeometry(0.08, 0.20, 0.09), bd.color, -0.06, 0.20, 0],
       [new THREE.BoxGeometry(0.08, 0.20, 0.09), bd.color, 0.06, 0.20, 0],
       [new THREE.BoxGeometry(0.07, 0.22, 0.07), bd.color, -0.15, 0.46, 0],

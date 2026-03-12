@@ -5,6 +5,7 @@ import { buildPlayableCrane } from './playable-crane.js';
 import { buildPlayableBulldozer, buildTerrainMesh, buildTerrainMeshFromHeightmap } from './playable-bulldozer.js';
 import { sampleHeightmap } from '../terrain.js';
 import { buildScaffoldingGame } from './scaffolding-game.js';
+import { buildSuitGuides } from './suit-guides.js';
 import { ensureAudio } from '../sound.js';
 
 // ── Vertex color helper (for merged geometry) ──
@@ -97,6 +98,9 @@ let _terrainMesh = null;
 
 // ── Scaffolding game ──
 let _scaffolding = null;
+
+// ── Suit guides ──
+let _suitGuides = null;
 
 // ── Interaction prompt ──
 let promptEl = null;
@@ -692,9 +696,15 @@ function handleInteract() {
     return;
   }
 
-  // Talk to nearby rooftop worker
+  // Talk to nearby rooftop worker or suit guide
   const nearWorker = _getNearbyWorker();
   if (nearWorker) {
+    // Suit guides use getDialogueLine API
+    if (_suitGuides && nearWorker.bubbleMat) {
+      const line = _suitGuides.getDialogueLine(nearWorker, floorsBuilt);
+      _showDialogue(nearWorker.name, line);
+      return;
+    }
     let lines = nearWorker.dialogue;
     // Height-aware dialogue: [floorLevel][3 lines] for rooftop workers
     if (lines.length && Array.isArray(lines[0])) {
@@ -1148,6 +1158,11 @@ function _getNearbyWorker() {
     const dx = pp.x - gp.x, dz = pp.z - gp.z;
     if (dx * dx + dz * dz < 16 && pp.y < 1.5) return bp;
   }
+  // Check suit guides
+  if (_suitGuides) {
+    const near = _suitGuides.getNearby(pp);
+    if (near) return near;
+  }
   return null;
 }
 
@@ -1179,7 +1194,7 @@ function _updateRooftopWorkers(dt) {
   const t = performance.now() * 0.001;
   const scaffOp = _scaffolding && _scaffolding.isOperating;
   if (arrow) {
-    arrow.visible = !scaffOp;
+    arrow.visible = !scaffOp && floorsBuilt >= 3;
     arrow.position.y = BASE_H + 8 + Math.sin(t * 1.5) * 1.5;
     arrow.rotation.y = t * 0.4;
     // Label billboard: face camera
@@ -1351,6 +1366,7 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
     if (crane) crane.update(dt, PLAYER.pos, keys);
     if (_bulldozer && !_bulldozer.isOperating) _bulldozer.update(dt, PLAYER.pos, keys);
     _updateRooftopWorkers(dt); // workers must animate for birdseye attraction
+    if (_suitGuides) _suitGuides.update(dt, PLAYER.pos, _scaffolding, _bulldozer, floorsBuilt);
     return;
   }
 
@@ -1683,6 +1699,8 @@ export function updateExterior(dt, camFwdX, camFwdZ) {
   if (_bulldozer && !_bulldozer.isOperating) _bulldozer.update(dt, PLAYER.pos, keys);
   // Update scaffolding even when not operating (seesaw visual)
   if (_scaffolding && !_scaffolding.isOperating) _scaffolding.update(dt, keys);
+  // Update suit guides
+  if (_suitGuides) _suitGuides.update(dt, PLAYER.pos, _scaffolding, _bulldozer, floorsBuilt);
 
   if (PLAYER.carrying && carryBox) {
     carryBox.rotation.z = Math.sin(performance.now() * 0.003) * 0.04;
@@ -1713,6 +1731,7 @@ export function deactivateExterior() {
   _syncHungerToSave();
   _syncBulldozerPosToSave();
   disposeHungerHUD();
+  if (_suitGuides) { _suitGuides.dispose(); _suitGuides = null; }
 }
 
 export function setBuiltHeight(topBuilt) {
@@ -1762,6 +1781,10 @@ export function spawnScaffolding(scene) {
   if (siteGroup?.userData?.buildArrow) {
     siteGroup.userData.buildArrow.position.x = _scaffolding.worldX;
     siteGroup.userData.buildArrow.position.z = _scaffolding.worldZ;
+  }
+  // Spawn suit guides near seesaw
+  if (!_suitGuides) {
+    _suitGuides = buildSuitGuides(scene, _scaffolding.worldX, _scaffolding.worldZ);
   }
   return _scaffolding;
 }
