@@ -168,11 +168,11 @@ export function renderPanel(){
     h+=`<div style="font-size:9px;opacity:0.4;width:20px">F${i+1}</div>`;
     h+=`<div style="font-size:10px;flex:1;opacity:${isCur?1:0.5}">${FD[i].name}</div>`;
     h+=`<div style="display:flex;gap:3px">`;
-    for(let d=0;d<5;d++){
+    for(let d=0;d<3;d++){
       h+=`<div style="width:6px;height:6px;border-radius:50%;background:${s>d?c:'rgba(255,255,255,0.1)'}"></div>`;
     }
     h+=`</div>`;
-    h+=`<div style="font-size:8px;opacity:0.3;width:30px;text-align:right">${s>=5?'★':s>0?s+'/5':''}</div>`;
+    h+=`<div style="font-size:8px;opacity:0.3;width:30px;text-align:right">${s>=3?'★':s>0?s+'/3':''}</div>`;
     h+=`</div>`;
   }
   // Control Room (basement)

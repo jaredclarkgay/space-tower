@@ -1,5 +1,5 @@
 'use strict';
-import { S, syncLitFloors, cZoom, tZoom, setCZoom, setTZoom, getActiveBuildFloor, isBuildable, canAfford, placeModule } from './state.js';
+import { S, syncLitFloors, cZoom, tZoom, setCZoom, setTZoom, getActiveBuildFloor, isBuildable, canAfford, placeModule, addCredits, setCredits, addHappiness, setHappiness, setFood, setHunger, advanceBuildout } from './state.js';
 import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF, BPF, PG, TERRAIN_RES, TERRAIN_X_MIN, TERRAIN_X_MAX, isFlankBlock } from './constants.js';
 import { FD } from './floors.js';
 import { CASUAL_TOPS_M } from './npcs.js';
@@ -88,7 +88,7 @@ function triggerActivation(fi){
       // Warm glow particles at doorway
       spawnParticles(TL+900,fy-FH*0.3,12,'rgba(255,200,120,0.5)',{speed:1,life:60,size:2.5,spread:Math.PI,dir:-Math.PI/2,gravity:-0.01});
       // Corner store + diner flanks activate — happiness boost
-      S.builderHappiness+=10;
+      addHappiness(10);
       break;
     case 2: // GARDEN — green burst, pollen floats upward
       triggerFlash('#80ff60',0.3);
@@ -266,7 +266,7 @@ function updateEconomy(){
           if(m.growStage==null)m.growStage=0;
           if(m.growStage<4){
             m.growStage++;
-            if(m.growStage===4)S.builderHappiness+=3;
+            if(m.growStage===4)addHappiness(3);
           }
         }
       }
@@ -301,11 +301,11 @@ function updateEconomy(){
   }
 
   // Update food
-  S.food=Math.max(0,S.food+foodProd-foodDemand);
+  setFood(S.food+foodProd-foodDemand);
 
   // Happiness from food surplus/deficit
-  if(foodProd>foodDemand)S.builderHappiness++;
-  else if(foodProd<foodDemand&&S.builderHappiness>0)S.builderHappiness--;
+  if(foodProd>foodDemand)addHappiness(1);
+  else if(foodProd<foodDemand)addHappiness(-1);
 
   // ── Food chain event check ──
   if(!S.foodChainComplete&&S.buildout[1].stage>=2){
@@ -316,7 +316,7 @@ function updateEconomy(){
     }
     if(maturePlanters>=2){
       S.foodChainComplete=true;
-      S.builderHappiness+=8;
+      addHappiness(8);
       showMsg('\ud83c\udf3f LOCAL PRODUCE','The food gets good.');
     }
   }
@@ -340,17 +340,17 @@ function updateEconomy(){
       if(m&&m.sat)_income+=m.sat;
     }
   }
-  if(_income>0)S.credits+=_income;
+  if(_income>0)addCredits(_income);
 
   // ── Hunger decay ──
   _hungerAcc++;
   if(_hungerAcc>=HUNGER_TICK){
     _hungerAcc=0;
-    if(S.player.hunger>0)S.player.hunger=Math.max(0,S.player.hunger-1);
+    if(S.player.hunger>0)setHunger(S.player.hunger-1);
   }
   // Floor 5 restaurant refill — standing on floor 5 with food available restores hunger
   if(S.player.cf===4&&S.buildout[4].stage>=3&&S.food>0&&S.player.hunger<100){
-    S.player.hunger=Math.min(100,S.player.hunger+2);
+    setHunger(S.player.hunger+2);
   }
 
   // Update HUD (cached refs)
@@ -562,10 +562,10 @@ function update(){
     if(dk&&p.onF&&!stDn){if(!p.isDrp)p.baseZoom=p.baseZoom||tZoom;p.isDrp=true;p.drpT=Math.min(p.drpT+1,DROP_MX);setTZoom(p.baseZoom-p.drpT/DROP_MX*0.25)}
     else if(dk&&stDn){p.st='climb';p.clT=inter.v;p.clP=1;p.x=inter.v.tx;p.vx=0;p.isDrp=false;p.drpT=0;setTZoom(p.baseZoom||tZoom)}
     else{if(p.isDrp&&p.drpT>3&&p.onF){p.drpPhase=Math.floor(p.drpT/DROP_MX*3);p.y+=FT+4;p.vy=4;p.onF=false;p.st='jump'}if(p.isDrp)setTZoom(p.baseZoom||tZoom);p.isDrp=false;p.drpT=0}
-    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;S.buildout[floor].stage=stage+1;S.buildout[floor].revealT=0;syncLitFloors();if(stage+1>=3)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
+    if(k['KeyE']&&inter){if(!S.iLock){if(inter.t==='elev'&&!isReckoningFrozen()){openElev()}else if(inter.t==='build'){const{floor,stage,def}=inter.v;advanceBuildout(floor,stage+1,0);syncLitFloors();if(stage+1>=3)triggerActivation(floor);else sndBuild();showMsg(def.msg[0],def.msg[1]);autoSave()}else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
       else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
       }else if(inter.t==='upgrade_store'){
-        if(canAfford(inter.v.cost)){S.credits-=inter.v.cost;S.cornerStoreUpgraded=true;S.builderHappiness+=10;showMsg('\ud83c\uded2 GROCERY STORE','Corner store upgraded. Fresh produce.');sndChime();autoSave()}
+        if(canAfford(inter.v.cost)){addCredits(-inter.v.cost);S.cornerStoreUpgraded=true;addHappiness(10);showMsg('\ud83c\uded2 GROCERY STORE','Corner store upgraded. Fresh produce.');sndChime();autoSave()}
         else showMsg('NOT ENOUGH','Need $'+inter.v.cost+' to upgrade.');
       }else if(inter.t==='mount_dozer'){
         S.bulldozer.active=true;p.st='idle';sndBoom();sndDozerStart();
@@ -723,9 +723,9 @@ export function initGame(saveData){
   if(saveData==='dozer'){
     S.bulldozer.unlocked=true;
     S.foodChainComplete=true;
-    S.builderHappiness=30;
-    S.credits=1000;
-    for(let i=0;i<NF;i++){S.buildout[i].stage=3;S.buildout[i].revealT=999}
+    setHappiness(30);
+    setCredits(1000);
+    for(let i=0;i<NF;i++){advanceBuildout(i,3,999)}
     S.reckoning.played=true;S.reckoning.phase='DONE';S.reckoning.outcome='builders';
     S.player.x=S.bulldozer.x+80;S.player.y=TB;
     S.cam.x=S.player.x;S.cam.y=S.player.y-60;

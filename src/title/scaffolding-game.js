@@ -76,6 +76,12 @@ const CRATE_GRAVITY = 18;
 // ── Power meter zones ──
 const GREEN_MIN = 0.73;
 const YELLOW_MIN = 0.42;
+const PERFECT_POWER = (GREEN_MIN + 1.0) / 2; // 0.865 — center of green zone
+
+// ── Scoring ──
+// Bullseye rings: [15, 12, 9, 6, 3] radii. Score by ring distance from center.
+const SCORE_THRESHOLDS = [3, 6, 9, 12, 15]; // inner to outer
+const SCORE_VALUES     = [10, 8, 6, 4, 2];  // score per ring
 
 // ── Per-floor flavor text ──
 const FLOOR_MSGS = [
@@ -373,7 +379,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     meterEl.appendChild(meterLine);
     document.body.appendChild(meterEl);
   }
-  function _showMeter() { _ensureMeter(); meterEl.style.display = ''; }
+  function _showMeter() { _ensureMeter(); meterEl.style.display = 'block'; }
   function _hideMeter() { if (meterEl) meterEl.style.display = 'none'; }
   function _setMeter(v) {
     if (!meterLine) return;
@@ -398,6 +404,121 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     bannerEl.style.opacity = '1';
     bannerTimer = 3.5;
   }
+
+  // ═══════════════════════════════════════
+  // JUDGE SCORECARD — bottom-right PIP showing a hardhat suit holding a score
+  // ═══════════════════════════════════════
+  let judgeEl = null, judgeTimer = 0;
+  function _ensureJudge() {
+    if (judgeEl) return;
+    judgeEl = document.createElement('canvas');
+    judgeEl.width = 200; judgeEl.height = 260;
+    judgeEl.style.cssText = 'position:fixed;bottom:50%;right:24px;transform:translateY(50%);z-index:75;pointer-events:none;border:3px solid rgba(255,255,255,0.35);border-radius:10px;background:rgba(0,0,0,0.6);opacity:0;transition:opacity 0.4s;box-shadow:0 0 30px rgba(0,0,0,0.6)';
+    document.body.appendChild(judgeEl);
+  }
+  function _drawJudge(score) {
+    _ensureJudge();
+    const c = judgeEl, ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Scale everything up — character is drawn in a 200×260 canvas
+    const cx = w / 2; // 100 = center x
+
+    // Body (suit)
+    ctx.fillStyle = '#2a2a3a';
+    ctx.fillRect(cx - 36, 114, 72, 80); // torso
+    ctx.fillRect(cx - 42, 194, 36, 56); // left leg
+    ctx.fillRect(cx + 6, 194, 36, 56);  // right leg
+
+    // Shirt / tie
+    ctx.fillStyle = '#e8e8f0';
+    ctx.fillRect(cx - 20, 114, 40, 32);
+    ctx.fillStyle = '#cc3030';
+    ctx.fillRect(cx - 5, 114, 10, 48); // tie
+
+    // Arms (upper, always visible)
+    ctx.fillStyle = '#2a2a3a';
+    ctx.fillRect(cx - 56, 118, 20, 14); // left shoulder
+    ctx.fillRect(cx + 36, 118, 20, 14); // right shoulder
+
+    // Raised arms holding card — higher raise for better scores
+    const armRaise = score >= 8 ? 48 : score >= 4 ? 24 : 0;
+    ctx.fillStyle = '#2a2a3a';
+    ctx.fillRect(cx - 56, 72 + (48 - armRaise), 18, 60 - (48 - armRaise)); // left arm
+    ctx.fillRect(cx + 38, 72 + (48 - armRaise), 18, 60 - (48 - armRaise)); // right arm
+
+    // Hands (skin)
+    ctx.fillStyle = '#d4a574';
+    const handY = 64 + (48 - armRaise);
+    ctx.fillRect(cx - 56, handY, 18, 14);
+    ctx.fillRect(cx + 38, handY, 18, 14);
+
+    // Head
+    ctx.fillStyle = '#d4a574';
+    ctx.beginPath();
+    ctx.arc(cx, 88, 26, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes
+    ctx.fillStyle = '#222';
+    ctx.fillRect(cx - 10, 83, 6, 6);
+    ctx.fillRect(cx + 4, 83, 6, 6);
+
+    // Expression
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (score >= 8) {
+      ctx.arc(cx, 92, 12, 0.15, Math.PI - 0.15);
+    } else if (score >= 4) {
+      ctx.arc(cx, 92, 8, 0.2, Math.PI - 0.2);
+    } else {
+      ctx.moveTo(cx - 10, 98); ctx.lineTo(cx + 10, 98);
+    }
+    ctx.stroke();
+
+    // Hard hat (yellow)
+    ctx.fillStyle = '#f0c020';
+    ctx.beginPath();
+    ctx.ellipse(cx, 68, 32, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(cx - 24, 56, 48, 16);
+    ctx.fillStyle = '#d4a010';
+    ctx.fillRect(cx - 24, 66, 48, 5); // brim shadow
+
+    // ── SCORE CARD (big, prominent) ──
+    const cardW = 80, cardH = 50;
+    const cardX = cx - cardW / 2;
+    const cardY = handY - cardH + 4;
+
+    // Card glow for high scores
+    if (score >= 8) {
+      ctx.shadowColor = score === 10 ? 'rgba(255,215,0,0.8)' : 'rgba(100,255,100,0.5)';
+      ctx.shadowBlur = 16;
+    }
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, cardH, 4);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.strokeStyle = '#444'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, cardH, 4);
+    ctx.stroke();
+
+    // Score number — BIG
+    ctx.fillStyle = score >= 8 ? '#1a8a1a' : score >= 4 ? '#c08c00' : '#cc2020';
+    ctx.font = 'bold 36px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(score === 0 ? '—' : String(score), cx, cardY + cardH / 2);
+  }
+  function _showJudge(score) {
+    _drawJudge(score);
+    judgeEl.style.opacity = '1';
+    judgeTimer = 3.5;
+  }
+  function _hideJudge() { if (judgeEl) judgeEl.style.opacity = '0'; }
 
   let hintEl = null;
   function _showHint(text) {
@@ -437,6 +558,8 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     jumpEnd: new THREE.Vector3(),
     seesawAngle: 0, seesawTarget: 0,
     skipRequested: false,
+    landingOffset: new THREE.Vector3(), // where crate lands relative to bullseye center
+    lastScore: 0,
     _pg: null,
   };
 
@@ -494,7 +617,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     st.skipRequested = false;
     _loadCrateOnSeesaw();
     _showMeter();
-    _showHint(`SPACE — launch  ·  ESC — exit  ·  Floor ${st.floor + 1}  (${st.delivered}/${st.required})`);
+    _showHint(`SPACE — launch  ·  ESC — exit  ·  Floor ${st.floor + 1}  (${st.delivered}/${st.required})  ·  Aim for center!`);
   }
 
   function _goJump(power) {
@@ -523,7 +646,8 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
 
     const targetH = _roofY + 2;
     const reqV = _requiredVel(targetH);
-    const maxVel = reqV / GREEN_MIN;
+    // Yellow zone and above all reach the roof — red zone misses
+    const maxVel = reqV / YELLOW_MIN;
     const launchVel = st.power * maxVel;
 
     const dx = TOWER_CENTER.x - wp.x, dz = TOWER_CENTER.z - wp.z;
@@ -545,26 +669,65 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
 
   function _goFlight() { st.phase = 'flight'; st.timer = 0; sndCrateFly(); }
 
+  function _calcLandingOffset(power) {
+    // Power deviation from perfect center of green zone
+    const dev = power - PERFECT_POWER;
+    // Map deviation to distance from bullseye center (along seesaw→tower direction)
+    // Green zone (0.73–1.0): dev ∈ [-0.135, +0.135] → offset 0–7 (inner half of target)
+    // Yellow zone (0.42–0.73): dev < -0.135 → offset 7–14.5 (outer half)
+    const greenHalf = (1.0 - GREEN_MIN) / 2; // 0.135
+    let dist;
+    if (Math.abs(dev) <= greenHalf) {
+      // Green zone: 0 at perfect, up to 7 at edges
+      dist = (Math.abs(dev) / greenHalf) * 7;
+    } else {
+      // Yellow zone: 7 to ~14.5
+      const yellowRange = GREEN_MIN - YELLOW_MIN; // 0.31
+      const intoYellow = Math.abs(dev) - greenHalf;
+      dist = 7 + (intoYellow / yellowRange) * 7.5;
+    }
+    // Direction: overshoot (+dev) goes past center, undershoot (-dev) falls short
+    // The approach direction is from seesaw toward tower center
+    const sign = dev >= 0 ? 1 : -1; // positive = overshoot (past center)
+    st.landingOffset.set(_fwdDir.x * dist * sign, 0, _fwdDir.z * dist * sign);
+    return dist;
+  }
+
+  function _scoreFromDist(dist) {
+    for (let i = 0; i < SCORE_THRESHOLDS.length; i++) {
+      if (dist <= SCORE_THRESHOLDS[i]) return SCORE_VALUES[i];
+    }
+    return 0;
+  }
+
   function _checkCatchOrMiss() {
     const peakH = st.cratePos.y;
     if (peakH >= _roofY) {
-      // HIT → bird's eye (stages revealed during birdseye phase, not here)
+      // HIT — calculate landing accuracy
+      const landDist = _calcLandingOffset(st.power);
+      const score = _scoreFromDist(landDist);
+      st.lastScore = score;
       st.phase = 'birdseye'; st.timer = 0; st.skipRequested = false;
       st._floorCompleted = false;
       sndCrateHit();
       st.delivered++;
       _saveProgress(st.floor, st.delivered);
+      // Show score judge
+      _showJudge(score);
       if (st.delivered >= st.required) {
         const [title, sub] = FLOOR_MSGS[st.floor] || ['MATERIALS DELIVERED', ''];
         _banner(title, sub);
       } else {
-        _banner('CAUGHT!', `${st.delivered}/${st.required} materials delivered`);
+        const label = score === 10 ? 'PERFECT!' : score >= 8 ? 'GREAT!' : score >= 6 ? 'GOOD' : 'CAUGHT';
+        _banner(label, `${st.delivered}/${st.required} materials  ·  Score: ${score}`);
       }
     } else {
       // MISS → quick reset (no cinematic)
+      st.lastScore = 0;
       st.phase = 'miss_reset'; st.timer = 0; sndCrateMiss();
       const pct = Math.round((peakH / _roofY) * 100);
       _banner('MISSED', `Reached ${pct}% of the height needed`);
+      _showJudge(0);
     }
   }
 
@@ -575,6 +738,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   function update(dt, keys) {
     if (_exitCooldown > 0) _exitCooldown -= dt;
     if (bannerTimer > 0) { bannerTimer -= dt; if (bannerTimer <= 0 && bannerEl) bannerEl.style.opacity = '0'; }
+    if (judgeTimer > 0) { judgeTimer -= dt; if (judgeTimer <= 0) _hideJudge(); }
     if (_shakeT > 0) _shakeT -= dt;
 
     st.seesawAngle += (st.seesawTarget - st.seesawAngle) * Math.min(dt * 10, 1);
@@ -586,6 +750,8 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
     switch (st.phase) {
 
     case 'ready': {
+      // Ensure meter is visible (safety — re-show if something hid it)
+      if (meterEl && meterEl.style.display === 'none') _showMeter();
       const spd = 2 / _meterPeriod(st.floor);
       st.meterVal += st.meterDir * spd * dt;
       if (st.meterVal >= 1) { st.meterVal = 1; st.meterDir = -1; }
@@ -663,13 +829,14 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
       if (st.skipRequested && st.timer < 4.0) st.timer = 4.0;
       if (pg) { pg.position.copy(_platformWorldPos()); pg.rotation.set(0, root.rotation.y, 0); }
 
-      // Phase 1: crate settles on bullseye
+      // Phase 1: crate settles on bullseye (offset by landing accuracy)
       if (st.timer < 1.2) {
         if (crateMesh.visible) {
           const settleY = _roofY + 0.5;
+          const tx = st.landingOffset.x, tz = st.landingOffset.z;
           crateMesh.position.y += (settleY - crateMesh.position.y) * dt * 5;
-          crateMesh.position.x += (0 - crateMesh.position.x) * dt * 4;
-          crateMesh.position.z += (0 - crateMesh.position.z) * dt * 4;
+          crateMesh.position.x += (tx - crateMesh.position.x) * dt * 4;
+          crateMesh.position.z += (tz - crateMesh.position.z) * dt * 4;
           crateMesh.rotation.x *= 0.92; crateMesh.rotation.z *= 0.92;
         }
       }
@@ -840,7 +1007,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
   function _doExit() {
     st.operating = false; st.phase = 'idle'; st.seesawTarget = 0;
     _exitCooldown = 0.5; // prevent immediate re-entry
-    _hideMeter(); _hideHint();
+    _hideMeter(); _hideHint(); _hideJudge();
     crateMesh.visible = false; loadedCrate.visible = false;
     bullseyeGroup.visible = false;
     _stages.forEach(s => s.forEach(m => { m.visible = false; }));
@@ -910,6 +1077,7 @@ export function buildScaffoldingGame(scene, initialRoofY, floorsBuilt, onFloorCo
       if (meterEl) { meterEl.remove(); meterEl = null; }
       if (bannerEl) { bannerEl.remove(); bannerEl = null; }
       if (hintEl) { hintEl.remove(); hintEl = null; }
+      if (judgeEl) { judgeEl.remove(); judgeEl = null; }
     },
   };
 }

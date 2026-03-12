@@ -1,5 +1,5 @@
 'use strict';
-import { S } from './state.js';
+import { S, addCredits, setSat } from './state.js';
 import { NF, BPF, TB, FH, ELEV_X } from './constants.js';
 import { FD } from './floors.js';
 import { sndElev, sndCrAlarm, sndCrChunk, sndCrThud } from './sound.js';
@@ -198,7 +198,7 @@ export function enterControlRoom(){
   _glitchT=0;_glitchRng=5;_flickerT=2;_pendingSatLog=false;
   // SAT boost (60s cooldown persists across visits)
   if(Date.now()-_lastSatBoost>=60000){
-    S.sat=Math.min(100,S.sat+2);
+    setSat(S.sat+2);
     _lastSatBoost=Date.now();
     _pendingSatLog=true;
   }
@@ -229,7 +229,7 @@ export function handleConsoleInteract(){
   } else {
     // Gold button
     if(!_goldUsed){
-      S.credits+=1;_goldUsed=true;_pressedBtn='gold';_pressedBtnT=0.3;
+      addCredits(1);_goldUsed=true;_pressedBtn='gold';_pressedBtnT=0.3;
       _pushLog('Emergency budget: 1 credit disbursed.');
       sndCrChunk();
     } else {

@@ -5,6 +5,7 @@ import { buildPlayableCrane } from './playable-crane.js';
 import { buildPlayableBulldozer, buildTerrainMesh, buildTerrainMeshFromHeightmap } from './playable-bulldozer.js';
 import { sampleHeightmap } from '../terrain.js';
 import { buildScaffoldingGame } from './scaffolding-game.js';
+import { ensureAudio } from '../sound.js';
 
 // ── Vertex color helper (for merged geometry) ──
 function _colorGeo(geo, color) {
@@ -511,6 +512,7 @@ let _keyupHandler = null;
 export function setupExteriorInput() {
   _keydownHandler = (e) => {
     if (!PLAYER.active) return;
+    ensureAudio();
     keys[e.code] = true;
 
     const crane = siteGroup?.userData?.crane;
@@ -541,6 +543,7 @@ export function setupExteriorInput() {
     }
 
     if (_scaffolding?.isOperating) {
+      if (e.code === 'Space') e.preventDefault();
       if (_scaffolding.handleKeyDown(e.code)) {
         if (e.code === 'Escape') {
           const exitPos = _scaffolding.exit();

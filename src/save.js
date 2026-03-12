@@ -1,5 +1,5 @@
 'use strict';
-import { S, syncLitFloors } from './state.js';
+import { S, syncLitFloors, setCredits, setHunger, setSat, setFood, setHappiness } from './state.js';
 import { NF, BPF } from './constants.js';
 import { FD } from './floors.js';
 import { F8_ALL_MODS } from './reckoning.js';
@@ -66,11 +66,11 @@ export function loadGame(){
     });
     if(d.panelFloor!=null)S.panelFloor=d.panelFloor;
     if(d.compendium)S.compendium.entries=d.compendium;
-    if(d.credits!=null)S.credits=d.credits;
-    if(d.hunger!=null)S.player.hunger=d.hunger;
-    if(d.sat!=null)S.sat=d.sat;
-    if(d.food!=null)S.food=d.food;
-    if(d.builderHappiness!=null)S.builderHappiness=d.builderHappiness;
+    if(d.credits!=null)setCredits(d.credits);
+    if(d.hunger!=null)setHunger(d.hunger);
+    if(d.sat!=null)setSat(d.sat);
+    if(d.food!=null)setFood(d.food);
+    if(d.builderHappiness!=null)setHappiness(d.builderHappiness);
     if(d.foodChainComplete!=null)S.foodChainComplete=d.foodChainComplete;
     if(d.cornerStoreUpgraded!=null)S.cornerStoreUpgraded=d.cornerStoreUpgraded;
     if(d.terrain){const t=d.terrain;for(let i=0;i<Math.min(t.length,S.terrain.length);i++)S.terrain[i]=t[i]}

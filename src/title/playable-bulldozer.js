@@ -554,7 +554,7 @@ export function buildPlayableBulldozer(scene, groundY, terrainMesh) {
  */
 export function buildTerrainMesh(scene, groundY) {
   const size = 1500;  // covers out to building ring
-  const segs = 120;   // subdivisions
+  const segs = 80;    // low subdivisions — flat ground doesn't need detail
 
   const geo = new THREE.PlaneGeometry(size, size, segs, segs);
   geo.rotateX(-Math.PI / 2);
@@ -568,7 +568,6 @@ export function buildTerrainMesh(scene, groundY) {
     const z = posAttr.getZ(i);
     const dist = Math.sqrt(x * x + z * z);
 
-    // Base color: earthy brown-green, darker at edges
     const edgeFade = Math.min(1, dist / 700);
     const r = 0.35 - edgeFade * 0.1;
     const g = 0.42 - edgeFade * 0.08;
@@ -580,7 +579,7 @@ export function buildTerrainMesh(scene, groundY) {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x111008, emissiveIntensity: 1.0 });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = groundY + 0.15;
   scene.add(mesh);
@@ -602,7 +601,7 @@ export function buildTerrainMesh(scene, groundY) {
 export function buildTerrainMeshFromHeightmap(scene, heightmap, segments, worldSize, groundY) {
   // Visual mesh extends to 1500×1500 (covers out to building ring)
   const meshSize = 1500;
-  const meshSegs = 300; // 5 units per cell
+  const meshSegs = 150; // 10 units per cell — balances detail vs performance (~23K verts)
   const hmHalf = worldSize / 2;   // 200 — heightmap extent
   const hmSegsF = segments - 1;   // 200 subdivisions in heightmap
 
@@ -624,21 +623,22 @@ export function buildTerrainMeshFromHeightmap(scene, heightmap, segments, worldS
     }
     posAttr.setY(i, h);
 
-    // Vertex color: earthy green, with height-based variation for deformed areas
+    // Vertex color: earthy tones based on elevation
     const dist = Math.sqrt(x * x + z * z);
     const edgeFade = Math.min(1, dist / 700);
-    const heightFade = Math.max(0, Math.min(1, (h + 4) / 8));
 
     let r, g, b;
-    if (heightFade < 0.4) {
-      // Low/cut = dark brown/mud
-      r = 0.28 + heightFade * 0.15; g = 0.22 + heightFade * 0.3; b = 0.14;
-    } else if (heightFade < 0.7) {
-      // Mid = green grass
-      r = 0.32; g = 0.38 + (heightFade - 0.4) * 0.3; b = 0.18;
+    if (h < -0.5) {
+      // Below grade: exposed earth/clay — visible brown, not black
+      const depth = Math.min(1, Math.abs(h) / 6);
+      r = 0.38 - depth * 0.08; g = 0.28 - depth * 0.06; b = 0.16;
+    } else if (h > 0.5) {
+      // Raised: tan/sandy
+      const rise = Math.min(1, h / 6);
+      r = 0.36 + rise * 0.12; g = 0.40 - rise * 0.04; b = 0.20 + rise * 0.08;
     } else {
-      // High/raised = tan/rock
-      r = 0.38 + (heightFade - 0.7) * 0.4; g = 0.42; b = 0.22 + (heightFade - 0.7) * 0.2;
+      // Flat: green grass
+      r = 0.32; g = 0.42; b = 0.18;
     }
 
     // Darken edges
@@ -652,8 +652,8 @@ export function buildTerrainMeshFromHeightmap(scene, heightmap, segments, worldS
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
 
-  // Lambert material so terrain cuts/raises are visible through shading
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // Lambert + emissive so depressions aren't pure black (ambient floor)
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x111008, emissiveIntensity: 1.0 });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = groundY + 0.15;
   scene.add(mesh);

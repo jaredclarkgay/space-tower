@@ -1,5 +1,5 @@
 'use strict';
-import { S, isBuildable } from './state.js';
+import { S, isBuildable, advanceBuildout } from './state.js';
 import { TL, TR, TW, TB, FH, NF, PG, BPF, ELEV_X, RK_COUNTDOWN_T, RK_ACTIVE_T, RK_FLOOD_T,
   RK_PLAYER_CLAIM, RK_BUILDER_CLAIM, RK_SUIT_CLAIM, RK_QUORUM, RK_PROX } from './constants.js';
 import { FLOOR_LEADERS, BP2 } from './npcs.js';
@@ -75,7 +75,7 @@ function startTravel(npc,destFi){
 export function checkReckoningTrigger(){
   const rk=S.reckoning;
   if(rk.phase!=='IDLE'||rk.played)return;
-  if(S.buildout[F8_FLOOR].stage<5)return;
+  if(S.buildout[F8_FLOOR].stage<3)return;
   for(let i=0;i<NF;i++){if(S.buildout[i].stage<1)return}
   startReckoning();
 }
@@ -591,7 +591,7 @@ export function startRematch(){
 
 // ═══ TEST MODE ═══
 export function setupTestMode(){
-  for(let i=0;i<NF;i++){S.buildout[i].stage=5;S.buildout[i].revealT=999}
+  for(let i=0;i<NF;i++){advanceBuildout(i,3,999)}
   S.litFloors=new Set();
   for(let i=0;i<NF;i++)S.litFloors.add(i);
   S.panelDirty=true;

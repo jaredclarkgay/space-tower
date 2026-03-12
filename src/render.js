@@ -76,16 +76,16 @@ export function getInter(){const p=S.player;
   const abf=getActiveBuildFloor();
   if(abf>=0&&p.cf===abf){
     const stg=S.buildout[abf].stage;
-    if(stg<5){const sd=STAGES[abf][stg];if(Math.abs(p.x-sd.x)<90)return{t:'build',v:{floor:abf,stage:stg,def:sd}}}
+    if(stg<3){const sd=STAGES[abf][stg];if(Math.abs(p.x-sd.x)<90)return{t:'build',v:{floor:abf,stage:stg,def:sd}}}
   }
-  // Objects — only at stage >= 4
-  for(let o of S.objs){if(S.buildout[o.floor].stage<4)continue;if(Math.abs(p.y-o.y)<20&&Math.abs(p.x-o.x)<50)return{t:'obj',v:o}}
-  // NPCs — only at stage >= 5, and only once tower has 3+ floors built
+  // Objects — only at stage >= 2
+  for(let o of S.objs){if(S.buildout[o.floor].stage<2)continue;if(Math.abs(p.y-o.y)<20&&Math.abs(p.x-o.x)<50)return{t:'obj',v:o}}
+  // NPCs — only at stage >= 3, and only once tower has 3+ floors built
   const _abf=getActiveBuildFloor(),_npcsOn=_abf>=3||_abf===-1;
-  if(_npcsOn){for(let n of S.npcs){if(S.buildout[n.floor].stage<5)continue;if(Math.abs(p.x-n.x)<40&&Math.abs(p.y-n.y)<30)return{t:'npc',v:n}}}
+  if(_npcsOn){for(let n of S.npcs){if(S.buildout[n.floor].stage<3)continue;if(Math.abs(p.x-n.x)<40&&Math.abs(p.y-n.y)<30)return{t:'npc',v:n}}}
   for(let w of S.workers){if(Math.abs(p.x-w.x)<40&&Math.abs(p.y-w.y)<30)return{t:'npc',v:w}}
   // Corner store upgrade — floor 1, block 5, food chain complete, not yet upgraded
-  if(p.cf===1&&S.foodChainComplete&&!S.cornerStoreUpgraded&&S.buildout[1].stage>=4){
+  if(p.cf===1&&S.foodChainComplete&&!S.cornerStoreUpgraded&&S.buildout[1].stage>=2){
     const csX=TL+5*PG+PG/2;
     if(Math.abs(p.x-csX)<80)return{t:'upgrade_store',v:{cost:200}};
   }
@@ -93,9 +93,9 @@ export function getInter(){const p=S.player;
   if(S.bulldozer.unlocked&&!S.bulldozer.active&&(p.x<TL||p.x>TR)){
     if(Math.abs(p.x-S.bulldozer.x)<60&&Math.abs(p.y-S.bulldozer.y)<40)return{t:'mount_dozer',v:{}};
   }
-  // Stairs — only between floors with stage >= 2
-  if(p.st!=='climb'){for(let st of S.stairs){if(S.buildout[st.ff].stage<2||S.buildout[st.tf].stage<2)continue;if(Math.abs(p.y-st.by)<12&&Math.abs(p.x-st.bx)<35)return{t:'up',v:st};if(Math.abs(p.y-st.ty)<12&&Math.abs(p.x-st.tx)<35)return{t:'dn',v:st}}}return null}
-export function nearSuit(){const p=S.player;for(let s of S.suits){if(!s.taken&&S.buildout[s.floor].stage>=5&&Math.abs(p.y-s.y)<20&&Math.abs(p.x-s.x)<40)return s}return null}
+  // Stairs — only between floors with stage >= 1
+  if(p.st!=='climb'){for(let st of S.stairs){if(S.buildout[st.ff].stage<1||S.buildout[st.tf].stage<1)continue;if(Math.abs(p.y-st.by)<12&&Math.abs(p.x-st.bx)<35)return{t:'up',v:st};if(Math.abs(p.y-st.ty)<12&&Math.abs(p.x-st.tx)<35)return{t:'dn',v:st}}}return null}
+export function nearSuit(){const p=S.player;for(let s of S.suits){if(!s.taken&&S.buildout[s.floor].stage>=3&&Math.abs(p.y-s.y)<20&&Math.abs(p.x-s.x)<40)return s}return null}
 
 // ═══ DRAW: CHARACTERS (FLAT) ═══
 function drawBlob(c,isP,oneEye){
@@ -307,10 +307,9 @@ function drawWallBlock(bx,fy,stage,th,bi,fi){
 function drawConstructionAtmosphere(i,stage,fy){
   // Color temperature overlay
   if(stage===1){X.fillStyle='rgba(100,120,160,0.03)';X.fillRect(TL,fy-FH,TW,FH)}
-  else if(stage===3){X.fillStyle='rgba(200,180,140,0.02)';X.fillRect(TL,fy-FH,TW,FH)}
-  else if(stage>=4){X.fillStyle='rgba(240,220,180,0.025)';X.fillRect(TL,fy-FH,TW,FH)}
-  // Construction dust particles (stages 1-2 only)
-  if(stage>=1&&stage<=2){
+  else if(stage>=2){X.fillStyle='rgba(240,220,180,0.025)';X.fillRect(TL,fy-FH,TW,FH)}
+  // Construction dust particles (stage 1 only)
+  if(stage===1){
     X.fillStyle='rgba(180,170,150,0.08)';
     for(let d=0;d<6;d++){
       const seed=i*6+d;
@@ -762,7 +761,7 @@ function drawFlankBlock(flankId,bx,fy,stage,fi){
   const pad=8,mw=PG-pad*2,mh=FH-pad*2;
   const mx=bx+pad,my=fy-FH+pad;
   const t=_now*0.001;
-  const functional=stage>=4;
+  const functional=stage>=2;
   switch(flankId){
     case 'lobby-desk':
       // Reception counter
@@ -1002,7 +1001,7 @@ function drawFlankBlock(flankId,bx,fy,stage,fi){
 
 // ═══ FLOOR-SPECIFIC AMBIENT LIFE (no gradients — all simple fills) ═══
 function drawFloorLife(i,stage,fy){
-  if(stage<2)return;
+  if(stage<1)return;
   const t=_now*0.001;
   switch(i){
     case 0: // LOBBY — vestibules, reception divider, glass doors, warm glow, clock
@@ -1039,7 +1038,7 @@ function drawFloorLife(i,stage,fy){
           }
         }
       }
-      if(stage>=2){
+      if(stage>=1){
         // Reception divider wall
         X.fillStyle='#b8b0a0';X.fillRect(TL+TW*0.35,fy-70,8,70);
         // Glass entrance doors
@@ -1047,44 +1046,46 @@ function drawFloorLife(i,stage,fy){
         // Door handles
         X.fillStyle='rgba(180,160,120,0.4)';X.beginPath();X.arc(TL+TW*0.45+44,fy-45,3,0,Math.PI*2);X.fill();X.beginPath();X.arc(TL+TW*0.45+66,fy-45,3,0,Math.PI*2);X.fill();
       }
-      if(stage>=3){X.globalAlpha=0.06;X.fillStyle='#ffd880';X.beginPath();X.arc(TL+TW*0.4,fy-20,60,0,Math.PI*2);X.fill();X.globalAlpha=1}
-      if(stage>=4){
+      if(stage>=2){
+        X.globalAlpha=0.06;X.fillStyle='#ffd880';X.beginPath();X.arc(TL+TW*0.4,fy-20,60,0,Math.PI*2);X.fill();X.globalAlpha=1;
         const cx=TL+TW*0.65,cy=fy-FH+30;
         X.strokeStyle='rgba(180,160,120,0.3)';X.lineWidth=1.5;X.beginPath();X.arc(cx,cy,12,0,Math.PI*2);X.stroke();
         X.strokeStyle='rgba(180,160,120,0.4)';X.lineWidth=1;
         X.beginPath();X.moveTo(cx,cy);X.lineTo(cx+Math.cos(t*0.5)*8,cy+Math.sin(t*0.5)*8);X.stroke();
         X.beginPath();X.moveTo(cx,cy);X.lineTo(cx+Math.cos(t*6)*5,cy+Math.sin(t*6)*5);X.stroke();
       }
-      if(stage>=5){X.globalAlpha=0.08;X.fillStyle='#ffe8b0';X.fillRect(TL+TW*0.45,fy-90,110,90);X.globalAlpha=1}
+      if(stage>=3){X.globalAlpha=0.08;X.fillStyle='#ffe8b0';X.fillRect(TL+TW*0.45,fy-90,110,90);X.globalAlpha=1}
       break;
     case 1: // QUARTERS — partition walls, plumbing, lamp dots, photo frames
-      if(stage>=2){
+      if(stage>=1){
         // Partition walls with door gaps
         X.fillStyle='#c4b8a8';for(let px=TL+500;px<TR-300;px+=600){X.fillRect(px,fy-FH+FT,6,FH-FT-40);X.fillRect(px,fy-30,6,30)}
       }
-      if(stage>=3){
+      if(stage>=2){
         // Plumbing — horizontal ceiling pipe + vertical drops
         X.fillStyle='#909090';X.fillRect(TL+200,fy-FH+FT+4,TW-400,4);for(let dx=TL+400;dx<TR-200;dx+=500){X.fillRect(dx,fy-FH+FT+4,3,20)}
         // Warm lamp dots
         X.globalAlpha=0.08;X.fillStyle='#ffc870';for(let lx=TL+400;lx<TR-200;lx+=500){X.beginPath();X.arc(lx,fy-30,30,0,Math.PI*2);X.fill()}X.globalAlpha=1;
+        // Photo frames
+        X.fillStyle='rgba(200,180,140,0.12)';X.strokeStyle='rgba(160,140,100,0.2)';X.lineWidth=1;for(let px=TL+600;px<TR-300;px+=700){X.fillRect(px,fy-FH+20,22,18);X.strokeRect(px,fy-FH+20,22,18)}
       }
-      if(stage>=4){X.fillStyle='rgba(200,180,140,0.12)';X.strokeStyle='rgba(160,140,100,0.2)';X.lineWidth=1;for(let px=TL+600;px<TR-300;px+=700){X.fillRect(px,fy-FH+20,22,18);X.strokeRect(px,fy-FH+20,22,18)}}
       break;
     case 2: // GARDEN — planter beds, irrigation, water recycler, UV strip, pollen, vines, tomato
-      if(stage>=2){
+      if(stage>=1){
         // Raised planter beds
         X.fillStyle='#8a6a3a';for(let bx=TL+300;bx<TR-200;bx+=500){X.fillRect(bx,fy-28,80,28)}
         // Irrigation channels
         X.strokeStyle='rgba(100,140,180,0.2)';X.lineWidth=1;for(let ix=TL+200;ix<TR-100;ix+=300){X.beginPath();X.moveTo(ix,fy-2);X.lineTo(ix+180,fy-2);X.stroke()}
       }
-      if(stage>=3){
+      if(stage>=2){
         // Water recycler — wall-mounted box with water display
         X.fillStyle='#808888';X.fillRect(TL+150,fy-FH+20,30,24);X.fillStyle='rgba(80,160,200,0.3)';X.fillRect(TL+154,fy-FH+26,22,12);
         // UV ceiling strip
         X.fillStyle='rgba(200,100,255,0.06)';X.fillRect(TL+100,fy-FH+2,TW-200,6);X.globalAlpha=0.04;X.fillStyle='#c864ff';X.fillRect(TL,fy-FH,TW,FH*0.3);X.globalAlpha=1;
+        // Pollen
+        X.fillStyle='rgba(140,220,100,0.25)';for(let mi=0;mi<8;mi++){const mx=TL+200+((mi*457+Math.sin(t+mi*2.1)*80)%(TW-400)),my=fy-20-((t*8+mi*37)%120);X.beginPath();X.arc(mx,my,1.5+Math.sin(t*2+mi)*0.5,0,Math.PI*2);X.fill()}
       }
-      if(stage>=4){X.fillStyle='rgba(140,220,100,0.25)';for(let mi=0;mi<8;mi++){const mx=TL+200+((mi*457+Math.sin(t+mi*2.1)*80)%(TW-400)),my=fy-20-((t*8+mi*37)%120);X.beginPath();X.arc(mx,my,1.5+Math.sin(t*2+mi)*0.5,0,Math.PI*2);X.fill()}}
-      if(stage>=5){
+      if(stage>=3){
         // Vines
         X.strokeStyle='rgba(80,160,60,0.2)';X.lineWidth=2;for(let px=TL+PG;px<TR;px+=PG*3){X.beginPath();for(let vy=0;vy<FH*0.6;vy+=8)X.lineTo(px+Math.sin(vy*0.08+t*0.5)*6,fy-vy);X.stroke()}
         // Red tomato on vine + green stem
@@ -1093,7 +1094,7 @@ function drawFloorLife(i,stage,fy){
       }
       break;
     case 3: // RESEARCH — lab benches, safety glass, fume hood, server rack, screen glow, LEDs
-      if(stage>=2){
+      if(stage>=1){
         // Lab benches
         X.fillStyle='#a0a0a0';X.fillRect(TL+300,fy-36,120,8);X.fillRect(TL+300,fy-36,4,36);X.fillRect(TL+416,fy-36,4,36);
         // Safety glass partition
@@ -1101,89 +1102,92 @@ function drawFloorLife(i,stage,fy){
         // Fume hood frame
         X.strokeStyle='rgba(120,120,130,0.3)';X.lineWidth=2;X.strokeRect(TL+800,fy-FH+FT+2,80,40);X.beginPath();X.moveTo(TL+800,fy-FH+FT+2);X.lineTo(TL+840,fy-FH+FT-8);X.lineTo(TL+880,fy-FH+FT+2);X.stroke();
       }
-      if(stage>=3){
+      if(stage>=2){
         // Server rack body + face panel
         X.fillStyle='#505560';X.fillRect(TL+1100,fy-80,28,80);X.fillStyle='#606870';X.fillRect(TL+1103,fy-76,22,72);
         // Blue screen glow
         X.globalAlpha=0.06;X.fillStyle='#6090ff';for(let sx=TL+600;sx<TR-200;sx+=700){X.beginPath();X.arc(sx,fy-FH*0.5,35,0,Math.PI*2);X.fill()}X.globalAlpha=1;
+        // LEDs
+        for(let li=0;li<12;li++){const lx=TL+800+li*18,ly=fy-FH*0.3+Math.sin(li*1.7)*10;X.fillStyle=Math.sin(t*3+li*0.8)>0?'rgba(0,255,80,0.5)':'rgba(255,60,30,0.3)';X.beginPath();X.arc(lx,ly,2,0,Math.PI*2);X.fill()}
       }
-      if(stage>=4){for(let li=0;li<12;li++){const lx=TL+800+li*18,ly=fy-FH*0.3+Math.sin(li*1.7)*10;X.fillStyle=Math.sin(t*3+li*0.8)>0?'rgba(0,255,80,0.5)':'rgba(255,60,30,0.3)';X.beginPath();X.arc(lx,ly,2,0,Math.PI*2);X.fill()}}
       break;
     case 4: // RESTAURANT — bar counter, stools, kitchen equipment, glow, steam, pendant lights
-      if(stage>=2){
+      if(stage>=1){
         // Bar counter
         X.fillStyle='#7a6a58';X.fillRect(TL+TW*0.6,fy-40,160,8);X.fillRect(TL+TW*0.6,fy-40,6,40);X.fillRect(TL+TW*0.6+154,fy-40,6,40);
         // Bar stools
         X.fillStyle='#606060';for(let sx=TL+TW*0.62;sx<TL+TW*0.6+140;sx+=40){X.fillRect(sx+8,fy-22,2,22);X.beginPath();X.arc(sx+9,fy-24,6,0,Math.PI*2);X.fill()}
       }
-      if(stage>=3){
+      if(stage>=2){
         // Range hood + stove body
         X.fillStyle='#808080';X.fillRect(TL+250,fy-FH+FT+2,70,12);X.fillStyle='#707070';X.fillRect(TL+260,fy-36,50,36);
         // Kitchen glow
         X.globalAlpha=0.05;X.fillStyle='#ffb050';X.beginPath();X.arc(TL+300,fy-FH*0.4,80,0,Math.PI*2);X.fill();X.globalAlpha=1;
+        // Steam
+        X.fillStyle='rgba(255,255,255,0.1)';for(let si=0;si<6;si++){const sx=TL+250+si*40+Math.sin(t+si)*15,sy=fy-FH*0.6-((t*15+si*23)%60);X.beginPath();X.arc(sx,sy,2+Math.sin(t+si),0,Math.PI*2);X.fill()}
       }
-      if(stage>=4){X.fillStyle='rgba(255,255,255,0.1)';for(let si=0;si<6;si++){const sx=TL+250+si*40+Math.sin(t+si)*15,sy=fy-FH*0.6-((t*15+si*23)%60);X.beginPath();X.arc(sx,sy,2+Math.sin(t+si),0,Math.PI*2);X.fill()}}
-      if(stage>=5){
+      if(stage>=3){
         for(let pl=TL+500;pl<TR-200;pl+=350){const sw2=Math.sin(t*0.7+pl*0.01)*3;X.strokeStyle='rgba(60,50,40,0.3)';X.lineWidth=1;X.beginPath();X.moveTo(pl,fy-FH);X.lineTo(pl+sw2,fy-FH+25);X.stroke();X.globalAlpha=0.08;X.fillStyle='#ffd070';X.beginPath();X.arc(pl+sw2,fy-FH+30,20,0,Math.PI*2);X.fill();X.globalAlpha=1}
         drawRGBDoor(fy,_now);
       }
       break;
     case 5: // LOUNGE — alcoves, speakers, warm mood spots, floating music notes
-      if(stage>=2){
+      if(stage>=1){
         // Reading nook alcove
         X.fillStyle='#b8b0a4';X.fillRect(TL+250,fy-FH+FT,6,80);X.fillRect(TL+400,fy-FH+FT,6,80);
         // Conversation alcove
         X.fillRect(TL+TW*0.65,fy-FH+FT,6,60);X.fillRect(TL+TW*0.65+150,fy-FH+FT,6,60);
       }
-      if(stage>=3){
+      if(stage>=2){
         // Speaker mounts
         for(const spx of[TL+180,TR-200]){X.fillStyle='#605850';X.fillRect(spx,fy-FH+30,16,12);X.strokeStyle='rgba(100,90,80,0.3)';X.lineWidth=1;X.beginPath();X.arc(spx+8,fy-FH+36,4,0,Math.PI*2);X.stroke()}
         // Warm mood spots
         X.globalAlpha=0.04;X.fillStyle='#ffb050';for(let ml=TL+350;ml<TR-200;ml+=600){X.beginPath();X.arc(ml,fy-FH*0.6,50,0,Math.PI*2);X.fill()}X.globalAlpha=1;
       }
-      if(stage>=5){X.font='14px serif';for(let ni=0;ni<3;ni++){const nx=TL+500+ni*400+Math.sin(t*0.5+ni*2)*30,ny=fy-40-((t*10+ni*50)%100);X.globalAlpha=0.12+Math.sin(t+ni)*0.08;X.fillStyle='rgba(255,220,160,1)';X.fillText('\u266A',nx,ny)}X.globalAlpha=1}
+      if(stage>=3){X.font='14px serif';for(let ni=0;ni<3;ni++){const nx=TL+500+ni*400+Math.sin(t*0.5+ni*2)*30,ny=fy-40-((t*10+ni*50)%100);X.globalAlpha=0.12+Math.sin(t+ni)*0.08;X.fillStyle='rgba(255,220,160,1)';X.fillText('\u266A',nx,ny)}X.globalAlpha=1}
       break;
     case 6: // OBSERVATION — panoramic glass frames, viewing alcove, display panels, blue tint, sparkles
-      if(stage>=2){
+      if(stage>=1){
         // Panoramic glass frames with cross-mullions
         X.strokeStyle='rgba(140,170,200,0.25)';X.lineWidth=2;
         for(let gx=TL+200;gx<TR-100;gx+=400){X.strokeRect(gx,fy-FH+FT+4,120,FH-FT-12);X.beginPath();X.moveTo(gx+60,fy-FH+FT+4);X.lineTo(gx+60,fy-8);X.stroke();X.beginPath();X.moveTo(gx,fy-FH*0.5);X.lineTo(gx+120,fy-FH*0.5);X.stroke()}
         // Viewing alcove
         X.fillStyle='rgba(140,170,200,0.06)';X.fillRect(TL+TW*0.4,fy-12,100,12);
       }
-      if(stage>=3){
+      if(stage>=2){
         // Display panels — wall-mounted screens with glow
         for(const dx of[TL+TW*0.2,TL+TW*0.75]){X.fillStyle='#404850';X.fillRect(dx,fy-FH+24,36,24);X.globalAlpha=0.06;X.fillStyle='#78b4f0';X.beginPath();X.arc(dx+18,fy-FH+36,20,0,Math.PI*2);X.fill();X.globalAlpha=1}
         // Blue tint
         X.globalAlpha=0.03;X.fillStyle='#78b4f0';X.fillRect(TL,fy-FH,TW,FH*0.5);X.globalAlpha=1;
       }
-      if(stage>=5){for(let si=0;si<4;si++){const sp=Math.sin(t*2+si*1.5);if(sp>0.7){X.fillStyle=`rgba(255,255,255,${(sp-0.7)*1.5})`;X.beginPath();X.arc(TL+400+si*500,fy-FH*0.7,3,0,Math.PI*2);X.fill()}}}
+      if(stage>=3){for(let si=0;si<4;si++){const sp=Math.sin(t*2+si*1.5);if(sp>0.7){X.fillStyle=`rgba(255,255,255,${(sp-0.7)*1.5})`;X.beginPath();X.arc(TL+400+si*500,fy-FH*0.7,3,0,Math.PI*2);X.fill()}}}
       break;
     case 7: // STORAGE — steel racks, loading dock, inventory terminal, yellow strip, LEDs
-      if(stage>=2){
+      if(stage>=1){
         // Steel rack uprights + shelf crossbars
         X.strokeStyle='rgba(120,120,110,0.3)';X.lineWidth=2;
         for(let rx=TL+300;rx<TR-200;rx+=400){X.beginPath();X.moveTo(rx,fy);X.lineTo(rx,fy-FH+FT+5);X.stroke();X.beginPath();X.moveTo(rx+60,fy);X.lineTo(rx+60,fy-FH+FT+5);X.stroke();for(let sy2=fy-30;sy2>fy-FH+FT+10;sy2-=35){X.beginPath();X.moveTo(rx,sy2);X.lineTo(rx+60,sy2);X.stroke()}}
         // Loading dock frame
         X.strokeStyle='rgba(140,130,100,0.25)';X.lineWidth=3;X.strokeRect(TL+100,fy-90,100,90);
       }
-      if(stage>=3){
+      if(stage>=2){
         // Inventory terminal — wall box with green screen
         X.fillStyle='#606860';X.fillRect(TR-250,fy-FH+22,26,20);X.fillStyle='rgba(0,200,80,0.15)';X.fillRect(TR-247,fy-FH+25,20,14);
         // Yellow ceiling strip
         X.fillStyle='rgba(255,220,60,0.05)';X.fillRect(TL+50,fy-FH+2,TW-100,6);X.globalAlpha=0.03;X.fillStyle='#ffdc3c';X.fillRect(TL,fy-FH,TW,40);X.globalAlpha=1;
+        // LEDs
+        for(let li=0;li<20;li++){const lx=TL+200+li*130;X.fillStyle=Math.floor(t*2+li*0.3)%3===0?'rgba(0,200,80,0.4)':'rgba(200,80,0,0.2)';X.beginPath();X.arc(lx,fy-FH*0.7,1.5,0,Math.PI*2);X.fill()}
       }
-      if(stage>=4){for(let li=0;li<20;li++){const lx=TL+200+li*130;X.fillStyle=Math.floor(t*2+li*0.3)%3===0?'rgba(0,200,80,0.4)':'rgba(200,80,0,0.2)';X.beginPath();X.arc(lx,fy-FH*0.7,1.5,0,Math.PI*2);X.fill()}}
       break;
     case 8: // OBSERVATORY — telescope housing, ceiling aperture, starlight beam, star map, sky
-      if(stage>=2){
+      if(stage>=1){
         // Telescope housing (rect + dome arc)
         const thx=TL+TW*0.55-30;X.fillStyle='#606878';X.fillRect(thx,fy-70,60,70);X.beginPath();X.arc(thx+30,fy-70,30,Math.PI,0);X.fill();
         // Ceiling aperture
         X.fillStyle='rgba(20,20,40,0.15)';X.fillRect(TL+TW*0.55-20,fy-FH,40,FT+4);
       }
-      if(stage>=3){const bx2=TL+TW*0.55;X.globalAlpha=0.06+Math.sin(t*0.5)*0.02;X.fillStyle='#c8dcff';X.beginPath();X.moveTo(bx2-15,fy-FH);X.lineTo(bx2+15,fy-FH);X.lineTo(bx2+20,fy);X.lineTo(bx2-20,fy);X.closePath();X.fill();X.globalAlpha=1}
-      if(stage>=5){
+      if(stage>=2){const bx2=TL+TW*0.55;X.globalAlpha=0.06+Math.sin(t*0.5)*0.02;X.fillStyle='#c8dcff';X.beginPath();X.moveTo(bx2-15,fy-FH);X.lineTo(bx2+15,fy-FH);X.lineTo(bx2+20,fy);X.lineTo(bx2-20,fy);X.closePath();X.fill();X.globalAlpha=1}
+      if(stage>=3){
         // Star map dots
         X.fillStyle='rgba(180,200,255,0.15)';for(let si=0;si<15;si++){const sx=TL+300+((si*277)%(TW-600));X.beginPath();X.arc(sx,fy-10-Math.sin(si*1.3)*8,1+Math.sin(t+si)*0.5,0,Math.PI*2);X.fill()}
         // Sky through ceiling aperture
@@ -1192,7 +1196,7 @@ function drawFloorLife(i,stage,fy){
       }
       break;
     case 9: // COMMAND — console, situation table, antenna, main screen, glows, radar, LEDs
-      if(stage>=2){
+      if(stage>=1){
         // Command console (C-shaped desk) — placed at x=-720 to clear stage 2 point at x=-450
         const cx9=TL+TW*0.3;X.fillStyle='#505058';X.fillRect(cx9,fy-34,100,6);X.fillRect(cx9,fy-34,6,34);X.fillRect(cx9+94,fy-34,6,34);
         // Situation table (ellipse)
@@ -1200,15 +1204,16 @@ function drawFloorLife(i,stage,fy){
         // Comms antenna on ceiling
         X.strokeStyle='rgba(100,100,110,0.3)';X.lineWidth=2;const anx=TR-300;X.beginPath();X.moveTo(anx,fy-FH+FT);X.lineTo(anx,fy-FH+FT+25);X.stroke();X.beginPath();X.moveTo(anx-8,fy-FH+FT+10);X.lineTo(anx+8,fy-FH+FT+10);X.stroke();
       }
-      if(stage>=3){
+      if(stage>=2){
         // Main screen above desk
         const sx9=TL+TW*0.3+20;X.fillStyle='#303038';X.fillRect(sx9,fy-FH+20,60,30);X.globalAlpha=0.06;X.fillStyle='#00c8ff';X.beginPath();X.arc(sx9+30,fy-FH+35,25,0,Math.PI*2);X.fill();X.globalAlpha=1;
         // Screen glows
         X.globalAlpha=0.04;const cc=['#00c8ff','#00ff78','#ffc800'];for(let si=0;si<3;si++){X.fillStyle=cc[si];X.beginPath();X.arc(TL+400+si*600,fy-FH*0.5,35,0,Math.PI*2);X.fill()}X.globalAlpha=1;
+        // Radar sweep
+        const rx=TL+TW*0.7,ry=fy-FH*0.5,rr=30,sa=t*1.5;X.strokeStyle='rgba(0,255,120,0.15)';X.lineWidth=1;X.beginPath();X.arc(rx,ry,rr,0,Math.PI*2);X.stroke();X.strokeStyle='rgba(0,255,120,0.35)';X.lineWidth=2;X.beginPath();X.moveTo(rx,ry);X.lineTo(rx+Math.cos(sa)*rr,ry+Math.sin(sa)*rr);X.stroke();X.globalAlpha=0.1;X.fillStyle='rgba(0,255,120,1)';X.beginPath();X.moveTo(rx,ry);X.arc(rx,ry,rr,sa-0.5,sa);X.closePath();X.fill();X.globalAlpha=1;
       }
-      if(stage>=4){const rx=TL+TW*0.7,ry=fy-FH*0.5,rr=30,sa=t*1.5;X.strokeStyle='rgba(0,255,120,0.15)';X.lineWidth=1;X.beginPath();X.arc(rx,ry,rr,0,Math.PI*2);X.stroke();X.strokeStyle='rgba(0,255,120,0.35)';X.lineWidth=2;X.beginPath();X.moveTo(rx,ry);X.lineTo(rx+Math.cos(sa)*rr,ry+Math.sin(sa)*rr);X.stroke();X.globalAlpha=0.1;X.fillStyle='rgba(0,255,120,1)';X.beginPath();X.moveTo(rx,ry);X.arc(rx,ry,rr,sa-0.5,sa);X.closePath();X.fill();X.globalAlpha=1}
-      if(stage>=5){
-        for(let fi=0;fi<9;fi++){const fs=S.buildout[fi].stage;X.fillStyle=fs>=5?'rgba(0,200,80,0.5)':fs>=1?'rgba(200,200,0,0.3)':'rgba(80,80,80,0.2)';X.beginPath();X.arc(TL+500+fi*22,fy-FH+20,3,0,Math.PI*2);X.fill()}
+      if(stage>=3){
+        for(let fi=0;fi<9;fi++){const fs=S.buildout[fi].stage;X.fillStyle=fs>=3?'rgba(0,200,80,0.5)':fs>=1?'rgba(200,200,0,0.3)':'rgba(80,80,80,0.2)';X.beginPath();X.arc(TL+500+fi*22,fy-FH+20,3,0,Math.PI*2);X.fill()}
         drawKeeperDesk(X,_now,fy);
       }
       break;
@@ -1791,9 +1796,9 @@ export function draw(){
         const elevW=PG*0.5,elevX=bx+PG*0.25;
         const doorH=FH*0.65,doorY=fy-doorH;
         // Flanking walls
-        const wallCol=_stg>=2?th.wall:th.dark;
+        const wallCol=_stg>=1?th.wall:th.dark;
         X.fillStyle=wallCol;X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH);
-        if(_stg>=2){X.fillStyle=th.accent;X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH)}
+        if(_stg>=1){X.fillStyle=th.accent;X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH)}
         else{X.fillStyle='rgba(0,0,0,0.12)';X.fillRect(bx,fy-FH,PG*0.25,FH);X.fillRect(elevX+elevW,fy-FH,PG*0.25,FH)}
         // Shaft interior
         X.fillStyle='#0a0a12';X.fillRect(elevX,fy-FH-4,elevW,FH+8);
@@ -1813,7 +1818,7 @@ export function draw(){
         // Sliding doors (clipped to shaft)
         X.save();X.beginPath();X.rect(elevX,doorY,elevW,doorH);X.clip();
         const doorSlide=doorOpenAmount*(elevW/2-2);
-        const doorCol=_stg>=2?'#909098':'#606068';
+        const doorCol=_stg>=1?'#909098':'#606068';
         X.fillStyle=doorCol;X.fillRect(elevX-doorSlide,doorY,elevW/2,doorH);
         X.fillStyle='#808088';X.fillRect(elevX-doorSlide+elevW/2-1,doorY,2,doorH);
         X.fillStyle=doorCol;X.fillRect(elevX+elevW/2+doorSlide,doorY,elevW/2,doorH);
@@ -1821,22 +1826,22 @@ export function draw(){
         // Interior detail when doors open
         if(doorOpenAmount>0.3){X.fillStyle='#14141e';X.fillRect(elevX+4,doorY+2,elevW-8,doorH-4);X.strokeStyle='#505058';X.lineWidth=2;X.beginPath();X.moveTo(elevX+8,doorY+doorH*0.55);X.lineTo(elevX+elevW-8,doorY+doorH*0.55);X.stroke()}
         // Floor indicator
-        X.fillStyle=_stg>=3?'rgba(60,50,20,0.8)':'rgba(20,20,25,0.8)';
+        X.fillStyle=_stg>=2?'rgba(60,50,20,0.8)':'rgba(20,20,25,0.8)';
         X.beginPath();X.roundRect(elevX+elevW/2-18,fy-FH+4,36,14,2);X.fill();
-        if(_stg>=3){X.fillStyle='rgba(255,200,80,0.7)';X.font='bold 9px monospace';X.textAlign='center';X.fillText(`F${i+1}`,elevX+elevW/2,fy-FH+14)}
+        if(_stg>=2){X.fillStyle='rgba(255,200,80,0.7)';X.font='bold 9px monospace';X.textAlign='center';X.fillText(`F${i+1}`,elevX+elevW/2,fy-FH+14)}
         else{X.fillStyle='rgba(80,80,90,0.5)';X.font='bold 9px monospace';X.textAlign='center';X.fillText(`F${i+1}`,elevX+elevW/2,fy-FH+14)}
         // Call button
-        if(_stg>=3){X.fillStyle='#404048';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,5,0,Math.PI*2);X.fill();if(doorOpenAmount>0.5){X.fillStyle='rgba(255,215,0,0.15)';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,10,0,Math.PI*2);X.fill()}X.fillStyle=doorOpenAmount>0.5?'#ffd700':'#606068';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,3.5,0,Math.PI*2);X.fill()}
+        if(_stg>=2){X.fillStyle='#404048';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,5,0,Math.PI*2);X.fill();if(doorOpenAmount>0.5){X.fillStyle='rgba(255,215,0,0.15)';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,10,0,Math.PI*2);X.fill()}X.fillStyle=doorOpenAmount>0.5?'#ffd700':'#606068';X.beginPath();X.arc(elevX+elevW+12,fy-FH*0.45,3.5,0,Math.PI*2);X.fill()}
         } // end stage>=1 elevator gate
       } else if(isWin){
         // Windows — progressive visibility
-        if(_stg>=2){
+        if(_stg>=1){
           X.fillStyle='rgba(160,205,235,0.1)';X.fillRect(bx,fy-FH,PG,FH);
           X.strokeStyle='rgba(80,120,150,0.4)';X.lineWidth=3;
           X.strokeRect(bx+4,fy-FH+4,PG-8,FH-8);
           X.lineWidth=2.5;X.beginPath();X.moveTo(bx+PG/2,fy-FH+4);X.lineTo(bx+PG/2,fy-4);X.stroke();
           X.beginPath();X.moveTo(bx+4,fy-FH/2);X.lineTo(bx+PG-4,fy-FH/2);X.stroke();
-          if(_stg>=3){X.fillStyle='rgba(200,230,255,0.05)';X.fillRect(bx+6,fy-FH+6,PG*0.35,FH*0.4)}
+          if(_stg>=2){X.fillStyle='rgba(200,230,255,0.05)';X.fillRect(bx+6,fy-FH+6,PG*0.35,FH*0.4)}
         } else if(_stg===1){
           X.globalAlpha=0.3;
           X.fillStyle='rgba(60,80,100,0.06)';X.fillRect(bx,fy-FH,PG,FH);
@@ -1848,7 +1853,7 @@ export function draw(){
       } else if(isFlank){
         // Flanking blocks — wall background + themed overlay at stage 2+
         drawWallBlock(bx,fy,_stg,th,bi,i);
-        if(_stg>=2){
+        if(_stg>=1){
           const flankDef=FD[i].flanks;
           const flankId=bi===5?flankDef.left:flankDef.right;
           drawFlankBlock(flankId,bx,fy,_stg,i);
@@ -1901,18 +1906,18 @@ export function draw(){
     // Ceiling & edge depth — makes floors feel enclosed
     if(stage>=1){
       X.fillStyle='rgba(0,0,0,0.06)';X.fillRect(TL,fy-FH,TW,6);
-      if(stage>=3){X.fillStyle='rgba(0,0,0,0.03)';X.fillRect(TL,fy-FH+6,TW,10)}
+      if(stage>=2){X.fillStyle='rgba(0,0,0,0.03)';X.fillRect(TL,fy-FH+6,TW,10)}
       X.fillStyle='rgba(0,0,0,0.04)';X.fillRect(TL,fy-12,TW,12);
     }
     // Cascade helper: is the sweep active and has it reached this x-position?
     const _rTL=S.buildout[i].revealT,_swL=_rTL<BPF*10+40;
     function _swept(lx){if(!_swL)return true;const _bi=Math.max(0,Math.min(BPF-1,Math.floor((lx-TL)/PG)));return _rTL-_bi*10>=0}
-    // Window light shafts — appear at stage 2, cascade only when stage 2 is the new stage
-    if(stage>=2){
-      const shaftA=stage>=3?0.04:0.025;
+    // Window light shafts — appear at stage 1, cascade only when stage 1 is the new stage
+    if(stage>=1){
+      const shaftA=stage>=2?0.04:0.025;
       for(let bi2=0;bi2<BPF;bi2++){
         if(!isWinBlock(bi2))continue;
-        if(stage===2&&!_swept(TL+bi2*PG))continue; // cascade on first appearance only
+        if(stage===1&&!_swept(TL+bi2*PG))continue; // cascade on first appearance only
         const wx=TL+bi2*PG+PG/2;
         X.fillStyle=`rgba(220,235,255,${shaftA})`;
         X.beginPath();
@@ -1921,22 +1926,22 @@ export function draw(){
         X.closePath();X.fill();
       }
     }
-    // Wall sconces — fixtures appear dark at stage 2 (Structure), light up at stage 3 (Systems)
-    if(stage>=2){for(let lx=TL+180;lx<TR;lx+=280){
-      const isNew2=stage===2,isNew3=stage===3;
-      if(isNew2&&!_swept(lx))continue; // fixture cascades in at stage 2
-      // Fixture hardware (always drawn once stage 2+)
-      X.fillStyle='#333';X.fillRect(lx,fy-FH,2,38);X.fillStyle=stage>=3?'#b08d5c':'#555';X.beginPath();X.arc(lx+1,fy-FH+38,7,Math.PI,0);X.fill();
-      // Glow — only at stage 3+, cascaded when stage 3 is new
-      if(stage>=3){
-        if(isNew3&&!_swept(lx))continue;
+    // Wall sconces — fixtures appear dark at stage 1 (Structure), light up at stage 2 (Activate)
+    if(stage>=1){for(let lx=TL+180;lx<TR;lx+=280){
+      const isNew1=stage===1,isNew2=stage===2;
+      if(isNew1&&!_swept(lx))continue; // fixture cascades in at stage 1
+      // Fixture hardware (always drawn once stage 1+)
+      X.fillStyle='#333';X.fillRect(lx,fy-FH,2,38);X.fillStyle=stage>=2?'#b08d5c':'#555';X.beginPath();X.arc(lx+1,fy-FH+38,7,Math.PI,0);X.fill();
+      // Glow — only at stage 2+, cascaded when stage 2 is new
+      if(stage>=2){
+        if(isNew2&&!_swept(lx))continue;
         X.fillStyle='rgba(255,235,160,0.08)';X.beginPath();X.arc(lx+1,fy-FH+55,50,0,Math.PI*2);X.fill();
         X.fillStyle='rgba(255,235,160,0.12)';X.beginPath();X.arc(lx+1,fy-FH+50,30,0,Math.PI*2);X.fill();
         X.fillStyle='rgba(255,235,160,0.2)';X.beginPath();X.arc(lx+1,fy-FH+44,12,0,Math.PI*2);X.fill();
       }
     }}
-    // Emergency lights — appear at stage 1, stay through stage 2, cascade only at stage 1
-    if(stage>=1&&stage<3){for(let lx=TL+300;lx<TR;lx+=400){
+    // Emergency lights — stage 1 only (before full activation)
+    if(stage===1){for(let lx=TL+300;lx<TR;lx+=400){
       if(stage===1&&!_swept(lx))continue; // cascade on first appearance only
       X.fillStyle='rgba(255,60,30,0.04)';X.beginPath();X.arc(lx,fy-FH+10,25,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,60,30,0.08)';X.beginPath();X.arc(lx,fy-FH+10,12,0,Math.PI*2);X.fill();X.fillStyle='rgba(255,60,30,0.15)';X.beginPath();X.arc(lx,fy-FH+10,4,0,Math.PI*2);X.fill()}}
     // Floor slab — stage 0 ghostly, stage 1 dim, stage 2+ full
@@ -1961,18 +1966,18 @@ export function draw(){
     if(stage>=1){X.globalAlpha=stage===1?0.4:1;X.fillStyle='#7a766f';for(let px=TL+PG;px<TR;px+=PG)X.fillRect(px-5,fy-FH,10,FH);X.globalAlpha=1}
     // Floor label + dot — stage 1+ only
     if(stage>=1){
-      const lblA=stage>=5?0.55:0.35;
+      const lblA=stage>=3?0.55:0.35;
       X.fillStyle=`rgba(60,50,40,${lblA})`;X.font='11px monospace';X.textAlign='left';X.fillText(`F${i+1} ${FD[i].name}`,TL+36,fy-FH/2+4);
-      const dotCol=stage>=5?'rgba(0,180,80,0.55)':'rgba(180,160,40,0.45)';
+      const dotCol=stage>=3?'rgba(0,180,80,0.55)':'rgba(180,160,40,0.45)';
       X.fillStyle=dotCol;X.beginPath();X.arc(TL+25,fy-FH/2,5,0,Math.PI*2);X.fill();
-      if(stage<5){X.fillStyle='rgba(180,160,40,0.35)';X.font='8px monospace';X.fillText(`${stage}/5`,TL+36,fy-FH/2+14)}
+      if(stage<3){X.fillStyle='rgba(180,160,40,0.35)';X.font='8px monospace';X.fillText(`${stage}/3`,TL+36,fy-FH/2+14)}
     }
     // Floor-specific ambient life
     drawFloorLife(i,stage,fy);
     // Construction atmosphere (color temp, dust, tape)
     drawConstructionAtmosphere(i,stage,fy);
-    // Placed modules — stage 5 only
-    if(stage>=5){
+    // Placed modules — stage 3 only
+    if(stage>=3){
       for(let bi=0;bi<BPF;bi++){
         if(isWinBlock(bi)||isElevBlock(bi)||isFlankBlock(bi))continue;
         const mod=S.modules[i]?S.modules[i][bi]:null;
@@ -2050,15 +2055,15 @@ export function draw(){
   const bOp=0.2+Math.sin(_now*0.003)*0.12;X.strokeStyle=`rgba(180,160,80,${bOp})`;X.lineWidth=4;X.setLineDash([24,16]);
   X.beginPath();X.moveTo(TL-UW,dynRoofY-400);X.lineTo(TL-UW,TB+100);X.moveTo(TR+UW,dynRoofY-400);X.lineTo(TR+UW,TB+100);X.stroke();X.setLineDash([]);
 
-  // Stairs — only between floors with stage >= 2
-  S.stairs.forEach(st=>{if(S.buildout[st.ff].stage<2||S.buildout[st.tf].stage<2)return;X.strokeStyle='rgba(96,125,139,0.5)';X.lineWidth=4;X.beginPath();X.moveTo(st.bx,st.by);X.lineTo(st.tx,st.ty);X.stroke();
+  // Stairs — only between floors with stage >= 1
+  S.stairs.forEach(st=>{if(S.buildout[st.ff].stage<1||S.buildout[st.tf].stage<1)return;X.strokeStyle='rgba(96,125,139,0.5)';X.lineWidth=4;X.beginPath();X.moveTo(st.bx,st.by);X.lineTo(st.tx,st.ty);X.stroke();
     X.fillStyle='#455a64';for(let i=0;i<=14;i++){const px=st.bx+(st.tx-st.bx)*(i/14),py=st.by+(st.ty-st.by)*(i/14);X.fillRect(px-12,py-4,24,5)}
     X.strokeStyle='rgba(80,90,100,0.4)';X.lineWidth=2;X.beginPath();X.moveTo(st.bx-14,st.by-30);X.lineTo(st.tx-14,st.ty-30);X.stroke();X.beginPath();X.moveTo(st.bx+14,st.by-30);X.lineTo(st.tx+14,st.ty-30);X.stroke()});
 
   // ═══ BUILD INTERACTION POINT (blue ↔ yellow oscillation) ═══
   if(abf>=0){
     const stg=S.buildout[abf].stage;
-    if(stg<5){
+    if(stg<3){
       const sd=STAGES[abf][stg];
       const ipx=sd.x;
       const ipy=TB-(abf*FH); // floor slab y
@@ -2116,10 +2121,10 @@ export function draw(){
     }
   }
 
-  // Objects — stage 4+
-  S.objs.forEach(o=>{if(S.buildout[o.floor].stage<4)return;X.fillStyle='rgba(0,0,0,0.04)';X.beginPath();X.ellipse(o.x+o.width/2,o.y,o.width/2+3,3,0,0,Math.PI*2);X.fill();X.fillStyle=o.c;X.beginPath();X.roundRect(o.x,o.y-o.height,o.width,o.height,4);X.fill();X.fillStyle='rgba(255,255,255,0.12)';X.fillRect(o.x+1,o.y-o.height+1,o.width-2,3)});
-  // Suits — stage 5+
-  S.suits.forEach(s=>{if(s.taken||S.buildout[s.floor].stage<5)return;const bob=Math.sin(_now*0.002+s.x)*2;X.fillStyle='rgba(80,70,100,0.45)';X.beginPath();X.roundRect(s.x-10,s.y-44+bob,20,32,6);X.fill()});
+  // Objects — stage 2+
+  S.objs.forEach(o=>{if(S.buildout[o.floor].stage<2)return;X.fillStyle='rgba(0,0,0,0.04)';X.beginPath();X.ellipse(o.x+o.width/2,o.y,o.width/2+3,3,0,0,Math.PI*2);X.fill();X.fillStyle=o.c;X.beginPath();X.roundRect(o.x,o.y-o.height,o.width,o.height,4);X.fill();X.fillStyle='rgba(255,255,255,0.12)';X.fillRect(o.x+1,o.y-o.height+1,o.width-2,3)});
+  // Suits — stage 3+
+  S.suits.forEach(s=>{if(s.taken||S.buildout[s.floor].stage<3)return;const bob=Math.sin(_now*0.002+s.x)*2;X.fillStyle='rgba(80,70,100,0.45)';X.beginPath();X.roundRect(s.x-10,s.y-44+bob,20,32,6);X.fill()});
 
   // Keeper glow (behind all characters)
   drawKeeperGlow(X,_now);
@@ -2130,7 +2135,7 @@ export function draw(){
   S.npcs.forEach(n=>{
     if(n._hidden)return; // Gene hidden during reckoning
     if(n.arrState==='queue'||n.arrState==='riding')return; // invisible
-    if(n.arrived&&S.buildout[n.floor].stage<5)return;       // normal gate
+    if(n.arrived&&S.buildout[n.floor].stage<3)return;       // normal gate
     if(!npcsOn)return;
     if(n.type==='a')_sortAl.push(n);
     else if(n.type==='c')_sortCa.push(n);
@@ -2261,7 +2266,7 @@ export function draw(){
   }
 
   // RGB door proximity text (world space)
-  if(p.cf===4&&S.buildout[4].stage>=5){
+  if(p.cf===4&&S.buildout[4].stage>=3){
     const doorCX=TL+2*PG+PG/2;
     if(Math.abs(p.x-doorCX)<150)drawRGBDoorText(doorCX,TB-4*FH-FH*0.3,_now);
   }
@@ -2318,6 +2323,14 @@ export function draw(){
 
   // Keeper overlay (screen space)
   drawKeeperOverlay(X,W,H,_now);
+
+  // Hunger dim overlay (screen space) — darkens edges when hungry
+  if(S.player.hunger<30){
+    const _ha=(30-S.player.hunger)/30*0.35;
+    const _hg=X.createRadialGradient(W/2,H*0.4,W*0.25,W/2,H*0.4,W*0.7);
+    _hg.addColorStop(0,'rgba(0,0,0,0)');_hg.addColorStop(1,`rgba(0,0,0,${_ha})`);
+    X.fillStyle=_hg;X.fillRect(0,0,W,H);
+  }
 
   // Screen flash overlay (screen space)
   if(S.fx.flash>0){

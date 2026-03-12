@@ -93,21 +93,33 @@ export function placeModule(fi,bi,mod){
   S.modules[fi][bi]={...mod};
   // Init growStage for planters on floor 2
   if(fi===2&&mod.id==='planter')S.modules[fi][bi].growStage=0;
-  S.credits-=mod.cost;
+  addCredits(-mod.cost);
   // Happiness from residential placement
-  if(fi===1)S.builderHappiness+=2;
+  if(fi===1)addHappiness(2);
   S.panelDirty=true;
   return true;
 }
 export function sellModule(fi,bi){
   const mod=S.modules[fi][bi];
   if(!mod)return false;
-  S.credits+=mod.sell;
+  addCredits(mod.sell);
   // Deduct happiness for residential demolition
-  if(fi===1&&S.builderHappiness>0)S.builderHappiness=Math.max(0,S.builderHappiness-2);
-  if(fi===2&&mod.id==='planter'&&mod.growStage>=4&&S.builderHappiness>0)S.builderHappiness=Math.max(0,S.builderHappiness-3);
+  if(fi===1)addHappiness(-2);
+  if(fi===2&&mod.id==='planter'&&mod.growStage>=4)addHappiness(-3);
   S.modules[fi][bi]=null;
   S.panelDirty=true;
   return true;
 }
 export function recalc(){S.panelDirty=true}
+
+// ═══ STATE SETTERS ═══
+// Centralized mutation points for cross-cutting state.
+// Every change flows through here — trace, validate, or sync in one place.
+export function addCredits(n){S.credits+=n}
+export function setCredits(n){S.credits=n}
+export function addHappiness(n){S.builderHappiness=Math.max(0,S.builderHappiness+n)}
+export function setHappiness(n){S.builderHappiness=n}
+export function setSat(n){S.sat=Math.min(100,Math.max(0,n))}
+export function setFood(n){S.food=Math.max(0,n)}
+export function setHunger(n){S.player.hunger=Math.min(100,Math.max(0,n))}
+export function advanceBuildout(fi,stage,revealT){S.buildout[fi].stage=stage;if(revealT!=null)S.buildout[fi].revealT=revealT;}

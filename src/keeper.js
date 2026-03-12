@@ -17,7 +17,7 @@ const ZOOM_OUT_SPEED=0.04; // lerp per frame (~1s)
 
 // ═══ SCRIPTED DIALOGUE ═══
 function getKeeperDialogue(){
-  const floorsBuilt=S.buildout.filter(b=>b.stage>=5).length;
+  const floorsBuilt=S.buildout.filter(b=>b.stage>=3).length;
   const sat=S.sat;
   const f8outcome=S.reckoning.outcome;
   return [
@@ -86,7 +86,7 @@ async function _callLLM(systemPrompt,messages){
 }
 
 function _buildContext(){
-  const floorsBuilt=S.buildout.filter(b=>b.stage>=5).length;
+  const floorsBuilt=S.buildout.filter(b=>b.stage>=3).length;
   let totalMods=0;
   for(let fi=0;fi<NF;fi++)for(let bi=0;bi<BPF;bi++)if(S.modules[fi][bi])totalMods++;
   const entries=S.compendium.entries;
@@ -281,7 +281,7 @@ function _startScriptedDialogue(){
 
 // ═══ KEEPER DRAWING ═══
 export function drawKeeper(X,_now){
-  if(S.buildout[KEEPER_FLOOR].stage<5)return;
+  if(S.buildout[KEEPER_FLOOR].stage<3)return;
   const _rp=S.reckoning.phase;if(_rp!=='IDLE'&&_rp!=='DONE')return;
   const t=_now*0.001;
   const x=KEEPER_X,y=KEEPER_FY;
@@ -340,7 +340,7 @@ export function drawKeeper(X,_now){
 
 // ═══ KEEPER DESK ═══
 export function drawKeeperDesk(X,_now,fy){
-  if(S.buildout[KEEPER_FLOOR].stage<5)return;
+  if(S.buildout[KEEPER_FLOOR].stage<3)return;
   const _rp=S.reckoning.phase;if(_rp!=='IDLE'&&_rp!=='DONE')return;
   const t=_now*0.001;
   const dx=DESK_X,dy=fy,dw=DESK_W;
@@ -383,7 +383,7 @@ export function drawKeeperDesk(X,_now,fy){
 
 // ═══ KEEPER GLOW ═══
 export function drawKeeperGlow(X,_now){
-  if(S.buildout[KEEPER_FLOOR].stage<5)return;
+  if(S.buildout[KEEPER_FLOOR].stage<3)return;
   const _rp=S.reckoning.phase;if(_rp!=='IDLE'&&_rp!=='DONE')return;
   const t=_now*0.001;
   const x=KEEPER_X,y=KEEPER_FY-36;
@@ -400,7 +400,7 @@ export function drawKeeperGlow(X,_now){
 let _zoomState='idle'; // idle | zooming_in | zoomed | zooming_out
 
 export function isKeeperProximity(){
-  if(S.buildout[KEEPER_FLOOR].stage<5)return false;
+  if(S.buildout[KEEPER_FLOOR].stage<3)return false;
   // Disable during reckoning
   const rp=S.reckoning.phase;
   if(rp!=='IDLE'&&rp!=='DONE')return false;
@@ -435,7 +435,7 @@ export function endKeeperZoom(){
 }
 
 export function updateKeeper(dt){
-  if(S.buildout[KEEPER_FLOOR].stage<5)return;
+  if(S.buildout[KEEPER_FLOOR].stage<3)return;
   const k=S.keeper;
 
   switch(_zoomState){

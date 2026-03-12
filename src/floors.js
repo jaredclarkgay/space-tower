@@ -65,87 +65,67 @@ export const FD=[
 ];
 
 // ═══ BUILDOUT STAGES ═══
-// Each floor has 5 stages. Each stage: {x, label, msg:[title, body]}
+// Each floor has 3 stages. Each stage: {x, label, msg:[title, body]}
 // x = world-space position of the interaction point
 export const STAGES=[
-  // Floor 0: LOBBY — first point near front door, then sweep right
+  // Floor 0: LOBBY
   [
-    {x:-1500, label:'Junction Box',   msg:['\u26a1 POWER ON','LOBBY \u2014 Emergency lighting engaged.']},
-    {x:-800,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Entrance doors and reception divider installed.']},
-    {x:-200,  label:'Intercom Panel', msg:['\u2699 SYSTEMS','Intercom online. Directory board lit.']},
-    {x:600,   label:'Furnish',        msg:['\ud83e\ude91 FURNISH','Reception desk, bench, and clock placed.']},
+    {x:-1400, label:'Junction Box',   msg:['\u26a1 POWER ON','LOBBY \u2014 Emergency lighting engaged.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Entrance doors, reception divider, intercom online.']},
     {x:1300,  label:'Open Doors',     msg:['\ud83c\udfe2 LOBBY OPEN','The tower accepts its first visitor.']},
   ],
   // Floor 1: QUARTERS
   [
     {x:-1400, label:'Junction Box',   msg:['\u26a1 POWER ON','QUARTERS \u2014 Hallway lighting warm.']},
-    {x:-700,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Partition walls rise. Bunk rooms take shape.']},
-    {x:-200,  label:'Plumbing',       msg:['\u2699 SYSTEMS','Pipes connected. Running water.']},
-    {x:550,   label:'Furnish',        msg:['\ud83e\ude91 FURNISH','Bunk beds, lockers, a photo on a nightstand.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Partition walls rise. Plumbing connected.']},
     {x:1300,  label:'First Resident', msg:['\ud83c\udfe0 QUARTERS OPEN','Someone lives here now.']},
   ],
   // Floor 2: GARDEN
   [
     {x:-1400, label:'Junction Box',   msg:['\u26a1 POWER ON','GARDEN \u2014 UV grow lights spread pink-purple.']},
-    {x:-750,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Raised planter beds. Irrigation channels cut.']},
-    {x:-200,  label:'Water Recycler', msg:['\u2699 SYSTEMS','Mist appears. Climate control hums.']},
-    {x:600,   label:'Plant Seeds',    msg:['\ud83e\ude91 FURNISH','Green appears \u2014 seedlings, herbs, soil.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Planter beds raised. Irrigation channels cut.']},
     {x:1350,  label:'First Harvest',  msg:['\ud83c\udf45 GARDEN OPEN','One red tomato on a vine. The tower feeds itself.']},
   ],
   // Floor 3: RESEARCH
   [
     {x:-1350, label:'Junction Box',   msg:['\u26a1 POWER ON','RESEARCH \u2014 Clean, flicker-free power.']},
-    {x:-650,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Lab benches, safety glass, fume hood frames.']},
-    {x:-200,  label:'Server Rack',    msg:['\u2699 SYSTEMS','Blinking lights. Monitors boot with data.']},
-    {x:550,   label:'Instruments',    msg:['\ud83e\ude91 FURNISH','Microscopes, soldering stations, coffee mug.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Lab benches, safety glass, server rack blinking.']},
     {x:1300,  label:'First Data',     msg:['\ud83d\udcca RESEARCH OPEN','Data streams across displays. The tower is thinking.']},
   ],
   // Floor 4: RESTAURANT
   [
     {x:-1400, label:'Junction Box',   msg:['\u26a1 POWER ON','RESTAURANT \u2014 Kitchen circuits energize.']},
-    {x:-700,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Panoramic windows. The bar counter materializes.']},
-    {x:-200,  label:'Kitchen Hookup', msg:['\u2699 SYSTEMS','Gas lines, ventilation. The kitchen lives.']},
-    {x:600,   label:'Set Tables',     msg:['\ud83e\ude91 FURNISH','Tables with cloths, pendant lights, bottles on shelves.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Panoramic windows. The bar counter materializes.']},
     {x:1350,  label:'First Guest',    msg:['\ud83c\udf7d RESTAURANT OPEN','Someone sits down. Looks out the window. Orders something.']},
   ],
   // Floor 5: LOUNGE
   [
     {x:-1350, label:'Junction Box',   msg:['\u26a1 POWER ON','LOUNGE \u2014 Dimmer system. Mood lighting.']},
-    {x:-650,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Reading nooks, conversation alcoves. Cozy geometry.']},
-    {x:-200,  label:'Speakers',       msg:['\u2699 SYSTEMS','Sound system wired. Subtle air circulation.']},
-    {x:550,   label:'Furnish',        msg:['\ud83e\ude91 FURNISH','Worn leather sofa, dog-eared books, a chess set.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Reading nooks, conversation alcoves. Cozy geometry.']},
     {x:1300,  label:'Play Music',     msg:['\ud83c\udfb5 LOUNGE OPEN','Music plays. The tower exhales.']},
   ],
   // Floor 6: OBSERVATION
   [
     {x:-1400, label:'Junction Box',   msg:['\u26a1 POWER ON','OBSERVATION \u2014 Soft, diffused ambient glow.']},
-    {x:-700,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Floor-to-ceiling panoramic glass. Viewing alcoves.']},
-    {x:-200,  label:'Display Panels', msg:['\u2699 SYSTEMS','Display panels mount and power on. Waiting.']},
-    {x:600,   label:'Furnish',        msg:['\ud83e\ude91 FURNISH','Benches, telescoping viewers, plants. A blank mural wall.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Floor-to-ceiling panoramic glass. Display panels online.']},
     {x:1350,  label:'Activate Panel', msg:['\ud83d\udd2d OBSERVATION OPEN','The view from up here changes you.']},
   ],
   // Floor 7: STORAGE
   [
     {x:-1350, label:'Junction Box',   msg:['\u26a1 POWER ON','STORAGE \u2014 Heavy industrial yellow.']},
-    {x:-650,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Steel racks anchored. Loading dock framed.']},
-    {x:-200,  label:'Inventory',      msg:['\u2699 SYSTEMS','Freezer hum. Scanners online. Manifests loaded.']},
-    {x:550,   label:'Stock Shelves',  msg:['\ud83e\ude91 FURNISH','Crates labeled by floor. Organized chaos.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Steel racks anchored. Loading dock framed.']},
     {x:1300,  label:'Ship It',        msg:['\ud83d\udce6 STORAGE OPEN','Supply chain operational.']},
   ],
   // Floor 8: OBSERVATORY
   [
     {x:-1400, label:'Junction Box',   msg:['\u26a1 POWER ON','OBSERVATORY \u2014 Ultra-clean precision power.']},
-    {x:-700,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Telescope housing. A section of ceiling opens.']},
-    {x:-200,  label:'Calibrate',      msg:['\u2699 SYSTEMS','Telescope aligns. Star charts boot.']},
-    {x:600,   label:'Furnish',        msg:['\ud83e\ude91 FURNISH','Chairs angled upward, data terminals, warm blankets.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Telescope housing. A section of ceiling opens.']},
     {x:1350,  label:'First Light',    msg:['\ud83d\udd2d OBSERVATORY OPEN','The telescope locks on. A point of light.']},
   ],
   // Floor 9: COMMAND
   [
     {x:-1350, label:'Junction Box',   msg:['\u26a1 POWER ON','COMMAND \u2014 Main bus connection. The tower unifies.']},
-    {x:-650,  label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Command console, comms array, the situation table.']},
-    {x:-200,  label:'Status Panels',  msg:['\u2699 SYSTEMS','Nine status panels light up \u2014 one per floor below.']},
-    {x:550,   label:'The Chair',      msg:['\ud83e\ude91 FURNISH','Navigation charts, comms equipment. The chair.']},
+    {x:0,     label:'Frame Out',      msg:['\ud83c\udfd7 STRUCTURE','Command console, comms array, the situation table.']},
     {x:1300,  label:'Take Command',   msg:['\ud83d\udc51 COMMAND OPEN','You sit. Every floor visible. "You built all this?"']},
   ],
 ];

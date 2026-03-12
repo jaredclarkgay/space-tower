@@ -26,7 +26,8 @@ export function toggleSound(){
 }
 // Playable tones
 function playTone(freq,dur,type,vol,delay){
-  if(!audioCtx)return;
+  if(!audioCtx||!masterGain)return;
+  try{
   const o=audioCtx.createOscillator(),g=audioCtx.createGain();
   o.type=type||'sine';o.frequency.value=freq;
   g.gain.value=0;g.connect(masterGain);o.connect(g);
@@ -34,15 +35,18 @@ function playTone(freq,dur,type,vol,delay){
   g.gain.setTargetAtTime((vol||0.3)*0.5,t,0.01);
   g.gain.setTargetAtTime(0,t+dur*0.7,dur*0.3);
   o.start(t);o.stop(t+dur+0.1);
+  }catch(e){}
 }
 function playNoise(dur,vol){
-  if(!audioCtx)return;
+  if(!audioCtx||!masterGain)return;
+  try{
   const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*dur,audioCtx.sampleRate);
   const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*0.3;
   const n=audioCtx.createBufferSource(),g=audioCtx.createGain(),f=audioCtx.createBiquadFilter();
   n.buffer=buf;f.type='lowpass';f.frequency.value=800;
   g.gain.value=(vol||0.1)*0.4;g.gain.setTargetAtTime(0,audioCtx.currentTime+dur*0.5,dur*0.4);
   n.connect(f);f.connect(g);g.connect(masterGain);n.start();n.stop(audioCtx.currentTime+dur+0.1);
+  }catch(e){}
 }
 // Sound presets
 export function sndPlace(){playTone(520,0.08,'square',0.25);playTone(680,0.08,'square',0.2,0.06)}
