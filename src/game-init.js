@@ -2,8 +2,8 @@
 import { S, syncLitFloors, cZoom, tZoom, setCZoom, setTZoom, getActiveBuildFloor, isBuildable, canAfford, placeModule, addCredits, setCredits, addHappiness, setHappiness, setFood, setHunger, advanceBuildout } from './state.js';
 import { TB, FH, FT, TL, TR, UW, GRAV, JUMP_F, JUMP_MX, CHG_MX, DROP_MX, MOB, pk, ELEV_X, NF, BPF, PG, TERRAIN_RES, TERRAIN_X_MIN, TERRAIN_X_MAX, isFlankBlock } from './constants.js';
 import { FD } from './floors.js';
-import { CASUAL_TOPS_M } from './npcs.js';
-import { initCanvas, draw, showMsg, getInter, nearSuit, spawnParticles, triggerShake, triggerFlash } from './render.js';
+import { CASUAL_TOPS_M, ARGUMENT_LINES, SPACE_NEED_LINES } from './npcs.js';
+import { initCanvas, draw, showMsg, getInter, nearSuit, spawnParticles, triggerShake, triggerFlash, showBubble, updateBubbles } from './render.js';
 import { setupInput } from './input.js';
 import { setupPanel, renderPanel } from './panel.js';
 import { genWorld } from './world.js';
@@ -26,6 +26,70 @@ let _exitDoorCheck = null;
 let _simStartTime = 0;
 let _keeperDebounce = false;
 let _roofFloor = null; // cached ref to rooftop pseudo-floor
+
+// ═══ FLOOR 5 ARGUMENT SYSTEM ═══
+let _argLineIdx = 0;
+let _argTimer = 0;
+const ARG_LINE_INTERVAL = 330; // ~5.5 seconds at 60fps
+let _argSpaceNeedInjected = false; // post-Floor-5 dialogue injection
+
+function _updateArgument() {
+  const p = S.player;
+  // Only active when Floor 5 (index 4) is stage 3 and player is on floor 4
+  if (S.buildout[4].stage < 3) return;
+  // Find the arguing NPCs
+  const arguers = S.npcs.filter(n => n.isArguing && n.floor === 4 && n.arrived);
+  if (arguers.length < 2) return;
+  const suit = arguers.find(n => n.argRole === 'suit');
+  const builder = arguers.find(n => n.argRole === 'builder');
+  if (!suit || !builder) return;
+
+  // Follow player (stay within ~200px)
+  for (const a of arguers) {
+    const dx = p.x - a.x;
+    const dist = Math.abs(dx);
+    if (dist > 200) {
+      a.vx = Math.sign(dx) * a.spd;
+      a.st = 'walk';
+      a.fr = dx > 0;
+    } else if (dist > 80) {
+      a.vx = Math.sign(dx) * a.spd * 0.5;
+      a.st = 'walk';
+      a.fr = dx > 0;
+    } else {
+      // Face each other when close enough
+      a.vx = 0;
+      a.st = 'idle';
+      if (a.argRole === 'suit') a.fr = builder.x > suit.x;
+      else a.fr = suit.x > builder.x;
+    }
+  }
+
+  // Cycle argument lines via speech bubbles
+  _argTimer++;
+  if (_argTimer >= ARG_LINE_INTERVAL) {
+    _argTimer = 0;
+    const line = ARGUMENT_LINES[_argLineIdx % ARGUMENT_LINES.length];
+    const speaker = line.who === 'suit' ? suit : builder;
+    showBubble(speaker, line.line, ARG_LINE_INTERVAL - 30);
+    _argLineIdx++;
+  }
+
+  // Post-Floor 5 space-need injection (one-time)
+  if (!_argSpaceNeedInjected) {
+    _argSpaceNeedInjected = true;
+    S.npcs.forEach(n => {
+      if (n.type === 'b' && !n.isArguing && !n.isGene && Math.random() < 0.25) {
+        // Inject a space-need line as a 4th dialogue option
+        const snLine = SPACE_NEED_LINES[Math.floor(Math.random() * SPACE_NEED_LINES.length)];
+        n._spaceNeedLine = snLine;
+      }
+    });
+  }
+}
+
+// ═══ FLOOR 5 CAMERA ZOOM ═══
+let _f5ZoomTarget = 0; // 0 = normal, 0.3 = 30% closer
 
 // ═══ ELEVATOR PANEL ═══
 let elevPanel, elevFloors, fpElRef;
@@ -406,6 +470,8 @@ function update(){
     return;
   }
   processArrivals();
+  updateBubbles();
+  _updateArgument();
   // Dynamic rooftop — keep floor entry in sync for collision
   const _abf2=getActiveBuildFloor();
   const _dynRY=TB-(_abf2>=0?_abf2+1:NF)*FH;
@@ -426,7 +492,10 @@ function update(){
   const p=S.player,k=S.keys,inter=getInter();
   S.frame++;
   const zLerp=(p.isChg||p.isDrp)?0.04:0.15;
-  setCZoom(cZoom+(tZoom-cZoom)*zLerp);
+  // Floor 5 zoom: 30% closer when on activated restaurant floor
+  const _wantF5Z=(p.cf===4&&S.buildout[4].stage>=3)?0.3:0;
+  _f5ZoomTarget+=(_wantF5Z-_f5ZoomTarget)*0.03;
+  setCZoom(cZoom+(tZoom*(1+_f5ZoomTarget)-cZoom)*zLerp);
   if(S.elevAnim==='idle'){S.elevDoorTarget=(inter&&inter.t==='elev')?1:(S.elevOpen?1:0)}
   S.elevDoors+=(S.elevDoorTarget-S.elevDoors)*0.08;
   if(S.elevAnim==='closing'){if(S.elevDoors<0.02){S.elevAnim='traveling';S.elevAnimT=30}}
@@ -592,7 +661,12 @@ function update(){
         setHunger(100);sndChime();
         showMsg('\ud83c\udf5e FED',inter.v.loc==='diner'?'Hot meal from the diner.':'Something from the bar.');
       }else if(inter.t==='obj')showMsg(inter.v.nm,inter.v.m[Math.floor(Math.random()*inter.v.m.length)]);
-      else if(inter.t==='npc'){const n=inter.v;if(n.convo){const line=n.convo[Math.min(n.ci,n.convo.length-1)];const lineText=line(n.name);showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
+      else if(inter.t==='npc'){const n=inter.v;if(n.convo){
+        // Post-Floor-5: 1-in-4 business NPCs inject space-need lines
+        let lineText;
+        if(n._spaceNeedLine&&n.ci>=n.convo.length-1){lineText=n._spaceNeedLine(n.name)}
+        else{const line=n.convo[Math.min(n.ci,n.convo.length-1)];lineText=line(n.name)}
+        showMsg(n.name,lineText);sndTalk();discoverNpc(n,lineText);if(n.ci<n.convo.length-1)n.ci++}
       }else if(inter.t==='upgrade_store'){
         if(canAfford(inter.v.cost)){addCredits(-inter.v.cost);S.cornerStoreUpgraded=true;addHappiness(10);showMsg('\ud83c\uded2 GROCERY STORE','Corner store upgraded. Fresh produce.');sndChime();autoSave()}
         else showMsg('NOT ENOUGH','Need $'+inter.v.cost+' to upgrade.');
@@ -671,8 +745,13 @@ function update(){
   }
   S.npcs.forEach(n=>{
     if(!n.arrived)return; // arrival system handles unarrived NPCs
-    n.at--;if(n.at<=0){n.at=60+Math.random()*140;const r=Math.random();if(r<0.4){n.st='idle';n.vx=0}else if(r<0.7){n.st='walk';n.vx=n.spd;n.fr=true}else{n.st='walk';n.vx=-n.spd;n.fr=false}}
-    if(n.type==='b'){n.jt--;if(n.jt<=0&&n.onF){n.vy=-6;n.onF=false;n.jt=180+Math.floor(Math.random()*180)}if(n.st==='walk')n.lp+=0.18}
+    // Arguing NPCs skip random walk — _updateArgument controls them
+    if(!n.isArguing){
+      n.at--;if(n.at<=0){n.at=60+Math.random()*140;const r=Math.random();if(r<0.4){n.st='idle';n.vx=0}else if(r<0.7){n.st='walk';n.vx=n.spd;n.fr=true}else{n.st='walk';n.vx=-n.spd;n.fr=false}}
+      if(n.type==='b'){n.jt--;if(n.jt<=0&&n.onF){n.vy=-6;n.onF=false;n.jt=180+Math.floor(Math.random()*180)}if(n.st==='walk')n.lp+=0.18}
+    } else {
+      if(n.type==='b'&&n.st==='walk')n.lp+=0.18;
+    }
     n.x+=n.vx;const elevL=ELEV_X-80,elevR=ELEV_X+80;if(n.x>elevL&&n.x<ELEV_X&&n.vx>0){n.x=elevL;n.vx=-n.vx;n.fr=false}if(n.x<elevR&&n.x>ELEV_X&&n.vx<0){n.x=elevR;n.vx=-n.vx;n.fr=true}n.y+=n.vy;n.vy+=GRAV;if(n.x<TL+30){n.x=TL+30;n.vx=Math.abs(n.vx);n.fr=true}if(n.x>TR-30){n.x=TR-30;n.vx=-Math.abs(n.vx);n.fr=false}
     n.onF=false;for(let f of S.floors){if(f.level<0)continue;if(n.vy>=0&&n.y<=f.y&&n.y+n.vy>=f.y){n.y=f.y;n.vy=0;n.onF=true;break}}
     if(n.st==='walk')n.bob+=0.2;else n.bob*=0.9;

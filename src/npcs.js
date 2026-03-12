@@ -94,6 +94,60 @@ export const CWM_INDOOR=[
   [n=>`"You the new inspector?" ${n} asks.`,n=>`"No? Good. Last one wanted us to redo the whole fire suppression system."`,n=>`"He wasn't wrong. But still."`],
 ];
 
+// ═══ FACTION DIALOGUE: FLOOR 6 (LOUNGE) ═══
+export const LOUNGE_BIZ=[
+  [n=>`${n} adjusts their cuff. "I requisitioned this sofa. There's a form and everything."`,n=>`"The work requires dedicated relaxation space. It's not optional — it's strategic."`,n=>`"Have you been to seven? They're measuring the telescope. For curtains."`],
+  [n=>`"Someone measured the bookshelf for 'compliance,'" ${n} says. "The bookshelf."`,n=>`"I filed a seating capacity report for this floor. Twelve. That's the number."`,n=>`"Growing pains. Every project of this scale has them."`],
+];
+export const LOUNGE_CAS=[
+  [n=>`${n} shrugs. "Someone measured the bookshelf for 'compliance.' The bookshelf."`,n=>`"Used to be quiet up here. Now there's a sign-up sheet for the sofa."`,n=>`"This tower's getting too tall for its own good."`],
+  [n=>`"I just come here to read," says ${n}.`,n=>`"Somebody put a 'reserved' placard on the good chair. A placard."`,n=>`"We didn't used to need forms to sit down."`],
+];
+export const LOUNGE_WRK=[
+  [n=>`${n} leans on a mop. "Have you been to seven? They're measuring the telescope for curtains."`,n=>`"I liked it when this floor was just us and the books."`,n=>`"The suits want a 'lounge manager.' For a room with two sofas."`],
+];
+
+// ═══ FACTION DIALOGUE: FLOOR 7 (OBSERVATION) ═══
+export const OBS_BIZ=[
+  [n=>`"The observation floor needs a scheduling system," ${n} says. "You can't just... look."`,n=>`"We need designated viewing windows. For the work."`,n=>`"Growing pains. Every project of this scale has them."`],
+  [n=>`${n} is writing something. "Observation protocol, draft six."`,n=>`"The upper floors would be ideal for expanding our operations."`,n=>`"Space is becoming a real constraint for the work."`],
+];
+export const OBS_CAS=[
+  [n=>`"This tower's getting too tall for its own good," ${n} says quietly.`,n=>`"I liked it better when it was just us up here."`,n=>`"Someone wants to schedule the VIEW. The view."`],
+  [n=>`${n} stares out the window. "You can see everything from here."`,n=>`"Somebody taped a 'no loitering' sign next to the telescope."`,n=>`"I'm not loitering. I'm observing. It's an observation floor."`],
+];
+export const OBS_WRK=[
+  [n=>`"I liked it better when it was just us up here," ${n} mutters.`,n=>`"Every time I finish a wall, somebody wants to put a sign on it."`,n=>`"The job used to be simple. Build the thing. Now there's memos about the thing."`],
+];
+
+// ═══ POST-FLOOR-5 SPACE-NEED LINES (1 in 4 chance for business NPCs) ═══
+export const SPACE_NEED_LINES=[
+  n=>`"We need more offices," ${n} says. "It's not personal — it's the work."`,
+  n=>`"The upper floors would be ideal for expanding our operations."`,
+  n=>`"Space is becoming a real constraint for the work."`,
+  n=>`"We've outgrown the current allocation. The work demands more."`,
+];
+
+// ═══ FLOOR 5 ARGUMENT DIALOGUE ═══
+export const ARGUMENT_LINES=[
+  {who:'suit',  line:"Our work requires natural light. It's in the productivity studies."},
+  {who:'builder',line:"Your work? I installed that window. With my hands."},
+  {who:'suit',  line:"Nobody's disputing that. We're discussing allocation."},
+  {who:'builder',line:"Allocation. That's a word for stealing."},
+  {who:'suit',  line:"It's a word for organizing. Which is literally our work."},
+  {who:'builder',line:"You organize paper. I organize steel."},
+  {who:'suit',  line:"The window offices improve throughput by twelve percent."},
+  {who:'builder',line:"Throughput. You made that word up."},
+  {who:'suit',  line:"It's a standard metric—"},
+  {who:'builder',line:"I have a standard metric. It's called a tape measure."},
+  {who:'suit',  line:"We need this space for the work to grow."},
+  {who:'builder',line:'The work. You keep saying "the work." What IS your work?'},
+  {who:'suit',  line:"...operational oversight of the project's administrative—"},
+  {who:'builder',line:"That's not a job. That's a sentence."},
+  {who:'suit',  line:"We're not going to agree on this."},
+  {who:'builder',line:"First thing you've said that I believe."},
+];
+
 // ═══ FLOOR LEADERS (Reckoning event) ═══
 export const FLOOR_LEADERS=[
   {name:'Rodriguez',floor:0,line:n=>`${n} cracks knuckles. "Floor's ours."`},

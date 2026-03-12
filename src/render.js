@@ -21,6 +21,40 @@ let _cityCache=null,_treeCache=null;
 let _rkCache=null,_rkActiveCache=false;
 // ── Reusable NPC sorting arrays ──
 const _sortAl=[],_sortCa=[],_sortBz=[],_sortCw=[];
+// ── Speech bubbles (2D sim) ──
+const _bubbles=[];
+const _BUBBLE_DUR=300,_BUBBLE_FI=18,_BUBBLE_FO=30;
+export function showBubble(npc,text,duration){
+  const idx=_bubbles.findIndex(b=>b.npc===npc);if(idx>=0)_bubbles.splice(idx,1);
+  _bubbles.push({npc,text,timer:duration||_BUBBLE_DUR,age:0,alpha:0});
+}
+export function updateBubbles(){
+  for(let i=_bubbles.length-1;i>=0;i--){
+    const b=_bubbles[i];b.age++;b.timer--;
+    if(b.age<_BUBBLE_FI)b.alpha=b.age/_BUBBLE_FI;
+    else if(b.timer<=_BUBBLE_FO)b.alpha=Math.max(0,b.timer/_BUBBLE_FO);
+    else b.alpha=1;
+    if(b.timer<=0)_bubbles.splice(i,1);
+  }
+}
+function _drawBubbles(){
+  for(const b of _bubbles){
+    if(b.alpha<=0)continue;
+    const n=b.npc,bx=n.x,by=n.y-n.h-55;
+    X.save();X.globalAlpha=b.alpha;
+    X.font='11px monospace';X.textAlign='center';
+    const tw=X.measureText(b.text).width;
+    const pw=tw+20,ph=22;
+    // Background
+    X.fillStyle='rgba(0,0,0,0.65)';
+    X.beginPath();X.roundRect(bx-pw/2,by-ph/2,pw,ph,6);X.fill();
+    // Triangle pointer
+    X.beginPath();X.moveTo(bx-5,by+ph/2);X.lineTo(bx,by+ph/2+6);X.lineTo(bx+5,by+ph/2);X.fill();
+    // Text
+    X.fillStyle='#fff';X.fillText(b.text,bx,by+4);
+    X.restore();
+  }
+}
 // ── Hex color to RGB ──
 function hexRGB(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]}
 // ── Pre-computed per-block brightness variation (deterministic, zero per-frame cost) ──
@@ -95,7 +129,7 @@ export function getInter(){const p=S.player;
   for(let o of S.objs){if(S.buildout[o.floor].stage<2)continue;if(Math.abs(p.y-o.y)<20&&Math.abs(p.x-o.x)<50)return{t:'obj',v:o}}
   // NPCs — only at stage >= 3, and only once tower has 3+ floors built
   const _abf=getActiveBuildFloor(),_npcsOn=_abf>=3||_abf===-1;
-  if(_npcsOn){for(let n of S.npcs){if(S.buildout[n.floor].stage<3)continue;if(Math.abs(p.x-n.x)<40&&Math.abs(p.y-n.y)<30)return{t:'npc',v:n}}}
+  if(_npcsOn){for(let n of S.npcs){if(n.isArguing)continue;if(S.buildout[n.floor].stage<3)continue;if(Math.abs(p.x-n.x)<40&&Math.abs(p.y-n.y)<30)return{t:'npc',v:n}}}
   for(let w of S.workers){if(Math.abs(p.x-w.x)<40&&Math.abs(p.y-w.y)<30)return{t:'npc',v:w}}
   // Corner store upgrade — floor 1, block 5, food chain complete, not yet upgraded
   if(p.cf===1&&S.foodChainComplete&&!S.cornerStoreUpgraded&&S.buildout[1].stage>=2){
@@ -2201,6 +2235,9 @@ export function draw(){
   _sortBz.forEach(n=>drawBiz(n));
   _sortCw.forEach(n=>drawWorker(n));
   S.workers.forEach(w=>drawWorker(w));
+
+  // Speech bubbles (above NPC heads)
+  _drawBubbles();
 
   // Reckoning NPCs — visible during INTRO (silhouettes through overlay) and ACTIVE+
   const _rk=_rkCache;

@@ -2,7 +2,7 @@
 import { S } from './state.js';
 import { TW, TL, TR, TB, FH, NF, ROOF_Y, PG, BPF, ELEV_X, sr, ri, pk } from './constants.js';
 import { FD, OD } from './floors.js';
-import { HN, AN, AC, BN2, BP2, HM, AM, BM, CWN, CWM, CWM_INDOOR, genAppearance, GENE_DATA } from './npcs.js';
+import { HN, AN, AC, BN2, BP2, HM, AM, BM, CWN, CWM, CWM_INDOOR, genAppearance, GENE_DATA, LOUNGE_BIZ, LOUNGE_CAS, LOUNGE_WRK, OBS_BIZ, OBS_CAS, OBS_WRK, ARGUMENT_LINES } from './npcs.js';
 import { initTerrain } from './terrain.js';
 
 // ═══ PER-FLOOR NPC CONFIG ═══
@@ -29,14 +29,32 @@ export function genWorld(){
     if(i<NF-1){for(let s=0,ns=ri(2,3);s<ns;s++){const span=120,mg=80,av=TW-mg*2-span,zone=av/ns;const xO=TL+mg+s*zone+sr()*(zone-span),dir=sr()>0.5?1:-1;S.stairs.push({bx:xO,by:fy,tx:xO+span*dir,ty:fy-FH,ff:i,tf:i+1})}}
     const defs=OD[i]||OD[0];
     for(let o=0,no=ri(3,5);o<no;o++){const def=defs[Math.floor(sr()*defs.length)],seg=(TW-100)/no;const ox=TL+50+o*seg+sr()*(seg-def.w-10);let ov=false;S.stairs.forEach(st=>{if(st.ff===i&&Math.abs(st.bx-ox)<70)ov=true});if(Math.abs((ox+def.w/2)-ELEV_X)<100)ov=true;if(!ov)S.objs.push({...def,x:ox,y:fy,floor:i,width:def.w,height:def.h})}
-    // Per-floor NPC spawning
+    // Per-floor NPC spawning (faction dialogue for floors 5-6)
     const fc=FLOOR_NPCS[i]||[];
     for(const spec of fc){const cnt=ri(spec.mn,spec.mx);for(let n=0;n<cnt;n++){
       let tp=spec.t;if(tp==='cb')tp=sr()>0.5?'c':'b';
-      if(tp==='c'){const isFem=sr()>0.5;const app=genAppearance(pk,isFem);const convo=HM[Math.floor(sr()*HM.length)];const nx=TL+100+sr()*(TW-200);S.npcs.push({type:'c',x:nx,y:fy-48,w:24,h:48,vx:0,vy:0,spd:1+sr()*1.5,app,name:pk(HN),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,floor:i,onF:true,convo,ci:0,arrived:false,destX:nx,arrState:'queue'})}
-      else if(tp==='b'){const convo=BM[Math.floor(sr()*BM.length)];const nx=TL+180+sr()*(TW-360);S.npcs.push({type:'b',x:nx,y:fy-48,w:24,h:48,vx:0,vy:0,spd:0.65,pal:pk(BP2),name:pk(BN2),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,floor:i,lp:sr()*6,jt:180+Math.floor(sr()*180),onF:true,convo,ci:0,arrived:false,destX:nx,arrState:'queue'})}
-      else if(tp==='w'){const convo=CWM_INDOOR[Math.floor(sr()*CWM_INDOOR.length)];const nx=TL+150+sr()*(TW-300);S.npcs.push({type:'w',x:nx,y:fy-48,w:24,h:48,vx:0,vy:0,spd:0.8+sr()*0.6,name:pk(CWN),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,floor:i,onF:true,convo,ci:0,arrived:false,destX:nx,arrState:'queue'})}
+      if(tp==='c'){const isFem=sr()>0.5;const app=genAppearance(pk,isFem);
+        const convo=i===5?pk(LOUNGE_CAS):i===6?pk(OBS_CAS):HM[Math.floor(sr()*HM.length)];
+        const nx=TL+100+sr()*(TW-200);S.npcs.push({type:'c',x:nx,y:fy-48,w:24,h:48,vx:0,vy:0,spd:1+sr()*1.5,app,name:pk(HN),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,floor:i,onF:true,convo,ci:0,arrived:false,destX:nx,arrState:'queue'})}
+      else if(tp==='b'){
+        const convo=i===5?pk(LOUNGE_BIZ):i===6?pk(OBS_BIZ):BM[Math.floor(sr()*BM.length)];
+        const nx=TL+180+sr()*(TW-360);S.npcs.push({type:'b',x:nx,y:fy-48,w:24,h:48,vx:0,vy:0,spd:0.65,pal:pk(BP2),name:pk(BN2),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,floor:i,lp:sr()*6,jt:180+Math.floor(sr()*180),onF:true,convo,ci:0,arrived:false,destX:nx,arrState:'queue'})}
+      else if(tp==='w'){
+        const convo=i===5?pk(LOUNGE_WRK):i===6?pk(OBS_WRK):CWM_INDOOR[Math.floor(sr()*CWM_INDOOR.length)];
+        const nx=TL+150+sr()*(TW-300);S.npcs.push({type:'w',x:nx,y:fy-48,w:24,h:48,vx:0,vy:0,spd:0.8+sr()*0.6,name:pk(CWN),fr:sr()>0.5,st:'idle',bob:sr()*10,at:0,floor:i,onF:true,convo,ci:0,arrived:false,destX:nx,arrState:'queue'})}
     }}
+    // Floor 5 (Restaurant, index 4): spawn two arguing NPCs
+    if(i===4){
+      const argY=fy-48;
+      // Suit arguer
+      S.npcs.push({type:'b',x:TL+800,y:argY,w:24,h:48,vx:0,vy:0,spd:0.65,pal:pk(BP2),name:'Aldric',
+        fr:true,st:'idle',bob:sr()*10,at:0,floor:4,lp:sr()*6,jt:9999,onF:true,
+        convo:BM[0],ci:0,arrived:false,destX:TL+800,arrState:'queue',isArguing:true,argRole:'suit'});
+      // Builder arguer
+      S.npcs.push({type:'w',x:TL+900,y:argY,w:24,h:48,vx:0,vy:0,spd:0.8,name:'Kowalski',
+        fr:false,st:'idle',bob:sr()*10,at:0,floor:4,onF:true,
+        convo:CWM_INDOOR[0],ci:0,arrived:false,destX:TL+900,arrState:'queue',isArguing:true,argRole:'builder'});
+    }
     if(sr()<0.45) S.suits.push({x:TL+200+sr()*(TW-400),y:fy,floor:i,taken:false});
   }
   // Gene — recurring business NPC on multiple floors
