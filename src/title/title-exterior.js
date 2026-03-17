@@ -1180,6 +1180,7 @@ function _checkLadderEntry(preVelAxis) {
 // ── Rooftop worker AI ──
 let dialogueEl = null;
 let dialogueTimer = 0;
+let _camYaw = 0; // camera yaw for billboarding labels
 
 function _getNearbyWorker() {
   const pp = PLAYER.pos;
@@ -1244,8 +1245,8 @@ function _updateRooftopWorkers(dt) {
     arrow.visible = !scaffOp && floorsBuilt >= 1;
     arrow.position.y = BASE_H + 8 + Math.sin(t * 1.5) * 1.5;
     arrow.rotation.y = t * 0.4;
-    // Label billboard: face camera
-    if (arrow.userData.labelMesh) arrow.userData.labelMesh.rotation.y = -arrow.rotation.y;
+    // Label billboard: face camera (undo arrow spin, then apply camera yaw)
+    if (arrow.userData.labelMesh) arrow.userData.labelMesh.rotation.y = -_camYaw - arrow.rotation.y + Math.PI;
   }
   // Animate BUILD arrow — hide when operating scaffolding or all floors built
   if (bArrow) {
@@ -1253,7 +1254,7 @@ function _updateRooftopWorkers(dt) {
     bArrow.visible = !scaffOp && !allBuilt;
     bArrow.position.y = 8 + Math.sin(t * 1.5 + 1) * 1.5; // offset phase
     bArrow.rotation.y = t * 0.4;
-    if (bArrow.userData.labelMesh) bArrow.userData.labelMesh.rotation.y = -bArrow.rotation.y;
+    if (bArrow.userData.labelMesh) bArrow.userData.labelMesh.rotation.y = -_camYaw - bArrow.rotation.y + Math.PI;
   }
   if (!siteGroup.userData.rooftopWorkers) return;
   const workers = siteGroup.userData.rooftopWorkers;
@@ -1385,6 +1386,7 @@ function _updatePrompt() {
 
 // ═══ UPDATE ═══
 export function updateExterior(dt, camFwdX, camFwdZ) {
+  _camYaw = Math.atan2(camFwdX, camFwdZ);
   if (_doorAnim.active) {
     _updateDoorAnim(dt);
     if (playerGroup) playerGroup.position.copy(PLAYER.pos);
@@ -1822,6 +1824,8 @@ export function spawnScaffolding(scene) {
     setBuiltHeight(floorsBuilt);
     if (_onFloorBuiltCallback) _onFloorBuiltCallback(floorsBuilt);
     _scaffolding.setRoofY(activeRoofY);
+    // Floor 1 celebration — all suits cheer
+    if (completedFloor === 0 && _suitGuides) _suitGuides.celebrate();
   });
   // Sync tower if scaffolding save is ahead — batch restore
   const prevBuilt = floorsBuilt;

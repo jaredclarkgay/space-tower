@@ -67,6 +67,19 @@ const POST_RECKONING_LINES = [
 const CHEER_LINES = ['YES!', 'Direct hit!', 'That\'s why we hired you!', 'Beautiful.', 'One more for the tower.'];
 const MISS_LINES = ['Close one.', 'Wind, probably.', 'Next one.'];
 
+const FLOOR1_LINES = [
+  'FLOOR ONE! That\'s the hardest one.',
+  'Nine more floors on this segment.',
+  'So it begins. We\'re taking this thing to the stars.',
+  'The board is going to love this.',
+  'First floor is in. Keep going.',
+  'You actually did it. I owe Kapoor twenty bucks.',
+  'That\'s a foundation. Everything else builds on this.',
+  'The work has officially begun.',
+  'One down. The sky\'s not the limit anymore.',
+  'I\'m calling the board. They need to see this.',
+];
+
 // ── Suit data (10 named guides) ──
 const SUIT_COLORS = [
   0x0a0a12, 0x0e0e18, 0x0c0c14, 0x101018, 0x0d0d16,
@@ -510,5 +523,20 @@ export function buildSuitGuides(scene, seesawX, seesawZ) {
     }
   }
 
-  return { suits, update, getNearby, getDialogueLine, dispose };
+  // Floor 1 celebration — all suits cheer with staggered speech bubbles
+  function celebrate() {
+    const shuffled = suits.slice().sort(() => Math.random() - 0.5);
+    const lines = FLOOR1_LINES.slice().sort(() => Math.random() - 0.5);
+    for (let i = 0; i < shuffled.length; i++) {
+      const s = shuffled[i];
+      const line = lines[i % lines.length];
+      const delay = i * 0.6; // stagger bubbles
+      s.cheerTimer = 4;
+      setTimeout(() => {
+        _showBubble(s, line, 5 + Math.random() * 2);
+      }, delay * 1000);
+    }
+  }
+
+  return { suits, update, getNearby, getDialogueLine, celebrate, dispose };
 }

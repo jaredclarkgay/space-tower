@@ -81,7 +81,7 @@ export function syncLitFloors(){
 }
 
 export function getActiveBuildFloor(){
-  for(let i=0;i<NF;i++) if(S.buildout[i].stage<3) return i;
+  for(let i=0;i<NF;i++) if(S.buildout[i].stage>=1&&S.buildout[i].stage<3) return i;
   return -1;
 }
 
