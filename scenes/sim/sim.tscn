@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/sim/player_2d.tscn" id="1_player"]
+[ext_resource type="Script" path="res://scenes/sim/sim.gd" id="2_sim"]
+
+[node name="Sim" type="Node2D"]
+script = ExtResource("2_sim")
+
+[node name="Player2D" parent="." instance=ExtResource("1_player")]
+position = Vector2(384, 0)
+
+[node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(2, 2)
+position = Vector2(384, -48)
