@@ -1,0 +1,70 @@
+{
+  "version": "1.1",
+  "queue": [
+    {
+      "id": "r001",
+      "status": "in_progress",
+      "priority": 1,
+      "type": "skill_teaching",
+      "domain": "godot_scene_structure",
+      "ask": "What scene tree structure do you want for the sim interior? 10 floors × 12 blocks × modules × NPCs × collision. The browser version uses a flat S object — Godot needs a node hierarchy. Show me the shape you want.",
+      "transfer_value": "Unblocks all interior implementation. Every floor, module, NPC, and interaction depends on this decision.",
+      "blocked_tasks": ["module_placement", "npc_spawning", "elevator_system"],
+      "created": "2026-03-26T00:00:00Z",
+      "notes": "Partially answered by session 2026-03-24: built Sim > Floor0..9 (StaticBody2D) with ColorRect bg, slab, collision, label. Still need structure for modules and NPCs within floors."
+    },
+    {
+      "id": "r002",
+      "status": "pending",
+      "priority": 2,
+      "type": "reference_material",
+      "domain": "visual_style",
+      "ask": "Screenshots from the browser version: (1) ground level, (2) mid-tower, (3) near-space altitude, (4) control room interior, (5) a floor interior with modules. Annotate anything you'd want different in Godot.",
+      "transfer_value": "Calibrates all visual decisions. Currently working from code descriptions, not visual targets.",
+      "blocked_tasks": ["sky_system", "control_room_port", "module_art", "parallax"],
+      "created": "2026-03-26T00:00:00Z"
+    },
+    {
+      "id": "r003",
+      "status": "pending",
+      "priority": 3,
+      "type": "playtest_feedback",
+      "domain": "physics_feel",
+      "ask": "Play the browser version for 5 minutes. Then play the Godot version. What feels different? Focus on: jump arc, landing weight, horizontal stopping, camera follow. You said 'not anchored in physics' and 'losing optimism in Godot' — what specifically felt wrong?",
+      "transfer_value": "Establishes feel targets for all movement code. Affects every physical interaction.",
+      "blocked_tasks": ["wall_slide", "wall_jump", "charged_jump"],
+      "created": "2026-03-26T00:00:00Z",
+      "notes": "Updated ask based on session feedback. User expressed frustration with movement feel."
+    },
+    {
+      "id": "r004",
+      "status": "pending",
+      "priority": 4,
+      "type": "design_intent",
+      "domain": "narrative_design",
+      "ask": "Crate count escalation (2 for floors 1-5, 4 for floors 6-10): is this 'linear difficulty with altitude' or 'inflection at the midpoint'? The answer shapes how Segment 2 difficulty curves would work.",
+      "transfer_value": "Establishes difficulty philosophy for all future content.",
+      "blocked_tasks": [],
+      "created": "2026-03-26T00:00:00Z"
+    },
+    {
+      "id": "r005",
+      "status": "pending",
+      "priority": 5,
+      "type": "approval",
+      "domain": "physics_feel",
+      "ask": "Current physics values: SPEED=200, JUMP_VELOCITY=-500, GRAVITY=900 (px/s units). Floor height=96px, block width=64px. Are these in the right ballpark or should we start from the browser values and do a more rigorous conversion?",
+      "transfer_value": "Locks down base physics constants that everything else is tuned against.",
+      "blocked_tasks": [],
+      "created": "2026-03-26T00:00:00Z"
+    }
+  ],
+  "request_types": [
+    "aesthetic_calibration",
+    "design_intent",
+    "reference_material",
+    "skill_teaching",
+    "playtest_feedback",
+    "approval"
+  ]
+}

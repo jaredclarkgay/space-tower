@@ -1,0 +1,116 @@
+{
+  "version": "1.1",
+  "last_updated": "2026-03-26T00:00:00Z",
+  "domains": {
+    "gdscript_logic": {
+      "confidence": "medium",
+      "evidence": "Built 4 autoloads, player controller, sprite system, sim scene generator. Hit parse-time autoload resolution and Variant inference warnings but resolved both.",
+      "failure_patterns": [
+        "Autoload names not resolvable at parse time — use get_node('/root/Name') at runtime",
+        "Unused parameters trigger warnings treated as errors — prefix with underscore"
+      ],
+      "rules_learned": [
+        "Autoload load order matters — Constants before GameState before SaveManager",
+        "Type inference from Variant triggers error — use explicit types or avoid := with Variant expressions"
+      ],
+      "needs_from_human": null
+    },
+    "godot_scene_structure": {
+      "confidence": "medium",
+      "evidence": "Built working sim scene tree: Sim (Node2D) > generated StaticBody2D floors + Player2D (CharacterBody2D) > Sprite (Node2D) + CollisionShape2D. Camera2D as sibling to player, not child.",
+      "failure_patterns": [
+        "Camera2D as child of player gets flipped/rotated with visual transforms — keep as sibling"
+      ],
+      "rules_learned": [
+        "Separate physics body from visual node — CharacterBody2D owns collision, child Node2D owns drawing",
+        "Use z_index on visual nodes to layer above dynamically-added floor backgrounds",
+        "Generate floor nodes in _ready() rather than hand-placing in .tscn for 10+ floors"
+      ],
+      "needs_from_human": "Still want confirmation on preferred structure for modules/NPCs within floors"
+    },
+    "physics_feel": {
+      "confidence": "low-medium",
+      "evidence": "Basic movement works: run, jump, gravity, drop-through. User flagged floatiness — fixed with instant stop. Jump height required manual calc (v²/2g) to clear floor spacing. Landing squash tween adds weight. Still missing wall slide, wall jump, charged jump, sprint.",
+      "failure_patterns": [
+        "move_toward() for horizontal deceleration feels floaty — use velocity.x = 0 for snappy stop",
+        "Jump velocity must be calculated against floor height: peak = v²/(2g), must exceed FLOOR_HEIGHT (96px)",
+        "Solid platforms block upward jumps — need one_way_collision = true on all floor CollisionShape2Ds"
+      ],
+      "rules_learned": [
+        "Browser per-frame values to Godot per-second: multiply by 60 for velocity, 3600 for acceleration, then scale by block size ratio (64/300)",
+        "One-way collision + separate collision layers enables drop-through: toggle mask bit off for 0.2s",
+        "Landing squash via tween on sprite scale (1.15, 0.85) → (1, 1) over 0.1s adds weight cheaply"
+      ],
+      "needs_from_human": "Side-by-side playtest: browser vs Godot movement. What feels wrong? User said 'not anchored in physics' and 'losing optimism in Godot'."
+    },
+    "visual_style": {
+      "confidence": "low-medium",
+      "evidence": "Built _draw() construction worker with hardhat, vest, stripes, pants, boots. User validated the look ('fun!') but noted lack of detail at distance and static feel. Flip took 3 attempts to get right. Discrete 4-frame walk cycle accepted over continuous interpolation.",
+      "failure_patterns": [
+        "Sin-wave limb interpolation looks floaty/uncanny — use discrete frame poses like real pixel art",
+        "draw_rect() doesn't handle negative width — must mirror x-coordinates explicitly",
+        "scale.x on CharacterBody2D flips Camera2D children — flip must be on a child visual node only",
+        "draw_set_transform() for flipping works but is fragile with nested transforms — child Node2D scale.x = -1 is simpler and proven"
+      ],
+      "rules_learned": [
+        "Pixel art walk cycles: 4 discrete poses (idle, step_a, idle, step_b) at fixed timer intervals (~0.12s)",
+        "Visual flip pattern: child Node2D with scale.x = -1/1, parent CharacterBody2D never scaled",
+        "Draw body parts in layered order: back arm → legs → torso → head → front arm",
+        "z_index on sprite node to render above dynamically-created floor ColorRects"
+      ],
+      "needs_from_human": "Screenshot set from browser version at key altitudes + control room"
+    },
+    "narrative_design": {
+      "confidence": "medium",
+      "evidence": "Extensive design docs exist. Three-line pattern is well documented.",
+      "failure_patterns": [],
+      "rules_learned": [
+        "Gene dialogue: if it's memorable on first read, it's too heavy. Rewrite flatter.",
+        "Suits say 'the work', builders say 'the job' — always."
+      ],
+      "needs_from_human": null
+    },
+    "audio_design": {
+      "confidence": "blocked",
+      "evidence": "AudioManager autoload created with fade in/out and bus routing, but no audio assets exist yet.",
+      "failure_patterns": [],
+      "rules_learned": [],
+      "needs_from_human": "Reference recordings of browser SFX. Godot audio bus layout (Music, SFX, UI?)."
+    },
+    "economy_systems": {
+      "confidence": "medium",
+      "evidence": "Food chain, happiness, bulldozer unlock all documented in detail. GameState has credits, satisfaction, food_chain_complete, builder_happiness fields.",
+      "failure_patterns": [],
+      "rules_learned": [],
+      "needs_from_human": null
+    },
+    "reckoning_mechanics": {
+      "confidence": "medium",
+      "evidence": "Fully implemented in browser. AI behavior, scoring, flood all documented.",
+      "failure_patterns": [],
+      "rules_learned": [],
+      "needs_from_human": null
+    },
+    "keeper_llm_integration": {
+      "confidence": "medium",
+      "evidence": "System prompt builder and BYOK connection documented. keeper.js exists as reference.",
+      "failure_patterns": [],
+      "rules_learned": [],
+      "needs_from_human": null
+    },
+    "canvas2d_to_godot_porting": {
+      "confidence": "low-medium",
+      "evidence": "Established _draw() as Canvas2D replacement. Block grid rendering, floor generation, character drawing all working. Parallax and module art not yet attempted.",
+      "failure_patterns": [
+        "Canvas save/restore → Godot has no equivalent — use draw_set_transform() or child nodes with transforms",
+        "Browser requestAnimationFrame timing → Godot _process(delta) and _physics_process(delta)"
+      ],
+      "rules_learned": [
+        "_draw() on Node2D replaces Canvas2D fillRect/strokeRect patterns",
+        "ColorRect nodes for static backgrounds, _draw() for animated/conditional rendering",
+        "Collision layers replace browser's manual overlap checking"
+      ],
+      "needs_from_human": "Establish porting patterns for: parallax scrolling, module animated art, camera shake"
+    }
+  }
+}

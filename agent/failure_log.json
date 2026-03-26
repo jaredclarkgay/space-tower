@@ -1,0 +1,77 @@
+{
+  "version": "1.1",
+  "entries": [
+    {
+      "id": "f001",
+      "session": "2026-03-24",
+      "domain": "gdscript_logic",
+      "summary": "Autoload cross-references fail at parse time",
+      "detail": "SaveManager.gd referenced GameState and Constants by name. GDScript parser rejects these at parse time even though autoloads are registered. Error: 'Identifier not declared in the current scope'.",
+      "root_cause": "GDScript validates identifiers during parsing, before autoloads are injected into the scene tree at runtime.",
+      "resolution": "Use get_node('/root/GameState') at runtime instead of bare autoload names.",
+      "resolution_type": "rule",
+      "transfer_value": "high — affects any script that references another autoload",
+      "rule_file": "rules/godot_2d_character.md"
+    },
+    {
+      "id": "f002",
+      "session": "2026-03-24",
+      "domain": "visual_style",
+      "summary": "Character flip not visible — 3 failed approaches",
+      "detail": "Attempt 1: _r() helper with flip multiplier — draw_rect() doesn't accept negative width, rects disappeared. Attempt 2: draw_set_transform() with scale Vector2(-1,1) — worked for drawing but Camera2D child also got affected. Attempt 3: scale.x on CharacterBody2D — flipped Camera2D, mirroring entire screen view. Final fix: child Node2D with scale.x = -1.",
+      "root_cause": "Transforms on parent nodes propagate to all children including Camera2D and CollisionShape2D. Only a dedicated visual child node should be transformed.",
+      "resolution": "Separate visual node (Node2D child) from physics body. Flip only the visual node's scale.x.",
+      "resolution_type": "rule",
+      "transfer_value": "high — fundamental pattern for any 2D character",
+      "rule_file": "rules/godot_2d_character.md"
+    },
+    {
+      "id": "f003",
+      "session": "2026-03-24",
+      "domain": "visual_style",
+      "summary": "Sin-wave limb animation looks uncanny",
+      "detail": "Used sin(walk_cycle) to continuously interpolate leg/arm positions. User feedback: 'not behaving in a way that's anchored in physics', 'limbs aren't moving in any natural way', 'losing optimism in Godot'.",
+      "root_cause": "Continuous interpolation of individual rect positions creates smooth but disconnected motion. Pixel art characters need discrete keyframe poses, not procedural animation.",
+      "resolution": "Replaced with 4 discrete hand-drawn poses (idle, step_a, idle, step_b) swapped at fixed intervals.",
+      "resolution_type": "rule",
+      "transfer_value": "high — applies to all _draw() character animation",
+      "rule_file": "rules/godot_2d_character.md"
+    },
+    {
+      "id": "f004",
+      "session": "2026-03-24",
+      "domain": "physics_feel",
+      "summary": "Player couldn't jump between floors — hit ceiling",
+      "detail": "Floor platforms were solid StaticBody2Ds. Player jumped but collided with the bottom of the floor above and bounced off.",
+      "root_cause": "Default collision is two-sided. Platformer floors need one_way_collision so player passes through from below.",
+      "resolution": "Set one_way_collision = true on all floor CollisionShape2Ds.",
+      "resolution_type": "rule",
+      "transfer_value": "high — required for any platformer with stacked floors",
+      "rule_file": "rules/godot_2d_character.md"
+    },
+    {
+      "id": "f005",
+      "session": "2026-03-24",
+      "domain": "physics_feel",
+      "summary": "Jump height insufficient for floor spacing",
+      "detail": "JUMP_VELOCITY=-350, GRAVITY=900. Peak height = 350²/(2×900) = 68px. Floor spacing = 96px. Player couldn't reach the next floor.",
+      "root_cause": "Physics values were estimated without calculating actual peak height.",
+      "resolution": "Bumped JUMP_VELOCITY to -500. Peak = 500²/1800 = 139px, clears 96px comfortably.",
+      "resolution_type": "rule",
+      "transfer_value": "medium — always calculate peak = v²/(2g) when tuning jump",
+      "rule_file": "rules/godot_2d_character.md"
+    },
+    {
+      "id": "f006",
+      "session": "2026-03-24",
+      "domain": "godot_scene_structure",
+      "summary": "Player invisible after adding floor backgrounds",
+      "detail": "Floor ColorRect backgrounds were added via _ready() after the player scene was instanced. Default z_index rendering caused floors to draw over the player.",
+      "root_cause": "Godot 2D renders by scene tree order within the same z_index. Dynamically-added nodes render after scene-tree nodes.",
+      "resolution": "Set z_index = 10 on the player's Sprite node.",
+      "resolution_type": "rule",
+      "transfer_value": "medium — any dynamic scene content needs explicit z-ordering",
+      "rule_file": "rules/godot_2d_character.md"
+    }
+  ]
+}
