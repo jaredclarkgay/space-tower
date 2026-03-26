@@ -12,38 +12,59 @@ const C_HAT_BRIM := Color(0.9, 0.72, 0.0)
 const C_EYES := Color(0.12, 0.12, 0.12)
 const C_BELT := Color(0.25, 0.18, 0.08)
 
-var _last_facing := true
-var _last_frame := -1
-var _last_on_floor := true
+# Power bar colors
+const C_BAR_BG := Color(0.15, 0.15, 0.2, 0.7)
+const C_BAR_JUMP := Color(0.3, 0.9, 0.4)
+const C_BAR_DROP := Color(1.0, 0.4, 0.2)
 
 func _process(_delta: float) -> void:
-	var player: CharacterBody2D = get_parent()
-	var facing: bool = player.facing_right
-	var frame: int = player.walk_frame
-	var on_floor: bool = player.is_on_floor()
-
-	# Flip the visual node — collision and camera are siblings, unaffected
-	if facing != _last_facing:
-		scale.x = 1.0 if facing else -1.0
-		_last_facing = facing
-
-	# Redraw only when state changes
-	if frame != _last_frame or on_floor != _last_on_floor:
-		_last_frame = frame
-		_last_on_floor = on_floor
-		queue_redraw()
+	queue_redraw()
 
 func _draw() -> void:
 	var player: CharacterBody2D = get_parent()
 
-	if not player.is_on_floor():
+	# Direction flip via draw transform — decoupled from scale/tweens
+	var flip_x := -1.0 if not player.facing_right else 1.0
+
+	if player.charging_jump:
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(flip_x, 1.0))
+		var t: float = float(player.charge_jump) / float(player.JUMP_CHARGE_TIME)
+		_draw_charge_crouch(t)
+		_draw_power_bar(t, C_BAR_JUMP)
+	elif player.charging_drop:
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(flip_x, 1.0))
+		var t: float = float(player.charge_drop) / float(player.DROP_CHARGE_TIME)
+		_draw_charge_crouch(t)
+		_draw_power_bar(t, C_BAR_DROP)
+	elif not player.is_on_floor():
+		# Somersault — rotate the whole character around its center
+		var angle: float = float(player.flip_frame) * TAU / 8.0
+		if not player.facing_right:
+			angle = -angle
+		var center := Vector2(0, -24)  # center of 48px tall character
+		var rotated_offset := center - center.rotated(angle)
+		draw_set_transform(rotated_offset, angle, Vector2(flip_x, 1.0))
 		_draw_jump_pose()
-	elif player.walk_frame == 1:
-		_draw_step_a()
-	elif player.walk_frame == 3:
-		_draw_step_b()
 	else:
-		_draw_idle()
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(flip_x, 1.0))
+		if player.walk_frame == 1:
+			_draw_step_a()
+		elif player.walk_frame == 3:
+			_draw_step_b()
+		else:
+			_draw_idle()
+
+	# Reset transform
+	draw_set_transform(Vector2.ZERO)
+
+# --- Power bar above head ---
+func _draw_power_bar(t: float, color: Color) -> void:
+	var bar_w := 24.0
+	var bar_h := 3.0
+	var bar_x := -bar_w / 2.0
+	var bar_y := -56.0
+	draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), C_BAR_BG)
+	draw_rect(Rect2(bar_x, bar_y, bar_w * t, bar_h), color)
 
 # --- Upper body (shared by all poses) ---
 func _draw_body_upper() -> void:
@@ -51,65 +72,82 @@ func _draw_body_upper() -> void:
 	draw_rect(Rect2(-9, -34, 18, 13), C_VEST)
 	draw_rect(Rect2(-9, -29, 18, 2), C_STRIPE)
 	draw_rect(Rect2(-9, -25, 18, 2), C_STRIPE)
-	# Tool belt
+	# Belt with hammer on front hip (asymmetric — makes flip visible)
 	draw_rect(Rect2(-9, -21, 18, 2), C_BELT)
+	draw_rect(Rect2(5, -23, 3, 6), Color(0.4, 0.35, 0.3))  # hammer handle
+	draw_rect(Rect2(4, -24, 5, 3), Color(0.5, 0.5, 0.55))  # hammer head
 	# Neck
 	draw_rect(Rect2(-3, -36, 6, 2), C_SKIN)
-	# Head
-	draw_rect(Rect2(-6, -44, 12, 8), C_SKIN)
-	# Eyes (drawn on right side — scale.x flip handles mirroring)
-	draw_rect(Rect2(1, -42, 2, 2), C_EYES)
-	draw_rect(Rect2(4, -42, 2, 2), C_EYES)
-	# Hard hat dome
-	draw_rect(Rect2(-4, -49, 8, 1), C_HAT)
-	draw_rect(Rect2(-6, -48, 12, 1), C_HAT)
-	draw_rect(Rect2(-7, -47, 14, 3), C_HAT)
-	draw_rect(Rect2(-7, -45, 14, 1), C_HAT_DARK)
-	# Brim
-	draw_rect(Rect2(-9, -44, 20, 2), C_HAT_BRIM)
+	# Head — shifted slightly forward (asymmetric)
+	draw_rect(Rect2(-5, -44, 12, 8), C_SKIN)
+	# Eyes — on the front side
+	draw_rect(Rect2(2, -42, 2, 2), C_EYES)
+	draw_rect(Rect2(5, -42, 2, 2), C_EYES)
+	# Hard hat — brim extends further forward
+	draw_rect(Rect2(-3, -49, 8, 1), C_HAT)
+	draw_rect(Rect2(-5, -48, 12, 1), C_HAT)
+	draw_rect(Rect2(-6, -47, 14, 3), C_HAT)
+	draw_rect(Rect2(-6, -45, 14, 1), C_HAT_DARK)
+	# Brim — longer on front side (asymmetric)
+	draw_rect(Rect2(-7, -44, 20, 2), C_HAT_BRIM)
 
 # --- Idle / passing ---
 func _draw_idle() -> void:
-	draw_rect(Rect2(-12, -33, 3, 11), C_SKIN)       # back arm
-	draw_rect(Rect2(-7, -19, 6, 12), C_PANTS)        # left leg
-	draw_rect(Rect2(1, -19, 6, 12), C_PANTS)         # right leg
-	draw_rect(Rect2(-7, -7, 6, 7), C_BOOTS)          # left boot
-	draw_rect(Rect2(1, -7, 6, 7), C_BOOTS)           # right boot
-	_draw_body_upper()
-	draw_rect(Rect2(9, -33, 3, 11), C_SKIN)          # front arm
-
-# --- Walk frame: front leg forward ---
-func _draw_step_a() -> void:
-	draw_rect(Rect2(-12, -35, 3, 11), C_SKIN)        # back arm forward
-	# Back leg — knee bent
-	draw_rect(Rect2(-5, -19, 6, 7), C_PANTS)         # thigh
-	draw_rect(Rect2(-3, -12, 6, 5), C_PANTS)         # shin up
-	draw_rect(Rect2(-3, -7, 6, 4), C_BOOTS)          # boot raised
-	# Front leg — straight
-	draw_rect(Rect2(3, -19, 6, 12), C_PANTS)
-	draw_rect(Rect2(3, -7, 6, 7), C_BOOTS)
-	_draw_body_upper()
-	draw_rect(Rect2(9, -31, 3, 11), C_SKIN)          # front arm back
-
-# --- Walk frame: back leg forward ---
-func _draw_step_b() -> void:
-	draw_rect(Rect2(-12, -31, 3, 11), C_SKIN)        # back arm back
-	# Front leg — straight
-	draw_rect(Rect2(-9, -19, 6, 12), C_PANTS)
-	draw_rect(Rect2(-9, -7, 6, 7), C_BOOTS)
-	# Back leg — knee bent
-	draw_rect(Rect2(-1, -19, 6, 7), C_PANTS)
-	draw_rect(Rect2(1, -12, 6, 5), C_PANTS)
-	draw_rect(Rect2(1, -7, 6, 4), C_BOOTS)
-	_draw_body_upper()
-	draw_rect(Rect2(9, -35, 3, 11), C_SKIN)          # front arm forward
-
-# --- Jump pose ---
-func _draw_jump_pose() -> void:
-	draw_rect(Rect2(-13, -35, 3, 10), C_SKIN)        # arm out
+	draw_rect(Rect2(-12, -33, 3, 11), C_SKIN)
 	draw_rect(Rect2(-7, -19, 6, 12), C_PANTS)
 	draw_rect(Rect2(1, -19, 6, 12), C_PANTS)
 	draw_rect(Rect2(-7, -7, 6, 7), C_BOOTS)
 	draw_rect(Rect2(1, -7, 6, 7), C_BOOTS)
 	_draw_body_upper()
-	draw_rect(Rect2(10, -35, 3, 10), C_SKIN)         # arm out
+	draw_rect(Rect2(9, -33, 3, 11), C_SKIN)
+
+# --- Walk frame: front leg forward ---
+func _draw_step_a() -> void:
+	draw_rect(Rect2(-12, -35, 3, 11), C_SKIN)
+	draw_rect(Rect2(-5, -19, 6, 7), C_PANTS)
+	draw_rect(Rect2(-3, -12, 6, 5), C_PANTS)
+	draw_rect(Rect2(-3, -7, 6, 4), C_BOOTS)
+	draw_rect(Rect2(3, -19, 6, 12), C_PANTS)
+	draw_rect(Rect2(3, -7, 6, 7), C_BOOTS)
+	_draw_body_upper()
+	draw_rect(Rect2(9, -31, 3, 11), C_SKIN)
+
+# --- Walk frame: back leg forward ---
+func _draw_step_b() -> void:
+	draw_rect(Rect2(-12, -31, 3, 11), C_SKIN)
+	draw_rect(Rect2(-9, -19, 6, 12), C_PANTS)
+	draw_rect(Rect2(-9, -7, 6, 7), C_BOOTS)
+	draw_rect(Rect2(-1, -19, 6, 7), C_PANTS)
+	draw_rect(Rect2(1, -12, 6, 5), C_PANTS)
+	draw_rect(Rect2(1, -7, 6, 4), C_BOOTS)
+	_draw_body_upper()
+	draw_rect(Rect2(9, -35, 3, 11), C_SKIN)
+
+# --- Jump / airborne ---
+func _draw_jump_pose() -> void:
+	draw_rect(Rect2(-13, -35, 3, 10), C_SKIN)
+	draw_rect(Rect2(-7, -19, 6, 12), C_PANTS)
+	draw_rect(Rect2(1, -19, 6, 12), C_PANTS)
+	draw_rect(Rect2(-7, -7, 6, 7), C_BOOTS)
+	draw_rect(Rect2(1, -7, 6, 7), C_BOOTS)
+	_draw_body_upper()
+	draw_rect(Rect2(10, -35, 3, 10), C_SKIN)
+
+# --- Charging (crouch — used for both jump and drop) ---
+func _draw_charge_crouch(t: float) -> void:
+	var squash := t * 8.0
+	# Arms lower with body
+	draw_rect(Rect2(-12, -33 + squash, 3, 11), C_SKIN)
+	# Legs compress, boots stay grounded
+	draw_rect(Rect2(-7, -19 + squash, 6, 12 - squash), C_PANTS)
+	draw_rect(Rect2(1, -19 + squash, 6, 12 - squash), C_PANTS)
+	draw_rect(Rect2(-7, -7, 6, 7), C_BOOTS)
+	draw_rect(Rect2(1, -7, 6, 7), C_BOOTS)
+	# Upper body shifts down — save/restore the flip transform
+	var player: CharacterBody2D = get_parent()
+	var fx := -1.0 if not player.facing_right else 1.0
+	draw_set_transform(Vector2(0, squash), 0.0, Vector2(fx, 1.0))
+	_draw_body_upper()
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(fx, 1.0))
+	# Front arm
+	draw_rect(Rect2(9, -33 + squash, 3, 11), C_SKIN)

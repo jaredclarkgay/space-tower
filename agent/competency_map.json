@@ -1,6 +1,6 @@
 {
-  "version": "1.1",
-  "last_updated": "2026-03-26T00:00:00Z",
+  "version": "1.2",
+  "last_updated": "2026-03-26T12:00:00Z",
   "domains": {
     "gdscript_logic": {
       "confidence": "medium",
@@ -98,9 +98,21 @@
       "rules_learned": [],
       "needs_from_human": null
     },
+    "parallax_exterior": {
+      "confidence": "medium",
+      "evidence": "Researched and implemented 6-layer parallax system: shader-driven sky gradient + star field, 3 procedural city layers with _draw(), fog band. Altitude-aware fading. Rule file written.",
+      "failure_patterns": [],
+      "rules_learned": [
+        "ParallaxBackground as direct child of scene root, motion_scale.x = 0 for vertical-only scroll",
+        "canvas_item shaders for sky/stars — pass camera_y as uniform from _process()",
+        "City layers fade via modulate.a driven by smoothstep on altitude",
+        "Seeded RNG for deterministic city skylines across sessions"
+      ],
+      "needs_from_human": "Visual feedback — does the parallax look good? Do altitude transitions feel right?"
+    },
     "canvas2d_to_godot_porting": {
-      "confidence": "low-medium",
-      "evidence": "Established _draw() as Canvas2D replacement. Block grid rendering, floor generation, character drawing all working. Parallax and module art not yet attempted.",
+      "confidence": "medium",
+      "evidence": "Established _draw() as Canvas2D replacement. Block grid rendering, floor generation, character drawing, and city skyline layers all working. Parallax implemented with shaders.",
       "failure_patterns": [
         "Canvas save/restore → Godot has no equivalent — use draw_set_transform() or child nodes with transforms",
         "Browser requestAnimationFrame timing → Godot _process(delta) and _physics_process(delta)"

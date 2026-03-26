@@ -4,7 +4,7 @@
 
 Space Tower is a tower-building game where you ARE the builder — a physically strong human in a hardhat constructing a space elevator by hand. You build the tower on the outside (launching crates, climbing, driving machines) and explore what you've created on the inside (platforming through floors, discovering NPCs and story).
 
-This is the Godot 4 port. The original browser prototype lives in a separate repo (`space-tower`) built with vanilla JS, Canvas 2D, and Three.js. That version is the reference implementation — mechanics were designed and playtested there first. This repo rebuilds them in Godot's native systems for Steam distribution and visual quality.
+This is the Godot 4 port, targeting Steam distribution and visual quality. The original browser prototype (vanilla JS, Canvas 2D, Three.js) is preserved as a reference implementation — mechanics were designed and playtested there first. This repo rebuilds them in Godot's native systems.
 
 The first 10-floor segment is called "Goodbye Earth" and explores departure and loss. Three-act structure: Build (floors 1–4), Discover (floors 5–8 with The Reckoning), Prove (floors 9–10 with The Keeper).
 
@@ -28,9 +28,17 @@ GitHub for version control. All `.tscn`, `.gd`, `.tres` files are text-based and
 ## Project Structure
 
 ```
-space-tower-godot/
+space-tower/
 ├── project.godot                 # Project settings, autoloads, input map
 ├── CLAUDE.md                     # This file
+│
+├── agent/                        # Builder Agent — self-improving knowledge base
+│   ├── project_knowledge.json    # What the agent knows about the game
+│   ├── competency_map.json       # What the agent knows about its own capabilities
+│   ├── failure_log.json          # Categorized learning journal
+│   ├── request_queue.json        # Prioritized asks for Jared
+│   ├── session_log.md            # Append-only work session log
+│   └── rules/                    # Self-authored skill files (accumulate over time)
 │
 ├── autoloads/
 │   ├── game_state.gd             # Global state singleton (replaces S object)
@@ -484,10 +492,40 @@ Both web (embedded) and desktop (downloadable) builds. Free demo of Segment 1.
 
 ---
 
+## Builder Agent
+
+The `agent/` directory contains a self-improving knowledge base. Before starting work, read these files:
+
+- **`competency_map.json`** — Check confidence levels for the task's domain. If confidence is `low` or `blocked`, check `request_queue.json` for unresolved asks before proceeding.
+- **`request_queue.json`** — Pending questions for Jared, prioritized by transfer value. If the top request is relevant to your current task and still pending, flag it.
+- **`rules/`** — Self-authored skill files. Check for any rules relevant to the current task domain.
+
+**After completing work**, propose updates:
+- **`competency_map.json`** — Raise or lower confidence based on what happened. Add new `rules_learned` or `failure_patterns`.
+- **`failure_log.json`** — Log any failures with root cause, resolution type (rule or request), and transfer value.
+- **`request_queue.json`** — Add new requests if you identified gaps you can't close on your own. Prioritize by how many future tasks the answer would unblock.
+- **`session_log.md`** — Append a session entry: what you attempted, outcome, decisions, uncertainties, proposed updates.
+- **`rules/`** — If a failure pattern is self-correctable, write a rule file.
+
+All proposed updates to agent files require Jared's approval. Never self-modify `project_knowledge.json`.
+
+---
+
 ## Development Workflow
 
 - **Claude Chat (this project):** Architecture, design, creative direction, briefs
-- **Claude Code:** Implementation in GDScript, scene creation, shader writing. Reads this CLAUDE.md.
+- **Claude Code:** Implementation in GDScript, scene creation, shader writing. Reads this CLAUDE.md + the `agent/` directory.
 - **Browser prototype:** Mechanics are explored in the JS version first when iteration speed matters, then ported to Godot via design brief.
 - **Two-file handoff:** Design brief + reference file (often the working JS implementation) as paired context for Claude Code.
 - **Godot editor:** Open for visual scene editing, running the game, and inspecting the scene tree. Claude Code edits files on disk; the editor auto-reloads.
+
+### Agent Self-Improvement Loop
+
+Before starting work, check `agent/competency_map.json` for confidence levels and `agent/request_queue.json` for blocking requests. After finishing, propose updates to:
+- `agent/competency_map.json` — confidence changes, new rules learned, new failure patterns
+- `agent/failure_log.json` — anything that went wrong and why
+- `agent/request_queue.json` — new asks for Jared, prioritized by transfer value
+- `agent/rules/` — new skill files extracted from patterns
+- `agent/session_log.md` — append a session entry
+
+Jared approves, modifies, or rejects proposed updates. The agent never self-modifies `agent/project_knowledge.json` without approval.

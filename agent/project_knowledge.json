@@ -1,0 +1,114 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-03-26",
+  "architecture": {
+    "engines": {
+      "browser": {
+        "status": "prototype_reference",
+        "repo": "space-tower",
+        "stack": "vanilla JS, Canvas 2D, Three.js, Vite"
+      },
+      "godot": {
+        "status": "active_development",
+        "repo": "space-tower",
+        "version": "4.x",
+        "export_target": "steam"
+      }
+    },
+    "segment": 1,
+    "segment_name": "Goodbye Earth",
+    "floors": 10,
+    "state_format": "json",
+    "save_key": "spacetower_v14"
+  },
+  "key_systems": {
+    "scaffolding_seesaw": {
+      "description": "Player times jumps to launch GPC Supply crates to builders on roof",
+      "crates_per_floor": { "1-5": 2, "6-10": 4 },
+      "total_launches": 30,
+      "status": "built_browser"
+    },
+    "interior_sim": {
+      "description": "2D side-on cross-section with platforming, NPCs, modules",
+      "build_stages": 3,
+      "blocks_per_floor": 12,
+      "block_width": 300,
+      "platforming": ["charged_jump", "wall_slide", "wall_jump", "drop_through"],
+      "status": "built_browser"
+    },
+    "reckoning": {
+      "description": "Floor 8 builders-vs-suits territory-claim mini-game",
+      "contested_floors": [6, 7, 8],
+      "builder_ai": 12,
+      "suit_ai": 18,
+      "civilian_flood": 30,
+      "status": "built_browser"
+    },
+    "keeper": {
+      "description": "Floor 10 LLM-powered mayor. Gates Segment 2.",
+      "character": "Gene. Corporate Merlin. Purple suit, gold star tie, walking stick.",
+      "health_score": "floors 40%, satisfaction 30%, modules 15%, NPCs 15%",
+      "difficulty_scaling": {
+        ">=75": "near-deferential, 2-4 exchanges",
+        "40-74": "gentle probing, 4-6 exchanges",
+        "<40": "relentless challenge, 6-10 exchanges"
+      },
+      "status": "built_browser"
+    },
+    "bulldozer": {
+      "description": "Dual-mode terrain deformation. Topo mode (control room) + stunt mode (exterior)",
+      "unlock": "builder_happiness >= 20 AND food_chain_complete",
+      "status": "built_browser"
+    },
+    "control_room": {
+      "description": "Basement (floor -1). Baby blue/white TNG palette. Agent's future home.",
+      "status": "built_browser"
+    },
+    "rgb": {
+      "description": "Reality Generation Box. Self-contained LLM-powered experience engine.",
+      "boundary": "sacred — sim is handcrafted, RGB is alive, they don't contaminate",
+      "status": "separate_repo_not_connected"
+    }
+  },
+  "design_principles": [
+    "The player's body is the tool — climb, jump, swing, drive, launch",
+    "Exterior builds, interior rewards",
+    "Discovery over instruction — no tutorials, redesign instead",
+    "Character dignity — three-line reveals, nobody is disposable",
+    "Fixed identity over catalog — every block has a name and a consequence",
+    "The RGB boundary is sacred",
+    "Meaningful consequence over choice",
+    "Hunger as rhythm — mechanical need becomes narrative gateway",
+    "Political power as felt leadership",
+    "BYOK as culmination — earn the right to bring your mind in"
+  ],
+  "faction_rules": {
+    "suits_say": "the work",
+    "builders_say": "the job"
+  },
+  "invariants": [
+    "S object structure — everything reads it",
+    "Seeded RNG sequence — changing order changes every world",
+    "Floor 5 = RESTAURANT (RGB threshold)",
+    "Floor 8 = STORAGE (Reckoning floor)",
+    "Floor 10 = COMMAND (The Keeper)",
+    "isWinBlock() / isElevBlock() — guard all placement",
+    "Camera save/restore nesting — parallax depends on it",
+    "recalc() after module changes"
+  ],
+  "named_characters": {
+    "gene": {
+      "role": "keeper_mayor",
+      "floors_appears": [1, 3, 5, 7, 10],
+      "narrative_rule": "Early lines must be forgettable first, devastating in hindsight"
+    },
+    "floor_leaders": {
+      "rodriguez": { "floor": 1 },
+      "kim": { "floor": 2 },
+      "paz": { "floor": 3 },
+      "murphy": { "floor": 4 },
+      "okafor": { "floor": 6 },
+      "tanaka": { "floor": 7 }
+    }
+  }
+}
