@@ -26,6 +26,11 @@ var compendium: Dictionary = {"entries": {}}
 var reckoning_outcome: String = ""
 var builder_color: Color = Color.WHITE
 
+# Block claims — keyed by "claim_{floor}_{block}" → progress float (0.0–1.0)
+var block_claims: Dictionary = {}
+# Block claim owners — keyed by "claim_{floor}_{block}" → owner string
+var block_claim_owners: Dictionary = {}
+
 # Flags
 var panel_floor: int = 0
 var panel_dirty: bool = true

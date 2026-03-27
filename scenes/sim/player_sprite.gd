@@ -12,6 +12,10 @@ const C_HAT_BRIM := Color(0.9, 0.72, 0.0)
 const C_EYES := Color(0.12, 0.12, 0.12)
 const C_BELT := Color(0.25, 0.18, 0.08)
 
+# Hammer colors
+const C_HANDLE := Color(0.45, 0.30, 0.15)
+const C_HAMMER_HEAD := Color(0.55, 0.55, 0.60)
+
 # Power bar colors
 const C_BAR_BG := Color(0.15, 0.15, 0.2, 0.7)
 const C_BAR_JUMP := Color(0.3, 0.9, 0.4)
@@ -25,6 +29,16 @@ func _draw() -> void:
 
 	# Direction flip via draw transform — decoupled from scale/tweens
 	var flip_x := -1.0 if not player.facing_right else 1.0
+
+	# Claiming — kneeling hammer, alternates up/down each strike
+	if player.state == player.PlayerState.CLAIMING:
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(flip_x, 1.0))
+		if player._claim_strike % 2 == 0:
+			_draw_kneel_hammer_up()
+		else:
+			_draw_kneel_hammer_down()
+		draw_set_transform(Vector2.ZERO)
+		return
 
 	if player.charging_jump:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2(flip_x, 1.0))
@@ -151,3 +165,47 @@ func _draw_charge_crouch(t: float) -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(fx, 1.0))
 	# Front arm
 	draw_rect(Rect2(9, -33 + squash, 3, 11), C_SKIN)
+
+# --- Hammer poses (claiming) — kneeling, rapid hammering ---
+
+## Kneeling with hammer raised high overhead (wind-up)
+func _draw_kneel_hammer_up() -> void:
+	# Back arm bracing on knee
+	draw_rect(Rect2(-10, -20, 3, 8), C_SKIN)
+	# Kneeling legs — one knee down, one foot planted
+	draw_rect(Rect2(-7, -12, 6, 6), C_PANTS)    # back thigh
+	draw_rect(Rect2(-7, -6, 6, 6), C_BOOTS)     # back knee on ground
+	draw_rect(Rect2(1, -16, 6, 10), C_PANTS)    # front leg bent
+	draw_rect(Rect2(1, -6, 6, 6), C_BOOTS)      # front foot planted
+	# Torso shifted down for kneel
+	var player: CharacterBody2D = get_parent()
+	var fx := -1.0 if not player.facing_right else 1.0
+	draw_set_transform(Vector2(0, 8), 0.0, Vector2(fx, 1.0))
+	_draw_body_upper()
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(fx, 1.0))
+	# Front arm raised high — hammer well overhead and out from body
+	draw_rect(Rect2(10, -32, 3, 6), C_SKIN)     # upper arm angled out
+	draw_rect(Rect2(12, -40, 3, 8), C_SKIN)     # forearm reaching up
+	draw_rect(Rect2(11, -50, 3, 10), C_HANDLE)  # handle high up
+	draw_rect(Rect2(9, -55, 7, 5), C_HAMMER_HEAD) # head way up top
+
+## Kneeling with hammer striking down — arm extended out from body
+func _draw_kneel_hammer_down() -> void:
+	# Back arm bracing on knee
+	draw_rect(Rect2(-10, -20, 3, 8), C_SKIN)
+	# Kneeling legs — same as up pose
+	draw_rect(Rect2(-7, -12, 6, 6), C_PANTS)
+	draw_rect(Rect2(-7, -6, 6, 6), C_BOOTS)
+	draw_rect(Rect2(1, -16, 6, 10), C_PANTS)
+	draw_rect(Rect2(1, -6, 6, 6), C_BOOTS)
+	# Torso shifted down + slight forward lean into the strike
+	var player: CharacterBody2D = get_parent()
+	var fx := -1.0 if not player.facing_right else 1.0
+	draw_set_transform(Vector2(2, 10), 0.0, Vector2(fx, 1.0))
+	_draw_body_upper()
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(fx, 1.0))
+	# Front arm extended well out — hammer hits ground away from body
+	draw_rect(Rect2(10, -22, 3, 8), C_SKIN)     # upper arm out
+	draw_rect(Rect2(13, -14, 3, 10), C_SKIN)    # forearm reaching down and out
+	draw_rect(Rect2(14, -4, 3, 7), C_HANDLE)    # handle angled to ground
+	draw_rect(Rect2(12, 2, 7, 4), C_HAMMER_HEAD) # head strikes ground, well clear of body

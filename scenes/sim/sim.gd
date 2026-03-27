@@ -38,6 +38,11 @@ const C_ELEVATOR := Color(0.18, 0.18, 0.22)
 const C_BLOCK_LINE := Color(1, 1, 1, 0.04)
 const C_LABEL := Color(0.6, 0.65, 0.6, 0.5)
 
+const SCREEN_SHAKE_PX := 2.0
+const SCREEN_SHAKE_DURATION := 0.1
+
+const BlockScript: GDScript = preload("res://scenes/sim/block.gd")
+
 # Camera
 const CAM_LERP := 8.0
 const CAM_LOOK_AHEAD := 40.0
@@ -122,18 +127,24 @@ func _process(delta: float) -> void:
 	# Each layer is a world-space Node2D. To create parallax depth:
 	# layer.position.y = base_y + cam_y * (1.0 - depth_factor)
 	# depth_factor: 0.0 = pinned to screen (sky), 1.0 = foreground (no parallax)
+	var cam_x := camera.position.x
 	var cam_y := camera.position.y
 	var sky_base_y := -float(TOWER_HEIGHT) - 400.0
+	# Horizontal parallax origin — center of the tower
+	var cam_x_center := FLOOR_WIDTH / 2.0
+	var cam_dx := cam_x - cam_x_center
 
 	# Sky — pinned to screen (factor 0.0)
 	if _sky_rect:
 		_sky_rect.position.y = sky_base_y + cam_y * 1.0
+		_sky_rect.position.x = -BG_MARGIN + cam_dx * 0.98
 	if _sky_mat:
 		_sky_mat.set_shader_parameter("camera_y", cam_y)
 
 	# Stars — nearly pinned (factor 0.05)
 	if _stars_rect:
 		_stars_rect.position.y = sky_base_y + cam_y * 0.95
+		_stars_rect.position.x = -BG_MARGIN + cam_dx * 0.95
 	if _stars_mat:
 		_stars_mat.set_shader_parameter("camera_y", cam_y)
 		_stars_mat.set_shader_parameter("time_val", Time.get_ticks_msec() / 1000.0)
@@ -141,10 +152,13 @@ func _process(delta: float) -> void:
 	# City layers — each lags behind camera by different amounts
 	if _far_city:
 		_far_city.position.y = cam_y * 0.85   # factor 0.15
+		_far_city.position.x = cam_dx * 0.12
 	if _mid_city:
 		_mid_city.position.y = cam_y * 0.70   # factor 0.30
+		_mid_city.position.x = cam_dx * 0.25
 	if _near_city:
 		_near_city.position.y = cam_y * 0.50  # factor 0.50
+		_near_city.position.x = cam_dx * 0.40
 
 	# Fade city at altitude
 	var alt := clampf(-cam_y / float(TOWER_HEIGHT), 0.0, 1.0)
@@ -312,6 +326,32 @@ func _build_floor(index: int, y: float) -> void:
 			door_line.size = Vector2(2, FLOOR_HEIGHT - SLAB_HEIGHT - 14)
 			door_line.color = Color(0.3, 0.3, 0.35, 0.5)
 			floor_node.add_child(door_line)
+		else:
+			# Buildable block — interactive Block node
+			var block := Node2D.new()
+			block.set_script(BlockScript)
+			block.name = "Block_%d_%d" % [index, bi]
+			block.position = Vector2(bx, block_top)
+			block.block_index = bi
+			block.floor_index = index
+			block.initialize(BLOCK_WIDTH, FLOOR_HEIGHT - SLAB_HEIGHT, FLOOR_BG_COLORS[index])
+			block.claim_completed.connect(_on_block_claimed)
+			# Restore any saved claim state
+			var gs: Node = get_node("/root/GameState")
+			var key := "claim_%d_%d" % [index, bi]
+			var saved_progress: float = gs.block_claims.get(key, 0.0)
+			if saved_progress > 0.0:
+				var saved_owner: String = gs.block_claim_owners.get(key, "player")
+				block.claim_owner = saved_owner
+				block.owner_color = block._get_color_for_owner(saved_owner)
+				block.claim_progress = saved_progress
+				block.current_strike = int(saved_progress / 0.25)
+				block._update_borders()
+				if saved_progress >= 1.0:
+					block.claim_locked = true
+					block._fill.visible = true
+					block._fill.color = Color(block.owner_color, block.FILL_ALPHA)
+			floor_node.add_child(block)
 
 		if bi > 0:
 			var grid_line := ColorRect.new()
@@ -385,3 +425,35 @@ func _is_win_block(bi: int) -> bool:
 
 func _is_elev_block(bi: int) -> bool:
 	return bi == 6
+
+func _on_block_claimed(_floor_idx: int, _block_idx: int) -> void:
+	screen_shake()
+
+func screen_shake(magnitude: float = SCREEN_SHAKE_PX, duration: float = SCREEN_SHAKE_DURATION) -> void:
+	var original := camera.offset
+	var tween := create_tween()
+	tween.tween_property(camera, "offset", original + Vector2(magnitude, -magnitude), duration * 0.25)
+	tween.tween_property(camera, "offset", original + Vector2(-magnitude, magnitude), duration * 0.25)
+	tween.tween_property(camera, "offset", original, duration * 0.5)
+
+## Find the nearest claimable Block node to a world position
+func find_nearest_claimable_block(world_pos: Vector2, who: String) -> Node2D:
+	var best: Node2D = null
+	var best_dist := INF
+	for fi in range(NUM_FLOORS):
+		var floor_node := get_node_or_null("Floor%d" % fi)
+		if not floor_node:
+			continue
+		for child in floor_node.get_children():
+			if not child.has_method("can_claim"):
+				continue
+			if not child.is_player_nearby:
+				continue
+			if not child.can_claim(who):
+				continue
+			var block_center: Vector2 = child.global_position + Vector2(child.block_width / 2.0, child.block_height / 2.0)
+			var dist := world_pos.distance_to(block_center)
+			if dist < best_dist:
+				best_dist = dist
+				best = child
+	return best
