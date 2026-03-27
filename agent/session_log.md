@@ -60,6 +60,47 @@ Append-only log. Each Claude Code session adds an entry. The agent documents wha
 
 ---
 
+### Session 2026-03-26 — Sprint, charged mechanics, somersault, parallax exterior
+
+**Attempted:** Add sprint, charged jump/drop, somersault animation, zoom slider, parallax exterior through windows, direction flip fix.
+
+**Outcome:** Mixed. Mechanics work well. Exterior required 3 iterations.
+
+**What worked:**
+- Sprint (Shift key), charged jump (hold Space), charged drop (hold S)
+- 8-frame somersault rotation while airborne
+- Power bar above head while charging
+- On-screen zoom slider (1x-4x)
+- Sky gradient shader (daytime→sunset→space by altitude)
+- Star field shader with twinkle + altitude fade-in
+- Manual parallax on plain Node2Ds (after dropping broken ParallaxBackground)
+- Split floor backgrounds to leave window columns transparent
+
+**What failed:**
+- ParallaxBackground node: zoom interaction bugs, buildings drifting, wrong positioning. Scrapped entirely.
+- Character direction flip via scale.x: landing squash tween kept resetting it. Fixed with draw_set_transform().
+- "Flip" terminology mismatch: user meant somersault animation, not directional facing. Multiple iterations wasted.
+- City buildings had no ground plane, looked like floating shapes. Fixed by drawing ground per city layer.
+- Walls made too thick (500px) trying to block parallax bleed. Fixed with camera limits instead.
+
+**Key learnings:**
+- ParallaxBackground is wrong for "interior looking through windows" — use manual Node2D offsets
+- Floor backgrounds must be segmented (skip window columns) so exterior shows through
+- Each parallax city layer needs its own ground plane
+- draw_set_transform() for flip is cleanly decoupled from scale tweens
+- Camera limits are better than thick walls for constraining the view
+- Always clarify terminology with user before iterating ("flip" = somersault, not direction)
+
+**Decisions made:**
+- Manual parallax formula: layer.y = cam_y * (1.0 - depth_factor)
+- Depth factors: sky=0.0, stars=0.05, far_city=0.15, mid_city=0.30, near_city=0.50
+- Window tint at 0.3 alpha with 1px frame edges
+- Zoom levels: 1.0, 1.5, 2.0, 2.5, 3.0 (default 2.0)
+
+**Jared's review:** [pending]
+
+---
+
 ### Session 2026-03-26 — Agent system bootstrap + retrospective
 
 **Attempted:** Read all agent files, assess competency state against actual session outcomes, write first round of updates to all agent files.
