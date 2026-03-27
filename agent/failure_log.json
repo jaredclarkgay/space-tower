@@ -132,6 +132,18 @@
       "resolution_type": "rule",
       "transfer_value": "medium — affects all future shaders",
       "rule_file": "rules/parallax_bg.md"
+    },
+    {
+      "id": "f012",
+      "session": "2026-03-27",
+      "domain": "gdscript_logic",
+      "summary": "State machine overwrite on same frame — CLAIMING immediately reset to IDLE",
+      "detail": "_try_start_claim() set state = CLAIMING and snapped player to block center. But _physics_process continued executing: the horizontal movement section saw velocity.x == 0 + on_floor and set state = IDLE. The claiming state lasted zero frames. Player appeared to snap to block but nothing happened.",
+      "root_cause": "No early return after mid-frame state transition. Later code in the same _physics_process call overwrote the new state.",
+      "resolution": "Added 'if state == CLAIMING: move_and_slide(); return' immediately after _try_start_claim(). State is now protected from downstream overwrites.",
+      "resolution_type": "rule",
+      "transfer_value": "critical — applies to any state machine in _physics_process. Any new state added to a function with movement/idle logic at the bottom is vulnerable to this.",
+      "rule_file": "rules/godot_state_machine.md"
     }
   ]
 }

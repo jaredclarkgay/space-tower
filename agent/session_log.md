@@ -121,3 +121,42 @@ Append-only log. Each Claude Code session adds an entry. The agent documents wha
 - All files updated in this session (competency_map, failure_log, request_queue, rules/godot_2d_character.md, session_log.md)
 
 **Jared's review:** [pending]
+
+---
+
+### Session 2026-03-27 — Hammer claim mechanic, block interaction layer, horizontal parallax
+
+**Attempted:** Implement the core building verb for the 2D sim interior — player hammers blocks to claim them. Also added horizontal parallax and an (E) Engage interaction prompt.
+
+**Outcome:** Success after one critical bug fix. User iterated on animation style and approved final result.
+
+**What worked:**
+- block.gd: per-block interactive node with claim state, border Line2Ds, Area2D interaction, particles
+- 8-strike rapid kneeling hammer animation (user preference over original 4-directional poses)
+- Border perimeter growth across all 8 strikes — user said "love it"
+- Horizontal parallax on city/sky layers using same cam_dx * factor pattern
+- Screen shake + flash + fill on block completion
+- GameState persistence of claim progress (block_claims, block_claim_owners)
+
+**What failed:**
+- State machine overwrite bug (f012): _try_start_claim() set state=CLAIMING, but movement code later in same _physics_process frame reset it to IDLE. Player snapped to block but nothing happened. Fixed with early return.
+- (E) Engage prompt initially invisible — font too small (8px), no shadow, no explicit size/z_index. Fixed by bumping to 10px with shadow and z_index=20.
+- First hammer pose iteration had arm/hammer overlapping torso — user asked for more overhead wind-up and extended downswing. Second iteration approved.
+
+**Decisions made:**
+- 8 rapid strikes at 0.075s each (user asked to double speed from 0.15s) vs original design brief's 4 strikes at 0.45s
+- Kneeling pose with alternating up/down instead of 4 directional poses — user preference
+- Sparks emit from single ground contact point (not 4 different edges)
+- Default builder color: vest orange Color(0.95, 0.45, 0.05) until post-Reckoning color pick
+
+**Uncertainties:**
+- (E) Engage prompt may still not be showing — user reported it missing, fixes applied but not yet confirmed
+- Claim state not yet wired to save_manager.gd — block_claims persist in memory but not to disk
+- Suit tape animation (dashed borders, APPROVED stamp) deferred to Reckoning brief
+
+**Proposed updates:**
+- competency_map: gdscript_logic→medium-high, visual_style→medium, parallax→medium-high, new block_interaction domain
+- failure_log: f012 (state machine overwrite)
+- rules/: new godot_state_machine.md
+
+**Jared's review:** [pending]

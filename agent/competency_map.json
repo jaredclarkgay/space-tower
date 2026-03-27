@@ -1,17 +1,19 @@
 {
-  "version": "1.2",
-  "last_updated": "2026-03-26T12:00:00Z",
+  "version": "1.3",
+  "last_updated": "2026-03-27T10:00:00Z",
   "domains": {
     "gdscript_logic": {
-      "confidence": "medium",
-      "evidence": "Built 4 autoloads, player controller, sprite system, sim scene generator. Hit parse-time autoload resolution and Variant inference warnings but resolved both.",
+      "confidence": "medium-high",
+      "evidence": "Built 4 autoloads, player controller, sprite system, sim scene generator, block interaction system with signals and Area2D detection. State machine integration working after early-return bug fix.",
       "failure_patterns": [
         "Autoload names not resolvable at parse time — use get_node('/root/Name') at runtime",
-        "Unused parameters trigger warnings treated as errors — prefix with underscore"
+        "Unused parameters trigger warnings treated as errors — prefix with underscore",
+        "State machine overwrite: mid-frame state change gets clobbered by later code in same _physics_process — must early-return"
       ],
       "rules_learned": [
         "Autoload load order matters — Constants before GameState before SaveManager",
-        "Type inference from Variant triggers error — use explicit types or avoid := with Variant expressions"
+        "Type inference from Variant triggers error — use explicit types or avoid := with Variant expressions",
+        "Early-return after state transitions in _physics_process — or downstream movement code will overwrite the new state"
       ],
       "needs_from_human": null
     },
@@ -44,8 +46,8 @@
       "needs_from_human": "Side-by-side playtest: browser vs Godot movement. What feels wrong? User said 'not anchored in physics' and 'losing optimism in Godot'."
     },
     "visual_style": {
-      "confidence": "low-medium",
-      "evidence": "Built _draw() construction worker with hardhat, vest, stripes, pants, boots. User validated the look ('fun!') but noted lack of detail at distance and static feel. Flip took 3 attempts to get right. Discrete 4-frame walk cycle accepted over continuous interpolation.",
+      "confidence": "medium",
+      "evidence": "Built _draw() construction worker with hardhat, vest, stripes, pants, boots. User validated the look ('fun!'). Kneeling hammer poses iterated to satisfaction — user asked for more overhead reach and extended arm, both applied successfully. Discrete pose approach confirmed as correct pattern.",
       "failure_patterns": [
         "Sin-wave limb interpolation looks floaty/uncanny — use discrete frame poses like real pixel art",
         "draw_rect() doesn't handle negative width — must mirror x-coordinates explicitly",
@@ -99,8 +101,8 @@
       "needs_from_human": null
     },
     "parallax_exterior": {
-      "confidence": "medium",
-      "evidence": "Failed with ParallaxBackground (3 iterations), succeeded with manual Node2D offsets. Sky/star shaders working. City layers with per-layer ground planes. Floor backgrounds segmented to leave windows transparent.",
+      "confidence": "medium-high",
+      "evidence": "Failed with ParallaxBackground (3 iterations), succeeded with manual Node2D offsets. Sky/star shaders working. City layers with per-layer ground planes. Floor backgrounds segmented to leave windows transparent. Horizontal parallax added — same pattern as vertical, user-approved.",
       "failure_patterns": [
         "ParallaxBackground interacts with zoom — use plain Node2Ds with manual offset",
         "Full-width floor bg blocks parallax through windows — segment bg to skip window columns",
@@ -109,13 +111,27 @@
         "const vec3 outside functions may not compile — declare inside fragment()"
       ],
       "rules_learned": [
-        "Manual parallax: layer.y = cam_y * (1.0 - depth_factor), zoom-independent",
+        "Manual parallax: layer.y = cam_y * (1.0 - depth_factor), layer.x = cam_dx * factor — zoom-independent, works for both axes",
         "canvas_item shaders for sky/stars — pass camera_y as uniform from _process()",
         "City layers fade via modulate.a driven by smoothstep on altitude",
         "Each city _draw() layer draws its own ground rect for visual anchoring",
         "Camera limits (limit_left/right) replace thick walls for view containment"
       ],
       "needs_from_human": "Visual feedback — does the parallax look good? Do altitude transitions feel right? Are buildings positioned naturally?"
+    },
+    "block_interaction": {
+      "confidence": "medium-high",
+      "evidence": "Built full claim system: block.gd with Area2D detection, 8-strike hammer sequence, border Line2D growth, spark/completion particles, screen shake, GameState persistence. Iterative pose tuning workflow validated with user.",
+      "failure_patterns": [
+        "State machine overwrite bug — see f012 and rules/godot_state_machine.md"
+      ],
+      "rules_learned": [
+        "Block nodes replace ColorRects for interactive elements — same visual, but with Area2D and state",
+        "Area2D collision_mask must match player collision_layer for body_entered to fire",
+        "Rapid strike animations (8 x 0.075s) feel more physical than slow directional poses (4 x 0.45s)",
+        "User prefers kneeling single-spot hammering over directional strikes around the block perimeter"
+      ],
+      "needs_from_human": null
     },
     "canvas2d_to_godot_porting": {
       "confidence": "medium",

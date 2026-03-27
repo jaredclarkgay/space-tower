@@ -127,38 +127,29 @@ func _process(delta: float) -> void:
 	# Each layer is a world-space Node2D. To create parallax depth:
 	# layer.position.y = base_y + cam_y * (1.0 - depth_factor)
 	# depth_factor: 0.0 = pinned to screen (sky), 1.0 = foreground (no parallax)
-	var cam_x := camera.position.x
 	var cam_y := camera.position.y
 	var sky_base_y := -float(TOWER_HEIGHT) - 400.0
-	# Horizontal parallax origin — center of the tower
-	var cam_x_center := FLOOR_WIDTH / 2.0
-	var cam_dx := cam_x - cam_x_center
 
-	# Sky — pinned to screen (factor 0.0)
+	# Sky — pinned to screen
 	if _sky_rect:
 		_sky_rect.position.y = sky_base_y + cam_y * 1.0
-		_sky_rect.position.x = -BG_MARGIN + cam_dx * 0.98
 	if _sky_mat:
 		_sky_mat.set_shader_parameter("camera_y", cam_y)
 
-	# Stars — nearly pinned (factor 0.05)
+	# Stars — nearly pinned
 	if _stars_rect:
-		_stars_rect.position.y = sky_base_y + cam_y * 0.95
-		_stars_rect.position.x = -BG_MARGIN + cam_dx * 0.95
+		_stars_rect.position.y = sky_base_y + cam_y * 0.975
 	if _stars_mat:
 		_stars_mat.set_shader_parameter("camera_y", cam_y)
 		_stars_mat.set_shader_parameter("time_val", Time.get_ticks_msec() / 1000.0)
 
-	# City layers — each lags behind camera by different amounts
+	# City layers — halved vertical parallax
 	if _far_city:
-		_far_city.position.y = cam_y * 0.85   # factor 0.15
-		_far_city.position.x = cam_dx * 0.12
+		_far_city.position.y = cam_y * 0.925   # was 0.85
 	if _mid_city:
-		_mid_city.position.y = cam_y * 0.70   # factor 0.30
-		_mid_city.position.x = cam_dx * 0.25
+		_mid_city.position.y = cam_y * 0.85    # was 0.70
 	if _near_city:
-		_near_city.position.y = cam_y * 0.50  # factor 0.50
-		_near_city.position.x = cam_dx * 0.40
+		_near_city.position.y = cam_y * 0.75   # was 0.50
 
 	# Fade city at altitude
 	var alt := clampf(-cam_y / float(TOWER_HEIGHT), 0.0, 1.0)
