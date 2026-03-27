@@ -100,15 +100,22 @@
     },
     "parallax_exterior": {
       "confidence": "medium",
-      "evidence": "Researched and implemented 6-layer parallax system: shader-driven sky gradient + star field, 3 procedural city layers with _draw(), fog band. Altitude-aware fading. Rule file written.",
-      "failure_patterns": [],
+      "evidence": "Failed with ParallaxBackground (3 iterations), succeeded with manual Node2D offsets. Sky/star shaders working. City layers with per-layer ground planes. Floor backgrounds segmented to leave windows transparent.",
+      "failure_patterns": [
+        "ParallaxBackground interacts with zoom — use plain Node2Ds with manual offset",
+        "Full-width floor bg blocks parallax through windows — segment bg to skip window columns",
+        "Single shared ground plane drifts from parallax city layers — each layer needs own ground",
+        "GL Compatibility rejects 'return' in fragment shaders — use multiplicative masking",
+        "const vec3 outside functions may not compile — declare inside fragment()"
+      ],
       "rules_learned": [
-        "ParallaxBackground as direct child of scene root, motion_scale.x = 0 for vertical-only scroll",
+        "Manual parallax: layer.y = cam_y * (1.0 - depth_factor), zoom-independent",
         "canvas_item shaders for sky/stars — pass camera_y as uniform from _process()",
         "City layers fade via modulate.a driven by smoothstep on altitude",
-        "Seeded RNG for deterministic city skylines across sessions"
+        "Each city _draw() layer draws its own ground rect for visual anchoring",
+        "Camera limits (limit_left/right) replace thick walls for view containment"
       ],
-      "needs_from_human": "Visual feedback — does the parallax look good? Do altitude transitions feel right?"
+      "needs_from_human": "Visual feedback — does the parallax look good? Do altitude transitions feel right? Are buildings positioned naturally?"
     },
     "canvas2d_to_godot_porting": {
       "confidence": "medium",

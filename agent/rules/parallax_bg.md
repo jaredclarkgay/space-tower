@@ -1,60 +1,80 @@
 # Rule: Godot 2D Parallax Background Patterns
 
-Extracted from research session 2026-03-26. Applies to the sim interior exterior background.
+Updated 2026-03-26 after failed ParallaxBackground attempt. Manual approach is correct.
 
 ---
 
-## Node Structure
+## DO NOT use ParallaxBackground for interior-through-windows
+
+ParallaxBackground has three fatal problems for this use case:
+1. Zoom changes recalculate offsets, causing buildings to jump
+2. motion_scale is camera-relative, not world-anchored — buildings drift from ground
+3. Cannot confine to window regions — bleeds through all areas at same z_index
+
+## Use manual Node2D offsets instead
+
+Each background layer is a plain Node2D child of an ExteriorBG container. Position is updated every frame in `_process()`.
+
+### Parallax Math
+
+```gdscript
+# depth_factor: 0.0 = pinned to screen (sky), 1.0 = foreground (no parallax)
+# layer.position.y = base_y + cam_y * (1.0 - depth_factor)
+
+var cam_y := camera.position.y
+
+# Sky (factor 0.0) — pinned to screen
+_sky_rect.position.y = sky_base_y + cam_y * 1.0
+
+# Far city (factor 0.15)
+_far_city.position.y = cam_y * 0.85
+
+# Mid city (factor 0.30)
+_mid_city.position.y = cam_y * 0.70
+
+# Near city (factor 0.50)
+_near_city.position.y = cam_y * 0.50
+```
+
+At cam_y = 0 (ground floor), all layers align. As camera goes up (negative), slower layers lag behind. **Zoom does not affect this math** because everything is in world coordinates.
+
+### Scene Structure
 
 ```
 Sim (Node2D)
-└── ExteriorBG (ParallaxBackground)     # direct child of scene root
-    ├── SkyLayer (ParallaxLayer)         # motion_scale (0, 0)
-    │   └── SkyRect (ColorRect)          # shader: sky_gradient.gdshader
-    ├── StarsLayer (ParallaxLayer)       # motion_scale (0, 0.05)
-    │   └── StarsRect (ColorRect)        # shader: star_field.gdshader
-    ├── FarCityLayer (ParallaxLayer)     # motion_scale (0, 0.15)
-    │   └── FarCity (Node2D)             # _draw(): small dark silhouettes
-    ├── FogLayer (ParallaxLayer)         # motion_scale (0, 0.25)
-    │   └── FogRect (ColorRect)          # translucent haze band
-    ├── MidCityLayer (ParallaxLayer)     # motion_scale (0, 0.3)
-    │   └── MidCity (Node2D)             # _draw(): medium buildings + dim windows
-    └── NearCityLayer (ParallaxLayer)    # motion_scale (0, 0.5)
-        └── NearCity (Node2D)            # _draw(): large buildings + bright windows
+  ExteriorBG (Node2D, z_index = -10)
+    SkyRect (ColorRect, z_index = -100)    # shader-driven
+    StarsRect (ColorRect, z_index = -90)   # shader-driven
+    FarCity (Node2D, z_index = -80)        # _draw() buildings + own ground
+    MidCity (Node2D, z_index = -60)        # _draw() buildings + own ground
+    NearCity (Node2D, z_index = -50)       # _draw() buildings + own ground
+  Floor0..9 (StaticBody2D, z_index = 0)    # opaque, blocks parallax
+  Walls (z_index = 0)
+  Player (z_index = 10)
 ```
 
-## Key Rules
+## Floor backgrounds must skip window columns
 
-1. **ParallaxBackground is always a direct child of the scene root**, never nested under floors or player.
+The parallax only shows through transparent gaps. Non-window blocks get opaque background segments. Window columns (3, 7, 11) are left transparent with a light tint overlay.
 
-2. **motion_scale.x = 0 on all layers.** Camera only scrolls vertically. Horizontal look-ahead must not cause parallax drift.
+```gdscript
+# Split bg into segments that skip window columns
+var seg_start := 0
+for bi in range(13):
+    if bi == 12 or _is_win_block(bi):
+        if seg_start < bi:
+            # draw opaque bg from seg_start to bi
+        seg_start = bi + 1
+```
 
-3. **motion_mirroring = Vector2.ZERO.** Content is altitude-specific, not tileable.
+## Each city layer draws its own ground
 
-4. **Shader uniforms for altitude awareness.** Pass `camera_y` from GDScript `_process()` to shader uniforms. Never use `SCREEN_TEXTURE` in GL Compatibility canvas_item shaders.
+Without per-layer ground, buildings appear to float when viewed from upper floors. Each city_layer.gd `_draw()` starts with a ground rect at y=4 extending downward.
 
-5. **Seeded RNG for procedural city content.** Fixed seeds (far=100, mid=200, near=300) so the skyline is deterministic across sessions.
+## Camera limits replace thick walls
 
-6. **`_draw()` for city silhouettes**, ColorRect+shader for sky/stars/fog. Multiple `draw_rect()` calls on the same Node2D are batched into a single draw call.
+Use `camera.limit_left/right/top/bottom` to keep the view inside the tower. Don't make walls hundreds of pixels wide.
 
-7. **City layers fade with altitude** via `modulate.a` driven from script `_process()`. Stars fade in via shader uniform.
+## Altitude-aware shaders
 
-8. **Z-index range: -100 to -50 for background layers.** Floor content at -10 to 0. Player at 10.
-
-9. **Window blocks are translucent** (`Color(0.15, 0.20, 0.30, 0.6)`). Background shows through because it's at lower z_index. No masking needed.
-
-## Altitude Color Palette
-
-| Altitude | Sky Top | Horizon | City | Stars |
-|----------|---------|---------|------|-------|
-| Ground (F0-F2) | #0A0F28 deep navy | #2D1B12 warm amber | Full visibility, yellow windows | Hidden |
-| Mid (F3-F5) | #060A1E darker | #1A1218 fading purple | Far visible, near fading | Appearing (0.0→0.3) |
-| High (F6-F7) | #030618 near black | #0E0818 deep purple | Far barely visible | Bright (0.5→0.8) |
-| Space (F8-F9) | #020410 void | Thin blue line | Gone | Full brightness |
-
-## Performance Notes
-
-- 6 layers is safe for GL Compatibility renderer
-- `canvas_item` shaders are fully supported, avoid `hint_screen_texture`
-- `_draw()` batches multiple rects per Node2D into one draw call
-- Target: under 20 draw calls for full background, 60fps on integrated GPU
+Sky and stars use canvas_item shaders with a `camera_y` uniform passed from `_process()`. No `SCREEN_TEXTURE`, no `return` in fragment functions (GL Compatibility doesn't allow it).

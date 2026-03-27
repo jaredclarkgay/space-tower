@@ -72,6 +72,66 @@
       "resolution_type": "rule",
       "transfer_value": "medium — any dynamic scene content needs explicit z-ordering",
       "rule_file": "rules/godot_2d_character.md"
+    },
+    {
+      "id": "f007",
+      "session": "2026-03-26",
+      "domain": "parallax_exterior",
+      "summary": "ParallaxBackground node broken for interior-through-windows use case",
+      "detail": "Used ParallaxBackground with ParallaxLayer children for city skyline behind tower windows. Buildings rendered in wrong position (outside tower walls), shifted on zoom changes, and drifted from ground plane. Three iterations failed.",
+      "root_cause": "ParallaxBackground motion_scale interacts with camera zoom, creating offset jumps. Layers are camera-relative, not world-anchored. No way to confine parallax to window regions — it renders across entire viewport.",
+      "resolution": "Scrapped ParallaxBackground entirely. Used plain Node2Ds with manual position.y offsets in _process(). Formula: layer.y = cam_y * (1.0 - depth_factor). Zoom-independent.",
+      "resolution_type": "rule",
+      "transfer_value": "critical — any parallax in this project should use manual offsets, never ParallaxBackground",
+      "rule_file": "rules/parallax_bg.md"
+    },
+    {
+      "id": "f008",
+      "session": "2026-03-26",
+      "domain": "parallax_exterior",
+      "summary": "Full-width floor background blocks parallax through windows",
+      "detail": "Floor backgrounds were single ColorRects spanning full 768px width. Even though window blocks had translucent overlays, the opaque background behind them blocked the parallax exterior from showing.",
+      "root_cause": "Z-ordering alone doesn't create masking. The opaque floor bg at z_index 0 blocks the parallax at z_index -50 everywhere, including window columns.",
+      "resolution": "Split floor bg into segments that skip window columns (3, 7, 11). Window columns are left transparent with a light tint overlay.",
+      "resolution_type": "rule",
+      "transfer_value": "high — fundamental to the window-through-parallax architecture",
+      "rule_file": "rules/parallax_bg.md"
+    },
+    {
+      "id": "f009",
+      "session": "2026-03-26",
+      "domain": "parallax_exterior",
+      "summary": "City buildings float without per-layer ground plane",
+      "detail": "A single ground ColorRect was placed at the scene level, but city layers with parallax offset moved buildings away from it. Buildings appeared to float in space when viewed through upper floor windows.",
+      "root_cause": "Ground plane was fixed while city layers moved with parallax. The buildings' bases drifted away from the ground as camera moved up.",
+      "resolution": "Each city_layer.gd _draw() now draws its own ground rect at the building base line. Ground moves with the buildings in parallax, maintaining visual anchoring at all altitudes.",
+      "resolution_type": "rule",
+      "transfer_value": "medium — applies to any multi-layer parallax with a ground plane",
+      "rule_file": "rules/parallax_bg.md"
+    },
+    {
+      "id": "f010",
+      "session": "2026-03-26",
+      "domain": "visual_style",
+      "summary": "Terminology mismatch: 'flip' meant somersault, not direction facing",
+      "detail": "Multiple iterations spent fixing directional facing (scale.x, draw_set_transform) while user was asking for a somersault animation during jumps. User said 'he's not flipping' meaning the character doesn't rotate in the air.",
+      "root_cause": "Assumed 'flip' = face left/right. User meant 'flip' = acrobatic rotation while airborne.",
+      "resolution": "Added 8-frame somersault rotation using draw_set_transform with incremental angle. Clarified with user.",
+      "resolution_type": "rule",
+      "transfer_value": "low — communication lesson, not technical",
+      "rule_file": null
+    },
+    {
+      "id": "f011",
+      "session": "2026-03-26",
+      "domain": "gdscript_logic",
+      "summary": "Shader 'return' not allowed in GL Compatibility fragment function",
+      "detail": "Star field shader used early 'return' to skip non-star pixels. GL Compatibility renderer rejects 'return' in fragment().",
+      "root_cause": "GL Compatibility uses GLES3 subset that doesn't support early return in fragment shaders.",
+      "resolution": "Replaced early returns with multiplicative masking (visible = step() * step() * brightness).",
+      "resolution_type": "rule",
+      "transfer_value": "medium — affects all future shaders",
+      "rule_file": "rules/parallax_bg.md"
     }
   ]
 }
