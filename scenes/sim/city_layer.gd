@@ -49,8 +49,20 @@ func _gen(rng: RandomNumberGenerator, count: int,
 		_buildings.append(building)
 
 func _draw() -> void:
-	# Buildings grow upward from ground (y=4 is floor 0 slab top)
 	var ground_y := 4.0
+
+	# Ground plane at the base of this layer — extends wide and deep
+	var ground_color := Color(0.10, 0.12, 0.07)
+	match _layer_type:
+		"far":
+			ground_color = Color(0.08, 0.10, 0.06)
+		"mid":
+			ground_color = Color(0.10, 0.12, 0.07)
+		"near":
+			ground_color = Color(0.13, 0.15, 0.09)
+	draw_rect(Rect2(-300, ground_y, 1400, 500), ground_color)
+
+	# Buildings grow upward from ground
 	for b: Dictionary in _buildings:
 		draw_rect(Rect2(b.x, ground_y - b.h, b.w, b.h), b.color)
 		for w: Dictionary in b.windows:

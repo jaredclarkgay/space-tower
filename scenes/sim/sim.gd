@@ -11,39 +11,29 @@ const FLOOR_HEIGHT := 96
 const SLAB_HEIGHT := 4
 const NUM_FLOORS := 10
 const WALL_THICKNESS := 8
-
-# Tower total height
 const TOWER_HEIGHT := NUM_FLOORS * FLOOR_HEIGHT
+const BG_MARGIN := 300.0
 
-# Muted per-floor background fills
+# Per-floor background fills (opaque — blocks parallax in non-window areas)
 const FLOOR_BG_COLORS := [
-	Color(0.10, 0.10, 0.14),  # Lobby
-	Color(0.09, 0.10, 0.14),  # Quarters
-	Color(0.08, 0.12, 0.09),  # Garden
-	Color(0.09, 0.09, 0.14),  # Research
-	Color(0.13, 0.09, 0.08),  # Restaurant
-	Color(0.10, 0.09, 0.13),  # Lounge
-	Color(0.08, 0.10, 0.14),  # Observation
-	Color(0.10, 0.09, 0.09),  # Storage
-	Color(0.12, 0.09, 0.10),  # Medical
-	Color(0.12, 0.11, 0.08),  # Command
+	Color(0.10, 0.10, 0.14), Color(0.09, 0.10, 0.14),
+	Color(0.08, 0.12, 0.09), Color(0.09, 0.09, 0.14),
+	Color(0.13, 0.09, 0.08), Color(0.10, 0.09, 0.13),
+	Color(0.08, 0.10, 0.14), Color(0.10, 0.09, 0.09),
+	Color(0.12, 0.09, 0.10), Color(0.12, 0.11, 0.08),
 ]
 
 const FLOOR_SLAB_COLORS := [
-	Color(0.45, 0.45, 0.50),  # Lobby
-	Color(0.40, 0.45, 0.50),  # Quarters
-	Color(0.35, 0.48, 0.35),  # Garden
-	Color(0.38, 0.40, 0.52),  # Research
-	Color(0.50, 0.38, 0.32),  # Restaurant
-	Color(0.45, 0.40, 0.50),  # Lounge
-	Color(0.35, 0.45, 0.52),  # Observation
-	Color(0.42, 0.40, 0.38),  # Storage
-	Color(0.50, 0.42, 0.42),  # Medical
-	Color(0.48, 0.45, 0.32),  # Command
+	Color(0.45, 0.45, 0.50), Color(0.40, 0.45, 0.50),
+	Color(0.35, 0.48, 0.35), Color(0.38, 0.40, 0.52),
+	Color(0.50, 0.38, 0.32), Color(0.45, 0.40, 0.50),
+	Color(0.35, 0.45, 0.52), Color(0.42, 0.40, 0.38),
+	Color(0.50, 0.42, 0.42), Color(0.48, 0.45, 0.32),
 ]
 
 const C_WALL := Color(0.22, 0.22, 0.26)
-const C_WINDOW := Color(0.15, 0.20, 0.30, 0.6)
+const C_WINDOW := Color(0.12, 0.18, 0.28, 0.3)  # light tint, mostly transparent
+const C_WIN_FRAME := Color(0.25, 0.25, 0.30, 0.5)
 const C_ELEVATOR := Color(0.18, 0.18, 0.22)
 const C_BLOCK_LINE := Color(1, 1, 1, 0.04)
 const C_LABEL := Color(0.6, 0.65, 0.6, 0.5)
@@ -52,17 +42,18 @@ const C_LABEL := Color(0.6, 0.65, 0.6, 0.5)
 const CAM_LERP := 8.0
 const CAM_LOOK_AHEAD := 40.0
 
-const BG_MARGIN := 300.0
-
-# Zoom levels
+# Zoom
 const ZOOM_LEVELS := [1.0, 1.5, 2.0, 2.5, 3.0]
-var _zoom_index := 2  # start at 2.0x
+var _zoom_index := 2
 
 @onready var player: CharacterBody2D = $Player2D
 @onready var camera: Camera2D = $Camera2D
 @onready var zoom_slider: HSlider = $UI/ZoomSlider
 @onready var zoom_label: Label = $UI/ZoomLabel
 
+# Exterior layers (plain Node2Ds — manual parallax)
+var _sky_rect: ColorRect
+var _stars_rect: ColorRect
 var _sky_mat: ShaderMaterial
 var _stars_mat: ShaderMaterial
 var _far_city: Node2D
@@ -70,19 +61,16 @@ var _mid_city: Node2D
 var _near_city: Node2D
 
 func _ready() -> void:
-	_build_parallax_bg()
+	_build_exterior_bg()
 	_build_tower()
 	_build_walls()
-	# Camera limits — keep view inside the tower
 	camera.limit_left = -20
 	camera.limit_right = FLOOR_WIDTH + 20
 	camera.limit_bottom = 100
 	camera.limit_top = -TOWER_HEIGHT - 100
-	# Connect zoom slider
 	zoom_slider.value_changed.connect(_on_zoom_changed)
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Zoom with scroll wheel or +/- keys
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed:
@@ -116,7 +104,6 @@ func _apply_zoom() -> void:
 func _on_zoom_changed(value: float) -> void:
 	camera.zoom = Vector2(value, value)
 	zoom_label.text = "%.1fx" % value
-	# Sync the index for +/- keys
 	var closest := 0
 	for i in range(ZOOM_LEVELS.size()):
 		if absf(ZOOM_LEVELS[i] - value) < absf(ZOOM_LEVELS[closest] - value):
@@ -124,22 +111,42 @@ func _on_zoom_changed(value: float) -> void:
 	_zoom_index = closest
 
 func _process(delta: float) -> void:
-	# Smooth camera follow with look-ahead
+	# Camera follow
 	var look_ahead := CAM_LOOK_AHEAD if player.facing_right else -CAM_LOOK_AHEAD
 	var target_x := player.position.x + look_ahead
 	var target_y := player.position.y - 48.0
 	camera.position.x = lerpf(camera.position.x, target_x, CAM_LERP * delta)
 	camera.position.y = lerpf(camera.position.y, target_y, CAM_LERP * delta)
 
-	# Update shader uniforms with camera altitude
+	# --- Manual parallax ---
+	# Each layer is a world-space Node2D. To create parallax depth:
+	# layer.position.y = base_y + cam_y * (1.0 - depth_factor)
+	# depth_factor: 0.0 = pinned to screen (sky), 1.0 = foreground (no parallax)
 	var cam_y := camera.position.y
+	var sky_base_y := -float(TOWER_HEIGHT) - 400.0
+
+	# Sky — pinned to screen (factor 0.0)
+	if _sky_rect:
+		_sky_rect.position.y = sky_base_y + cam_y * 1.0
 	if _sky_mat:
 		_sky_mat.set_shader_parameter("camera_y", cam_y)
+
+	# Stars — nearly pinned (factor 0.05)
+	if _stars_rect:
+		_stars_rect.position.y = sky_base_y + cam_y * 0.95
 	if _stars_mat:
 		_stars_mat.set_shader_parameter("camera_y", cam_y)
 		_stars_mat.set_shader_parameter("time_val", Time.get_ticks_msec() / 1000.0)
 
-	# Fade city layers at altitude
+	# City layers — each lags behind camera by different amounts
+	if _far_city:
+		_far_city.position.y = cam_y * 0.85   # factor 0.15
+	if _mid_city:
+		_mid_city.position.y = cam_y * 0.70   # factor 0.30
+	if _near_city:
+		_near_city.position.y = cam_y * 0.50  # factor 0.50
+
+	# Fade city at altitude
 	var alt := clampf(-cam_y / float(TOWER_HEIGHT), 0.0, 1.0)
 	if _far_city:
 		_far_city.modulate.a = 1.0 - _smoothstep(0.55, 0.75, alt)
@@ -152,52 +159,160 @@ func _smoothstep(edge0: float, edge1: float, x: float) -> float:
 	var t := clampf((x - edge0) / (edge1 - edge0), 0.0, 1.0)
 	return t * t * (3.0 - 2.0 * t)
 
+# ── Exterior background (plain Node2Ds, no ParallaxBackground) ──
+
+func _build_exterior_bg() -> void:
+	var ext := Node2D.new()
+	ext.name = "ExteriorBG"
+	ext.z_index = -10
+	add_child(ext)
+	move_child(ext, 0)
+
+	var full_w := FLOOR_WIDTH + BG_MARGIN * 2.0
+	var full_h := float(TOWER_HEIGHT) + 800.0
+	var ox := -BG_MARGIN
+	var oy := -float(TOWER_HEIGHT) - 400.0
+
+	# Sky
+	_sky_rect = ColorRect.new()
+	_sky_rect.z_index = -100
+	_sky_rect.position = Vector2(ox, oy)
+	_sky_rect.size = Vector2(full_w, full_h)
+	var sky_shader: Shader = load("res://assets/shaders/sky_gradient.gdshader")
+	if sky_shader:
+		_sky_mat = ShaderMaterial.new()
+		_sky_mat.shader = sky_shader
+		_sky_rect.material = _sky_mat
+	ext.add_child(_sky_rect)
+
+	# Stars
+	_stars_rect = ColorRect.new()
+	_stars_rect.z_index = -90
+	_stars_rect.position = Vector2(ox, oy)
+	_stars_rect.size = Vector2(full_w, full_h)
+	var stars_shader: Shader = load("res://assets/shaders/star_field.gdshader")
+	if stars_shader:
+		_stars_mat = ShaderMaterial.new()
+		_stars_mat.shader = stars_shader
+		_stars_rect.material = _stars_mat
+	ext.add_child(_stars_rect)
+
+	# City layers
+	var city_script: GDScript = load("res://scenes/sim/city_layer.gd")
+
+	_far_city = Node2D.new()
+	_far_city.z_index = -80
+	_far_city.set_script(city_script)
+	ext.add_child(_far_city)
+	_far_city.configure("far", 100)
+
+	# Fog
+	var fog := ColorRect.new()
+	fog.z_index = -70
+	fog.position = Vector2(ox, -80)
+	fog.size = Vector2(full_w, 160)
+	fog.color = Color(0.1, 0.08, 0.06, 0.12)
+	ext.add_child(fog)
+
+	_mid_city = Node2D.new()
+	_mid_city.z_index = -60
+	_mid_city.set_script(city_script)
+	ext.add_child(_mid_city)
+	_mid_city.configure("mid", 200)
+
+	_near_city = Node2D.new()
+	_near_city.z_index = -50
+	_near_city.set_script(city_script)
+	ext.add_child(_near_city)
+	_near_city.configure("near", 300)
+
+	# Ground — in front of all city layers, anchors everything visually
+	var ground := ColorRect.new()
+	ground.name = "Ground"
+	ground.z_index = -45  # in front of all city layers (-50 to -80)
+	ground.position = Vector2(ox, 4)  # starts at floor 0 slab
+	ground.size = Vector2(full_w, 500)
+	ground.color = Color(0.12, 0.14, 0.08)
+	ext.add_child(ground)
+
+	# Grass/dirt line at ground level for definition
+	var grass := ColorRect.new()
+	grass.z_index = -44
+	grass.position = Vector2(ox, 2)
+	grass.size = Vector2(full_w, 4)
+	grass.color = Color(0.18, 0.22, 0.10)
+	ext.add_child(grass)
+
+	# Sidewalk/pavement strip right at tower base
+	var pavement := ColorRect.new()
+	pavement.z_index = -44
+	pavement.position = Vector2(ox, 4)
+	pavement.size = Vector2(full_w, 12)
+	pavement.color = Color(0.18, 0.18, 0.20)
+	ext.add_child(pavement)
+
+# ── Tower floors ──
+
 func _build_tower() -> void:
 	for i in range(NUM_FLOORS):
-		var floor_y := -i * FLOOR_HEIGHT
-		_build_floor(i, floor_y)
+		_build_floor(i, -i * FLOOR_HEIGHT)
 
 func _build_floor(index: int, y: float) -> void:
 	var floor_node := StaticBody2D.new()
 	floor_node.name = "Floor%d" % index
 	floor_node.position = Vector2(0, y)
+	floor_node.z_index = 0  # in front of exterior
 	floor_node.collision_layer = 2
 	floor_node.collision_mask = 0
 
-	# Floor background fill (between this slab and the one above)
-	var bg := ColorRect.new()
-	bg.position = Vector2(0, -FLOOR_HEIGHT + SLAB_HEIGHT)
-	bg.size = Vector2(FLOOR_WIDTH, FLOOR_HEIGHT - SLAB_HEIGHT)
-	bg.color = FLOOR_BG_COLORS[index]
-	floor_node.add_child(bg)
+	var block_top := -FLOOR_HEIGHT + SLAB_HEIGHT
 
-	# Block grid
+	# Floor background — segmented, SKIPPING window columns so parallax shows through
+	var seg_start := 0
+	for bi in range(13):  # 0-12 (12 = past end, to close final segment)
+		if bi == 12 or _is_win_block(bi):
+			if seg_start < bi:
+				var bg := ColorRect.new()
+				bg.position = Vector2(seg_start * BLOCK_WIDTH, block_top)
+				bg.size = Vector2((bi - seg_start) * BLOCK_WIDTH, FLOOR_HEIGHT - SLAB_HEIGHT)
+				bg.color = FLOOR_BG_COLORS[index]
+				floor_node.add_child(bg)
+			seg_start = bi + 1
+
+	# Block details
 	for bi in range(12):
 		var bx := bi * BLOCK_WIDTH
-		var block_top := -FLOOR_HEIGHT + SLAB_HEIGHT
 
 		if _is_win_block(bi):
-			# Window blocks — lighter, translucent
+			# Window — light tint over transparent gap (parallax shows through)
 			var win := ColorRect.new()
 			win.position = Vector2(bx, block_top)
 			win.size = Vector2(BLOCK_WIDTH, FLOOR_HEIGHT - SLAB_HEIGHT)
 			win.color = C_WINDOW
 			floor_node.add_child(win)
+			# Window frame edges
+			var fl := ColorRect.new()
+			fl.position = Vector2(bx, block_top)
+			fl.size = Vector2(1, FLOOR_HEIGHT - SLAB_HEIGHT)
+			fl.color = C_WIN_FRAME
+			floor_node.add_child(fl)
+			var fr := ColorRect.new()
+			fr.position = Vector2(bx + BLOCK_WIDTH - 1, block_top)
+			fr.size = Vector2(1, FLOOR_HEIGHT - SLAB_HEIGHT)
+			fr.color = C_WIN_FRAME
+			floor_node.add_child(fr)
 		elif _is_elev_block(bi):
-			# Elevator shaft — dark column
 			var shaft := ColorRect.new()
 			shaft.position = Vector2(bx, block_top)
 			shaft.size = Vector2(BLOCK_WIDTH, FLOOR_HEIGHT - SLAB_HEIGHT)
 			shaft.color = C_ELEVATOR
 			floor_node.add_child(shaft)
-			# Elevator door lines
 			var door_line := ColorRect.new()
 			door_line.position = Vector2(bx + BLOCK_WIDTH / 2.0 - 1, block_top + 10)
 			door_line.size = Vector2(2, FLOOR_HEIGHT - SLAB_HEIGHT - 14)
 			door_line.color = Color(0.3, 0.3, 0.35, 0.5)
 			floor_node.add_child(door_line)
 
-		# Subtle grid lines between blocks
 		if bi > 0:
 			var grid_line := ColorRect.new()
 			grid_line.position = Vector2(bx, block_top)
@@ -205,14 +320,14 @@ func _build_floor(index: int, y: float) -> void:
 			grid_line.color = C_BLOCK_LINE
 			floor_node.add_child(grid_line)
 
-	# Slab
+	# Slab — fully opaque
 	var slab := ColorRect.new()
 	slab.position = Vector2(0, 0)
 	slab.size = Vector2(FLOOR_WIDTH, SLAB_HEIGHT)
 	slab.color = FLOOR_SLAB_COLORS[index]
 	floor_node.add_child(slab)
 
-	# Collision — floor 0 is solid (no falling through), rest are one-way
+	# Collision
 	var shape := RectangleShape2D.new()
 	shape.size = Vector2(FLOOR_WIDTH, SLAB_HEIGHT)
 	var col := CollisionShape2D.new()
@@ -222,162 +337,48 @@ func _build_floor(index: int, y: float) -> void:
 		col.one_way_collision = true
 	floor_node.add_child(col)
 
-	# Floor label — bottom-left of the room area
+	# Label
 	var label := Label.new()
 	label.text = "F%d  %s" % [index + 1, FLOOR_NAMES[index]]
-	label.position = Vector2(6, -FLOOR_HEIGHT + SLAB_HEIGHT + 2)
+	label.position = Vector2(6, block_top + 2)
 	label.add_theme_font_size_override("font_size", 8)
 	label.add_theme_color_override("font_color", C_LABEL)
 	floor_node.add_child(label)
 
 	add_child(floor_node)
 
+# ── Walls ──
+
 func _build_walls() -> void:
 	var wall_h := float(TOWER_HEIGHT) + 400.0
 	var wall_top := -float(TOWER_HEIGHT) - 150.0
 
-	# Left wall
-	var left_wall := StaticBody2D.new()
-	left_wall.name = "WallLeft"
-	left_wall.collision_layer = 4
-	left_wall.collision_mask = 0
-	var left_shape := RectangleShape2D.new()
-	left_shape.size = Vector2(WALL_THICKNESS, wall_h)
-	var left_col := CollisionShape2D.new()
-	left_col.position = Vector2(-WALL_THICKNESS / 2.0, wall_top + wall_h / 2.0)
-	left_col.shape = left_shape
-	left_wall.add_child(left_col)
-	var left_rect := ColorRect.new()
-	left_rect.position = Vector2(-WALL_THICKNESS, wall_top)
-	left_rect.size = Vector2(WALL_THICKNESS, wall_h)
-	left_rect.color = C_WALL
-	left_wall.add_child(left_rect)
-	add_child(left_wall)
+	for side in ["left", "right"]:
+		var wall := StaticBody2D.new()
+		wall.name = "Wall" + side.capitalize()
+		wall.collision_layer = 4
+		wall.collision_mask = 0
+		wall.z_index = 0
 
-	# Right wall
-	var right_wall := StaticBody2D.new()
-	right_wall.name = "WallRight"
-	right_wall.collision_layer = 4
-	right_wall.collision_mask = 0
-	var right_shape := RectangleShape2D.new()
-	right_shape.size = Vector2(WALL_THICKNESS, wall_h)
-	var right_col := CollisionShape2D.new()
-	right_col.position = Vector2(FLOOR_WIDTH + WALL_THICKNESS / 2.0, wall_top + wall_h / 2.0)
-	right_col.shape = right_shape
-	right_wall.add_child(right_col)
-	var right_rect := ColorRect.new()
-	right_rect.position = Vector2(FLOOR_WIDTH, wall_top)
-	right_rect.size = Vector2(WALL_THICKNESS, wall_h)
-	right_rect.color = C_WALL
-	right_wall.add_child(right_rect)
-	add_child(right_wall)
+		var shape := RectangleShape2D.new()
+		shape.size = Vector2(WALL_THICKNESS, wall_h)
+		var col := CollisionShape2D.new()
+		col.shape = shape
 
-func _build_parallax_bg() -> void:
-	var pbg := ParallaxBackground.new()
-	pbg.name = "ExteriorBG"
-	add_child(pbg)
-	# Move to front of child list so it's behind everything
-	move_child(pbg, 0)
+		var rect := ColorRect.new()
+		rect.size = Vector2(WALL_THICKNESS, wall_h)
+		rect.color = C_WALL
 
-	var full_w := FLOOR_WIDTH + BG_MARGIN * 2.0
-	var full_h := float(TOWER_HEIGHT) + 800.0
-	var origin_x := -BG_MARGIN
-	var origin_y := -float(TOWER_HEIGHT) - 400.0
+		if side == "left":
+			col.position = Vector2(-WALL_THICKNESS / 2.0, wall_top + wall_h / 2.0)
+			rect.position = Vector2(-WALL_THICKNESS, wall_top)
+		else:
+			col.position = Vector2(FLOOR_WIDTH + WALL_THICKNESS / 2.0, wall_top + wall_h / 2.0)
+			rect.position = Vector2(FLOOR_WIDTH, wall_top)
 
-	# --- Sky layer (fixed, shader-driven) ---
-	var sky_layer := ParallaxLayer.new()
-	sky_layer.motion_scale = Vector2.ZERO
-	pbg.add_child(sky_layer)
-
-	var sky_rect := ColorRect.new()
-	sky_rect.z_index = -100
-	sky_rect.position = Vector2(origin_x, origin_y)
-	sky_rect.size = Vector2(full_w, full_h)
-	var sky_shader: Shader = load("res://assets/shaders/sky_gradient.gdshader")
-	if sky_shader:
-		_sky_mat = ShaderMaterial.new()
-		_sky_mat.shader = sky_shader
-		sky_rect.material = _sky_mat
-	else:
-		sky_rect.color = Color(0.04, 0.06, 0.15)
-	sky_layer.add_child(sky_rect)
-
-	# --- Stars layer (nearly fixed, shader-driven) ---
-	var stars_layer := ParallaxLayer.new()
-	stars_layer.motion_scale = Vector2(0.0, 0.05)
-	pbg.add_child(stars_layer)
-
-	var stars_rect := ColorRect.new()
-	stars_rect.z_index = -90
-	stars_rect.position = Vector2(origin_x, origin_y)
-	stars_rect.size = Vector2(full_w, full_h)
-	var stars_shader: Shader = load("res://assets/shaders/star_field.gdshader")
-	if stars_shader:
-		_stars_mat = ShaderMaterial.new()
-		_stars_mat.shader = stars_shader
-		stars_rect.material = _stars_mat
-	else:
-		stars_rect.color = Color(0, 0, 0, 0)
-	stars_layer.add_child(stars_rect)
-
-	# --- Far city layer ---
-	var far_layer := ParallaxLayer.new()
-	far_layer.motion_scale = Vector2(0.0, 0.15)
-	pbg.add_child(far_layer)
-
-	var city_layer_script: GDScript = load("res://scenes/sim/city_layer.gd")
-
-	_far_city = Node2D.new()
-	_far_city.z_index = -80
-	_far_city.set_script(city_layer_script)
-	far_layer.add_child(_far_city)
-	_far_city.configure("far", 100)
-
-	# --- Fog layer ---
-	var fog_layer := ParallaxLayer.new()
-	fog_layer.motion_scale = Vector2(0.0, 0.25)
-	pbg.add_child(fog_layer)
-
-	var fog_rect := ColorRect.new()
-	fog_rect.z_index = -70
-	fog_rect.position = Vector2(origin_x, -80)
-	fog_rect.size = Vector2(full_w, 160)
-	fog_rect.color = Color(0.1, 0.08, 0.06, 0.12)
-	fog_layer.add_child(fog_rect)
-
-	# --- Mid city layer ---
-	var mid_layer := ParallaxLayer.new()
-	mid_layer.motion_scale = Vector2(0.0, 0.3)
-	pbg.add_child(mid_layer)
-
-	_mid_city = Node2D.new()
-	_mid_city.z_index = -60
-	_mid_city.set_script(city_layer_script)
-	mid_layer.add_child(_mid_city)
-	_mid_city.configure("mid", 200)
-
-	# --- Near city layer ---
-	var near_layer := ParallaxLayer.new()
-	near_layer.motion_scale = Vector2(0.0, 0.5)
-	pbg.add_child(near_layer)
-
-	_near_city = Node2D.new()
-	_near_city.z_index = -50
-	_near_city.set_script(city_layer_script)
-	near_layer.add_child(_near_city)
-	_near_city.configure("near", 300)
-
-	# --- Ground plane (fixed, below floor 0) ---
-	var ground_layer := ParallaxLayer.new()
-	ground_layer.motion_scale = Vector2.ZERO
-	pbg.add_child(ground_layer)
-
-	var ground := ColorRect.new()
-	ground.z_index = -55
-	ground.position = Vector2(origin_x, 4)  # starts at floor 0 slab
-	ground.size = Vector2(full_w, 400)
-	ground.color = Color(0.08, 0.10, 0.06)
-	ground_layer.add_child(ground)
+		wall.add_child(col)
+		wall.add_child(rect)
+		add_child(wall)
 
 func _is_win_block(bi: int) -> bool:
 	return bi in [3, 7, 11]
