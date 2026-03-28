@@ -160,3 +160,37 @@ Append-only log. Each Claude Code session adds an entry. The agent documents wha
 - rules/: new godot_state_machine.md
 
 **Jared's review:** [pending]
+
+---
+
+### Session 2026-03-27 (continued) — Segment 1 two-movement system, tower overhaul
+
+**Attempted:** Implement full Segment 1 architecture: breaker panel activation system, NPC population with factions, tower widening, stairs, physics tuning, pixel art rendering fixes, dialogue overhaul.
+
+**Outcome:** All systems functional. Multiple iteration rounds on parallax (removed), physics, visuals.
+
+**What worked:**
+- Breaker panels: industrial look, lever animation, ceiling lights sequencing, sparks
+- NPC system: builders/suits with patrol, speech bubbles, faction-weighted placement, Gene
+- Tower widened to 2160px, blocks 2:1 ratio
+- Zigzag stairs with landings, railings, floor numbers
+- Sub-pixel jitter fix (position.round())
+- Dialogue rewrite with personality and humor
+- Player neon-yellow vest for visual distinction
+- Reckoning trigger via Floor 8 cascade stutter → blackout
+- Block claiming_enabled gate for two-movement structure
+
+**What failed:**
+- Parallax: 4 tuning iterations, always "odd" — removed entirely (f017)
+- Type inference := on Variant (f013), call_deferred timing (f014)
+- NPC spawn outside slab bounds (f016)
+- Jump tuned through 3 values: -300 → -470 → -425
+- Walk 4-frame cycle caused vibrating — simplified to 2-frame
+
+**Proposed updates:**
+- competency_map v1.4: new domains (npc_system, floor_activation, tower_architecture)
+- failure_log: f013-f017
+- rules/: new godot_pixel_art.md
+- request_queue: r001 resolved, r006 needs complete rethink
+
+**Jared's review:** [pending]

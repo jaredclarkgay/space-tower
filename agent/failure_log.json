@@ -144,6 +144,66 @@
       "resolution_type": "rule",
       "transfer_value": "critical — applies to any state machine in _physics_process. Any new state added to a function with movement/idle logic at the bottom is vulnerable to this.",
       "rule_file": "rules/godot_state_machine.md"
+    },
+    {
+      "id": "f013",
+      "session": "2026-03-27",
+      "domain": "gdscript_logic",
+      "summary": "Type inference fails on Variant expressions — := not allowed",
+      "detail": "Lines like 'var orig := target.color' and 'var is_contested := fi in gs.CONTESTED_FLOORS' fail with 'Cannot infer the type of variable because the value doesn't have a set type.' The right-hand side returns Variant, not a concrete type.",
+      "root_cause": "GDScript's := operator requires compile-time type inference. Properties accessed through untyped Node references return Variant.",
+      "resolution": "Use explicit type annotations: 'var orig: Color = target.color', 'var is_contested: bool = fi in gs.CONTESTED_FLOORS'.",
+      "resolution_type": "rule",
+      "transfer_value": "high — hits any code that reads properties from dynamically-typed nodes",
+      "rule_file": "rules/godot_2d_character.md"
+    },
+    {
+      "id": "f014",
+      "session": "2026-03-27",
+      "domain": "godot_scene_structure",
+      "summary": "add_child() fails during parent's _ready() — node busy setting up children",
+      "detail": "breaker_panel._ready() called _build_ceiling_lights() which added children to get_parent() (the floor node). But the floor node was still in _build_floor() adding its own children. Error: 'Parent node is busy setting up children, add_child() failed.'",
+      "root_cause": "_ready() fires when a node enters the tree, but the parent may still be in the middle of its own add_child() calls from _build_floor().",
+      "resolution": "Use call_deferred('_build_ceiling_lights') to delay until the parent finishes its setup.",
+      "resolution_type": "rule",
+      "transfer_value": "high — any node that modifies its parent during _ready() will hit this",
+      "rule_file": "rules/godot_2d_character.md"
+    },
+    {
+      "id": "f015",
+      "session": "2026-03-27",
+      "domain": "visual_style",
+      "summary": "Sub-pixel positioning causes character to vibrate/shimmer",
+      "detail": "Player character appeared to vibrate while moving or standing still. At 2x camera zoom, fractional pixel positions (e.g. 683.4, -191.7) straddle screen pixels, creating visible shimmer on pixel art.",
+      "root_cause": "move_and_slide() produces fractional positions. Camera lerp also produces fractional positions. At integer zoom levels, fractional world positions create sub-pixel rendering artifacts.",
+      "resolution": "position = position.round() after every move_and_slide() call. roundf() on camera lerp output. Also: sprite queue_redraw() in _physics_process not _process to sync with physics tick.",
+      "resolution_type": "rule",
+      "transfer_value": "critical — affects ALL pixel art games in Godot. Must be applied to every CharacterBody2D.",
+      "rule_file": "rules/godot_pixel_art.md"
+    },
+    {
+      "id": "f016",
+      "session": "2026-03-27",
+      "domain": "godot_scene_structure",
+      "summary": "NPCs spawned outside floor slab fall through the world",
+      "detail": "NPCs spawned at x=-20 (outside left wall) as a 'walking in from entrance' effect. But the floor slab collision only extends from x=0 to x=FLOOR_WIDTH. NPCs outside that range had no floor to stand on and fell.",
+      "root_cause": "Floor slab CollisionShape2D has finite width. Spawning entities outside it means they have no surface to collide with.",
+      "resolution": "Spawn NPCs at x=10 (just inside the tower edge) instead of x=-20. They appear at the entrance rather than outside it.",
+      "resolution_type": "rule",
+      "transfer_value": "medium — any entity spawned must be within the collision bounds of the surface it should stand on",
+      "rule_file": null
+    },
+    {
+      "id": "f017",
+      "session": "2026-03-27",
+      "domain": "parallax_exterior",
+      "summary": "Parallax repeatedly described as 'odd' despite multiple tuning passes",
+      "detail": "Four iterations of parallax tuning (original factors, halved, near-zero, pinned to viewport). User consistently found it 'odd' or 'too crazy.' Even with factors as small as 0.02, the effect looked unnatural through the tower windows. Final decision: remove parallax entirely.",
+      "root_cause": "The interior-through-windows use case makes parallax feel wrong at any factor. The window frames create a reference grid that amplifies even tiny movement. Parallax works for open side-scrollers, not for peering through fixed openings.",
+      "resolution": "Removed all position-based parallax. Only altitude-based fade (modulate.a) remains. Revisit later with a completely different approach if needed.",
+      "resolution_type": "rule",
+      "transfer_value": "high — do not attempt position-based parallax through windows. Use opacity/color shifts for depth instead.",
+      "rule_file": "rules/parallax_bg.md"
     }
   ]
 }

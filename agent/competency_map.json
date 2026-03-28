@@ -1,151 +1,186 @@
 {
-  "version": "1.3",
-  "last_updated": "2026-03-27T10:00:00Z",
+  "version": "1.4",
+  "last_updated": "2026-03-27T20:30:00Z",
   "domains": {
     "gdscript_logic": {
-      "confidence": "medium-high",
-      "evidence": "Built 4 autoloads, player controller, sprite system, sim scene generator, block interaction system with signals and Area2D detection. State machine integration working after early-return bug fix.",
+      "confidence": "high",
+      "evidence": "Built autoloads, player controller, sprite system, sim scene generator, block interaction, breaker panels, NPC system with faction AI and dialogue. Multiple state machine integrations. Complex signal wiring across systems.",
       "failure_patterns": [
         "Autoload names not resolvable at parse time — use get_node('/root/Name') at runtime",
-        "Unused parameters trigger warnings treated as errors — prefix with underscore",
-        "State machine overwrite: mid-frame state change gets clobbered by later code in same _physics_process — must early-return"
+        "Unused parameters trigger warnings — prefix with underscore",
+        "State machine overwrite: mid-frame state change gets clobbered — must early-return",
+        ":= fails on Variant expressions — use explicit type: 'var x: Type = expr'",
+        "add_child() during parent _ready() fails — use call_deferred()"
       ],
       "rules_learned": [
         "Autoload load order matters — Constants before GameState before SaveManager",
         "Type inference from Variant triggers error — use explicit types or avoid := with Variant expressions",
-        "Early-return after state transitions in _physics_process — or downstream movement code will overwrite the new state"
+        "Early-return after state transitions in _physics_process",
+        "call_deferred() for any child modification of parent during _ready()"
       ],
       "needs_from_human": null
     },
     "godot_scene_structure": {
-      "confidence": "medium",
-      "evidence": "Built working sim scene tree: Sim (Node2D) > generated StaticBody2D floors + Player2D (CharacterBody2D) > Sprite (Node2D) + CollisionShape2D. Camera2D as sibling to player, not child.",
+      "confidence": "high",
+      "evidence": "Built multi-system sim: 10 floors with block nodes, breaker panels, ceiling lights, stairs, NPCs as CharacterBody2D children. Collision layers: 1=player, 2=floors, 4=walls, 8=ground. Signal wiring between breaker→sim→NPC spawner→GameState.",
       "failure_patterns": [
-        "Camera2D as child of player gets flipped/rotated with visual transforms — keep as sibling"
+        "Camera2D as child of player gets flipped/rotated — keep as sibling",
+        "Nodes added to parent during its _ready() — defer the call",
+        "CharacterBody2D NPCs need their own CollisionShape2D for floor collision",
+        "Entities spawned outside floor slab bounds fall through the world"
       ],
       "rules_learned": [
-        "Separate physics body from visual node — CharacterBody2D owns collision, child Node2D owns drawing",
-        "Use z_index on visual nodes to layer above dynamically-added floor backgrounds",
-        "Generate floor nodes in _ready() rather than hand-placing in .tscn for 10+ floors"
+        "Separate physics body from visual node",
+        "z_index for render layering in dynamically-built scenes",
+        "Generate floor nodes in _ready() for 10+ floors",
+        "Separate collision layer (8) for ground floor — survives drop mask toggle",
+        "Zigzag stairs: two half-flights + landing per floor, one-way collision on each step"
       ],
-      "needs_from_human": "Still want confirmation on preferred structure for modules/NPCs within floors"
+      "needs_from_human": null
     },
     "physics_feel": {
-      "confidence": "low-medium",
-      "evidence": "Basic movement works: run, jump, gravity, drop-through. User flagged floatiness — fixed with instant stop. Jump height required manual calc (v²/2g) to clear floor spacing. Landing squash tween adds weight. Still missing wall slide, wall jump, charged jump, sprint.",
+      "confidence": "medium",
+      "evidence": "Sprint, charged jump/drop, somersault with charge-dependent flips all working. Jump tuned through multiple iterations: JUMP_MIN=-425 (barely clears 96px floor). Drop MIN_TIME=0.08s for single-floor tap. Sub-pixel jitter fixed with position.round().",
       "failure_patterns": [
-        "move_toward() for horizontal deceleration feels floaty — use velocity.x = 0 for snappy stop",
-        "Jump velocity must be calculated against floor height: peak = v²/(2g), must exceed FLOOR_HEIGHT (96px)",
-        "Solid platforms block upward jumps — need one_way_collision = true on all floor CollisionShape2Ds"
+        "move_toward() for deceleration feels floaty — use velocity.x = 0",
+        "Jump velocity must be calculated: peak = v²/(2g), must just barely exceed FLOOR_HEIGHT",
+        "Sub-pixel positions cause pixel art shimmer — round after move_and_slide()"
       ],
       "rules_learned": [
-        "Browser per-frame values to Godot per-second: multiply by 60 for velocity, 3600 for acceleration, then scale by block size ratio (64/300)",
-        "One-way collision + separate collision layers enables drop-through: toggle mask bit off for 0.2s",
-        "Landing squash via tween on sprite scale (1.15, 0.85) → (1, 1) over 0.1s adds weight cheaply"
+        "position.round() after every move_and_slide() — critical for pixel art",
+        "Camera position also needs roundf() on lerp output",
+        "Sprite queue_redraw() in _physics_process, not _process, to sync with physics",
+        "Flip thresholds: <15% = no spin, 15-70% = 1 rotation timed to airtime, 70%+ = continuous",
+        "Walk cycle: 2 distinct frames at 0.18s, no idle frames mixed in"
       ],
-      "needs_from_human": "Side-by-side playtest: browser vs Godot movement. What feels wrong? User said 'not anchored in physics' and 'losing optimism in Godot'."
+      "needs_from_human": null
     },
     "visual_style": {
-      "confidence": "medium",
-      "evidence": "Built _draw() construction worker with hardhat, vest, stripes, pants, boots. User validated the look ('fun!'). Kneeling hammer poses iterated to satisfaction — user asked for more overhead reach and extended arm, both applied successfully. Discrete pose approach confirmed as correct pattern.",
+      "confidence": "medium-high",
+      "evidence": "Player sprite with neon-yellow vest (distinct from builder NPCs). Hammer poses, lever-pull pose. Builder NPCs (orange vest, hard hat), suit NPCs (all-black), Gene (purple suit, gold tie). Speech bubbles with white PanelContainer. Industrial breaker panels with hazard stripes, ceiling lights. Font sizes tuned for readability at 2x zoom.",
       "failure_patterns": [
-        "Sin-wave limb interpolation looks floaty/uncanny — use discrete frame poses like real pixel art",
-        "draw_rect() doesn't handle negative width — must mirror x-coordinates explicitly",
-        "scale.x on CharacterBody2D flips Camera2D children — flip must be on a child visual node only",
-        "draw_set_transform() for flipping works but is fragile with nested transforms — child Node2D scale.x = -1 is simpler and proven"
+        "Sin-wave limb interpolation looks uncanny — use discrete frame poses",
+        "Font size 8 is unreadable at 2x zoom — use 11+ for world text",
+        "Sub-pixel rendering causes shimmer — snap to integer positions"
       ],
       "rules_learned": [
-        "Pixel art walk cycles: 4 discrete poses (idle, step_a, idle, step_b) at fixed timer intervals (~0.12s)",
-        "Visual flip pattern: child Node2D with scale.x = -1/1, parent CharacterBody2D never scaled",
-        "Draw body parts in layered order: back arm → legs → torso → head → front arm",
-        "z_index on sprite node to render above dynamically-created floor ColorRects"
+        "Pixel art walk cycles: 2 frames (step_a, step_b) swapped at fixed intervals",
+        "Player must be visually distinct from NPCs of same faction — neon yellow vs orange",
+        "Speech bubbles: PanelContainer + StyleBoxFlat with rounded corners + dark text on white",
+        "Industrial UI elements (breaker panels): hazard stripes, recessed panels, pivot bolts, glow effects",
+        "Ceiling lights as ColorRect rows that tween on sequentially for activation drama"
       ],
-      "needs_from_human": "Screenshot set from browser version at key altitudes + control room"
+      "needs_from_human": null
     },
     "narrative_design": {
-      "confidence": "medium",
-      "evidence": "Extensive design docs exist. Three-line pattern is well documented.",
+      "confidence": "medium-high",
+      "evidence": "Full dialogue pools for builders (early/mid) and suits (early/mid). User requested funnier/more compelling dialogue — rewrote with specificity and personality. Gene's lines include the faction tell slip ('the job'). Faction vocabulary rule maintained throughout.",
       "failure_patterns": [],
       "rules_learned": [
         "Gene dialogue: if it's memorable on first read, it's too heavy. Rewrite flatter.",
-        "Suits say 'the work', builders say 'the job' — always."
+        "Suits say 'the work', builders say 'the job' — always.",
+        "Dialogue needs specificity and humor — 'I named my hammer. Her name is Brenda.' not 'The job is coming along.'",
+        "Suit tone shifts from supportive (early) to territorial (mid) — not villains, just managers"
       ],
       "needs_from_human": null
     },
     "audio_design": {
       "confidence": "blocked",
-      "evidence": "AudioManager autoload created with fade in/out and bus routing, but no audio assets exist yet.",
+      "evidence": "AudioManager autoload created but no audio assets. Breaker panel and hammer mechanics designed with sound cues but no implementation yet.",
       "failure_patterns": [],
       "rules_learned": [],
-      "needs_from_human": "Reference recordings of browser SFX. Godot audio bus layout (Music, SFX, UI?)."
+      "needs_from_human": "Audio assets or direction on procedural audio approach"
     },
-    "economy_systems": {
+    "npc_system": {
       "confidence": "medium",
-      "evidence": "Food chain, happiness, bulldozer unlock all documented in detail. GameState has credits, satisfaction, food_chain_complete, builder_happiness fields.",
-      "failure_patterns": [],
-      "rules_learned": [],
+      "evidence": "Built full NPC system: CharacterBody2D with faction (builder/suit), idle/patrol state machine, ENTERING state for walking in from ground floor, faction-weighted floor placement, dialogue with speech bubbles, Gene as special case. Population schedule shifts suit-heavy over time.",
+      "failure_patterns": [
+        "NPCs must have their own CollisionShape2D to stand on floors",
+        "NPCs spawned outside slab collision bounds fall through world",
+        "NPC sprite _draw via separate Node2D — needs _physics_process for redraw to avoid jitter"
+      ],
+      "rules_learned": [
+        "Spawn on floor 0 in ENTERING state, walk to stairwell, reparent to target floor",
+        "Weighted floor placement: builders cluster low, suits drift up",
+        "3 dialogue lines per NPC, pulled from phase-aware faction pool",
+        "Gene spawns as suit-looking NPC on floors 1,3,5,7 — deliberately forgettable"
+      ],
       "needs_from_human": null
     },
-    "reckoning_mechanics": {
-      "confidence": "medium",
-      "evidence": "Fully implemented in browser. AI behavior, scoring, flood all documented.",
-      "failure_patterns": [],
-      "rules_learned": [],
-      "needs_from_human": null
-    },
-    "keeper_llm_integration": {
-      "confidence": "medium",
-      "evidence": "System prompt builder and BYOK connection documented. keeper.js exists as reference.",
-      "failure_patterns": [],
-      "rules_learned": [],
+    "floor_activation": {
+      "confidence": "medium-high",
+      "evidence": "Breaker panel system: lever animation, spark particles, sequential ceiling lights, per-floor ambient particles, power cascade with block-by-block brightening. Floor 8 triggers Reckoning (stutter → blackout → enable claiming). Non-contested floors auto-claim on Reckoning start.",
+      "failure_patterns": [
+        "call_deferred needed for ceiling light creation in _ready()",
+        "Cascade timers via get_tree().create_timer() — closures capture variables correctly"
+      ],
+      "rules_learned": [
+        "Activation is one-time, tracked in GameState.activated_floors",
+        "Lever direction: DOWN = off (red), UP = on (green) — matches real breaker panels",
+        "Sequential ceiling lights create drama without screen shake — calm activation vs violent claiming",
+        "Floor 8 Reckoning trigger: stutter cascade, flicker, blackout, then restore with claiming enabled"
+      ],
       "needs_from_human": null
     },
     "parallax_exterior": {
-      "confidence": "medium-high",
-      "evidence": "Failed with ParallaxBackground (3 iterations), succeeded with manual Node2D offsets. Sky/star shaders working. City layers with per-layer ground planes. Floor backgrounds segmented to leave windows transparent. Horizontal parallax added — same pattern as vertical, user-approved.",
+      "confidence": "low",
+      "evidence": "Multiple approaches failed: ParallaxBackground (3 iterations), manual position offsets (4 factor tuning attempts). User consistently found it 'odd'. Removed entirely. Sky/star shaders still work for altitude effects.",
       "failure_patterns": [
-        "ParallaxBackground interacts with zoom — use plain Node2Ds with manual offset",
-        "Full-width floor bg blocks parallax through windows — segment bg to skip window columns",
-        "Single shared ground plane drifts from parallax city layers — each layer needs own ground",
-        "GL Compatibility rejects 'return' in fragment shaders — use multiplicative masking",
-        "const vec3 outside functions may not compile — declare inside fragment()"
+        "ParallaxBackground interacts with zoom — never use it",
+        "Position-based parallax through windows looks wrong at ANY factor",
+        "Window frames create a reference grid that amplifies even tiny parallax movement",
+        "Horizontal parallax was even worse than vertical — removed immediately"
       ],
       "rules_learned": [
-        "Manual parallax: layer.y = cam_y * (1.0 - depth_factor), layer.x = cam_dx * factor — zoom-independent, works for both axes",
-        "canvas_item shaders for sky/stars — pass camera_y as uniform from _process()",
-        "City layers fade via modulate.a driven by smoothstep on altitude",
-        "Each city _draw() layer draws its own ground rect for visual anchoring",
-        "Camera limits (limit_left/right) replace thick walls for view containment"
+        "Do NOT use position-based parallax for interior-through-windows views",
+        "Altitude-based opacity fade is the only depth effect that works here",
+        "If user says 'odd' twice about parallax, just remove it — don't keep tuning",
+        "Sky/star shaders work independently of parallax positioning"
       ],
-      "needs_from_human": "Visual feedback — does the parallax look good? Do altitude transitions feel right? Are buildings positioned naturally?"
+      "needs_from_human": "Fresh approach to exterior visuals — maybe static painted backgrounds per altitude band instead of parallax"
     },
     "block_interaction": {
       "confidence": "medium-high",
-      "evidence": "Built full claim system: block.gd with Area2D detection, 8-strike hammer sequence, border Line2D growth, spark/completion particles, screen shake, GameState persistence. Iterative pose tuning workflow validated with user.",
+      "evidence": "Full claim system with claiming_enabled gate. Blocks inert during Movement 1, activate on Reckoning. Auto-claim for non-contested floors. 8-strike hammer, border growth, sparks, completion effects.",
       "failure_patterns": [
         "State machine overwrite bug — see f012 and rules/godot_state_machine.md"
       ],
       "rules_learned": [
-        "Block nodes replace ColorRects for interactive elements — same visual, but with Area2D and state",
-        "Area2D collision_mask must match player collision_layer for body_entered to fire",
-        "Rapid strike animations (8 x 0.075s) feel more physical than slow directional poses (4 x 0.45s)",
-        "User prefers kneeling single-spot hammering over directional strikes around the block perimeter"
+        "Block nodes replace ColorRects for interactive elements",
+        "claiming_enabled flag gates interaction — false during Movement 1, true after Reckoning",
+        "auto_claim() for bulk-claiming non-contested floors",
+        "Rapid strikes (8 x 0.075s) feel more physical than slow directional poses"
+      ],
+      "needs_from_human": null
+    },
+    "tower_architecture": {
+      "confidence": "medium",
+      "evidence": "Tower widened from 768→2160px (BLOCK_WIDTH 64→180). Required updating constants in sim.gd, constants.gd, city_layer.gd, player spawn position, NPC bounds, breaker particle bounds, camera limits. Stairs added as zigzag stairwell.",
+      "failure_patterns": [
+        "Changing BLOCK_WIDTH cascades to many hardcoded values across multiple files",
+        "FLOOR_WIDTH in city_layer.gd was a separate hardcoded constant — easy to miss"
+      ],
+      "rules_learned": [
+        "Derive all layout values from BLOCK_WIDTH and FLOOR_HEIGHT when possible",
+        "Player spawn, camera start, safety net teleport all use FLOOR_WIDTH/2",
+        "NPC patrol bounds scale with FLOOR_WIDTH",
+        "Stairs: zigzag with half-flights, landing at midpoint, one-way step collision"
       ],
       "needs_from_human": null
     },
     "canvas2d_to_godot_porting": {
       "confidence": "medium",
-      "evidence": "Established _draw() as Canvas2D replacement. Block grid rendering, floor generation, character drawing, and city skyline layers all working. Parallax implemented with shaders.",
+      "evidence": "Established _draw() as Canvas2D replacement. Multiple systems ported successfully.",
       "failure_patterns": [
-        "Canvas save/restore → Godot has no equivalent — use draw_set_transform() or child nodes with transforms",
-        "Browser requestAnimationFrame timing → Godot _process(delta) and _physics_process(delta)"
+        "Canvas save/restore → use draw_set_transform() or child nodes",
+        "Browser per-frame timing → _process(delta) and _physics_process(delta)"
       ],
       "rules_learned": [
-        "_draw() on Node2D replaces Canvas2D fillRect/strokeRect patterns",
-        "ColorRect nodes for static backgrounds, _draw() for animated/conditional rendering",
+        "_draw() on Node2D replaces Canvas2D patterns",
+        "ColorRect for static backgrounds, _draw() for animated/conditional rendering",
         "Collision layers replace browser's manual overlap checking"
       ],
-      "needs_from_human": "Establish porting patterns for: parallax scrolling, module animated art, camera shake"
+      "needs_from_human": null
     }
   }
 }

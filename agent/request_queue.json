@@ -1,36 +1,28 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "queue": [
     {
-      "id": "r006",
+      "id": "r007",
       "status": "pending",
       "priority": 1,
-      "type": "research_task",
-      "domain": "visual_style",
-      "ask": "Research and design a beautiful 2D parallax exterior for the sim interior. The agent should: (1) Study how top-tier 2D Godot games do parallax city/sky backgrounds — reference Celeste, Owlboy, Dead Cells for layering techniques. (2) Review the browser prototype's exterior (Three.js skyline, altitude-based sky color, stars at high altitude, city at ground level). (3) Propose a multi-layer parallax system: deep sky/stars layer (0.1x scroll), mid clouds/atmosphere (0.3x), city skyline silhouette (0.5x), near buildings (0.7x), foreground details (0.9x). (4) Design altitude-aware visuals: ground level sees city, mid-tower sees horizon, top floors see stars. (5) Write a implementation brief with exact Godot node structure, shaders if needed, and color palettes per altitude band.",
-      "transfer_value": "Sets the visual bar for the entire game. The exterior through the windows is the player's constant companion — it must be beautiful and reward vertical progress.",
-      "blocked_tasks": ["parallax_system", "sky_shader", "altitude_visuals"],
-      "created": "2026-03-26T12:00:00Z",
-      "subtasks": [
-        "Research parallax techniques in acclaimed 2D Godot games",
-        "Study Godot ParallaxBackground/ParallaxLayer nodes vs manual scroll",
-        "Design 5-layer depth system with scroll ratios",
-        "Create altitude-aware color palette (ground=warm amber, mid=blue, top=deep indigo/stars)",
-        "Propose shader approach for sky gradient that shifts with camera Y",
-        "Write implementation brief for Claude Code to execute"
-      ]
+      "type": "design_intent",
+      "domain": "parallax_exterior",
+      "ask": "Parallax through windows was removed after 4 failed tuning attempts. What should the exterior through windows look like? Options: (1) Static painted backgrounds per altitude band, (2) No exterior at all — solid walls, (3) Simple color gradient that shifts with altitude, (4) Completely different approach. The window-frame reference grid makes position-based parallax feel wrong.",
+      "transfer_value": "Unblocks the visual identity of the tower interior.",
+      "blocked_tasks": ["exterior_visuals"],
+      "created": "2026-03-27T20:30:00Z"
     },
     {
       "id": "r001",
-      "status": "in_progress",
-      "priority": 2,
+      "status": "resolved",
+      "priority": 10,
       "type": "skill_teaching",
       "domain": "godot_scene_structure",
-      "ask": "What scene tree structure do you want for the sim interior? 10 floors × 12 blocks × modules × NPCs × collision.",
+      "ask": "What scene tree structure do you want for the sim interior?",
       "transfer_value": "Unblocks all interior implementation.",
-      "blocked_tasks": ["module_placement", "npc_spawning", "elevator_system"],
+      "blocked_tasks": [],
       "created": "2026-03-26T00:00:00Z",
-      "notes": "Partially answered: built Sim > Floor0..9 (StaticBody2D). Still need structure for modules and NPCs within floors."
+      "notes": "Resolved: Sim > Floor0..9 (StaticBody2D) > Block nodes + Breaker panel + NPC CharacterBody2Ds + Stairs. Structure proven stable."
     },
     {
       "id": "r002",
@@ -40,18 +32,7 @@
       "domain": "visual_style",
       "ask": "Screenshots from the browser version: (1) ground level, (2) mid-tower, (3) near-space altitude, (4) control room interior, (5) a floor interior with modules.",
       "transfer_value": "Calibrates all visual decisions.",
-      "blocked_tasks": ["sky_system", "control_room_port", "module_art", "parallax"],
-      "created": "2026-03-26T00:00:00Z"
-    },
-    {
-      "id": "r003",
-      "status": "pending",
-      "priority": 4,
-      "type": "playtest_feedback",
-      "domain": "physics_feel",
-      "ask": "Play browser vs Godot. What feels different? Focus on: jump arc, landing weight, horizontal stopping, camera follow.",
-      "transfer_value": "Establishes feel targets for all movement code.",
-      "blocked_tasks": ["wall_slide", "wall_jump"],
+      "blocked_tasks": ["module_art"],
       "created": "2026-03-26T00:00:00Z"
     },
     {
@@ -67,14 +48,15 @@
     },
     {
       "id": "r005",
-      "status": "pending",
-      "priority": 6,
+      "status": "resolved",
+      "priority": 10,
       "type": "approval",
       "domain": "physics_feel",
-      "ask": "Current physics values: SPEED=200, SPRINT=340, JUMP_MIN=-300, JUMP_MAX=-650, GRAVITY=900. Right ballpark?",
+      "ask": "Physics values approval.",
       "transfer_value": "Locks down base physics constants.",
       "blocked_tasks": [],
-      "created": "2026-03-26T00:00:00Z"
+      "created": "2026-03-26T00:00:00Z",
+      "notes": "Resolved through iterative tuning: SPEED=200, SPRINT=340, JUMP_MIN=-425, JUMP_MAX=-750, GRAVITY=900, DROP_MIN=0.08s. User validated through play."
     }
   ],
   "request_types": [
