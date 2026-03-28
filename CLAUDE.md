@@ -519,6 +519,11 @@ All proposed updates to agent files require Jared's approval. Never self-modify 
 - **Two-file handoff:** Design brief + reference file (often the working JS implementation) as paired context for Claude Code.
 - **Godot editor:** Open for visual scene editing, running the game, and inspecting the scene tree. Claude Code edits files on disk; the editor auto-reloads.
 
+### Session Boundaries
+
+- **Starting a session:** When Jared says "starting a session" — read all `agent/` files (competency_map, request_queue, rules/, failure_log). Flag anything relevant to the current task: low-confidence domains, pending requests, applicable rules. Give a brief status summary.
+- **Ending a session:** When Jared says "wrapping up" — propose updates to all agent files (competency changes, new failure entries, session log entry, new rules if patterns emerged). Commit and push the agent updates along with any pending code changes.
+
 ### Agent Self-Improvement Loop
 
 Before starting work, check `agent/competency_map.json` for confidence levels and `agent/request_queue.json` for blocking requests. After finishing, propose updates to:
