@@ -2,7 +2,7 @@ extends Node2D
 
 # Colors — browser version palette
 const C_SKIN := Color(0.831, 0.647, 0.455)
-const C_VEST := Color(0.95, 0.45, 0.05)
+const C_VEST := Color(0.85, 0.95, 0.05)
 const C_STRIPE := Color(0.9, 0.9, 0.85)
 const C_PANTS := Color(0.2, 0.2, 0.25)
 const C_BOOTS := Color(0.35, 0.22, 0.1)
@@ -21,7 +21,7 @@ const C_BAR_BG := Color(0.15, 0.15, 0.2, 0.7)
 const C_BAR_JUMP := Color(0.3, 0.9, 0.4)
 const C_BAR_DROP := Color(1.0, 0.4, 0.2)
 
-func _process(_delta: float) -> void:
+func _physics_process(_delta: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
@@ -29,6 +29,13 @@ func _draw() -> void:
 
 	# Direction flip via draw transform — decoupled from scale/tweens
 	var flip_x := -1.0 if not player.facing_right else 1.0
+
+	# Activating — lever pull pose (facing left toward wall)
+	if player.state == player.PlayerState.ACTIVATING:
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(flip_x, 1.0))
+		_draw_lever_pull()
+		draw_set_transform(Vector2.ZERO)
+		return
 
 	# Claiming — kneeling hammer, alternates up/down each strike
 	if player.state == player.PlayerState.CLAIMING:
@@ -61,9 +68,9 @@ func _draw() -> void:
 		_draw_jump_pose()
 	else:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2(flip_x, 1.0))
-		if player.walk_frame == 1:
+		if player.walk_frame == 0 and absf(player.velocity.x) > 10.0:
 			_draw_step_a()
-		elif player.walk_frame == 3:
+		elif player.walk_frame == 1 and absf(player.velocity.x) > 10.0:
 			_draw_step_b()
 		else:
 			_draw_idle()
@@ -188,6 +195,20 @@ func _draw_kneel_hammer_up() -> void:
 	draw_rect(Rect2(12, -40, 3, 8), C_SKIN)     # forearm reaching up
 	draw_rect(Rect2(11, -50, 3, 10), C_HANDLE)  # handle high up
 	draw_rect(Rect2(9, -55, 7, 5), C_HAMMER_HEAD) # head way up top
+
+## Lever pull — facing wall, arm reaching up/pulling down
+func _draw_lever_pull() -> void:
+	# Back arm at side
+	draw_rect(Rect2(9, -33, 3, 11), C_SKIN)
+	# Legs: standing
+	draw_rect(Rect2(-7, -19, 6, 12), C_PANTS)
+	draw_rect(Rect2(1, -19, 6, 12), C_PANTS)
+	draw_rect(Rect2(-7, -7, 6, 7), C_BOOTS)
+	draw_rect(Rect2(1, -7, 6, 7), C_BOOTS)
+	_draw_body_upper()
+	# Front arm reaching up toward lever — extended forward and up
+	draw_rect(Rect2(-12, -38, 3, 8), C_SKIN)   # upper arm reaching up
+	draw_rect(Rect2(-14, -44, 3, 6), C_SKIN)   # forearm up to lever height
 
 ## Kneeling with hammer striking down — arm extended out from body
 func _draw_kneel_hammer_down() -> void:

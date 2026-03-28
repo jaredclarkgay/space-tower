@@ -31,6 +31,23 @@ var block_claims: Dictionary = {}
 # Block claim owners — keyed by "claim_{floor}_{block}" → owner string
 var block_claim_owners: Dictionary = {}
 
+# Floor activation (Movement 1)
+var activated_floors: Array[bool] = []
+
+# Reckoning state
+var reckoning_started: bool = false
+var reckoning_complete: bool = false
+var post_reckoning: bool = false
+
+# NPC tracking
+var npc_roster: Array[Dictionary] = []   # {faction, floor, dialogue_index, patrol_dir}
+var total_builders: int = 0
+var total_suits: int = 0
+var floors_activated_count: int = 0
+
+# Contested floors during Reckoning (0-indexed: 5, 6, 7)
+const CONTESTED_FLOORS := [5, 6, 7]
+
 # Flags
 var panel_floor: int = 0
 var panel_dirty: bool = true
@@ -47,12 +64,14 @@ func _init_tower() -> void:
 	lit_floors.clear()
 	modules.clear()
 	buildout.clear()
+	activated_floors.clear()
 	for i in range(c.NUM_FLOORS):
 		lit_floors.append(false)
 		modules.append([])
 		for j in range(c.BLOCKS_PER_FLOOR):
 			modules[i].append(null)
 		buildout.append({"stage": 0})
+		activated_floors.append(false)
 
 ## Seeded random float 0.0–1.0 (replaces JS sr())
 func sr() -> float:

@@ -14,6 +14,9 @@ var current_strike: int = 0          # 0-7, which strike we're on
 var owner_color: Color = Color(0.95, 0.45, 0.05)  # default vest orange
 var is_player_nearby: bool = false
 
+## Gating — false during Movement 1, true after Reckoning starts
+var claiming_enabled: bool = false
+
 ## Dimensions (set by initialize())
 var block_width: float = 64.0
 var block_height: float = 92.0
@@ -188,17 +191,31 @@ func _get_color_for_owner(who: String) -> Color:
 			return gs.builder_color
 		return Color(0.95, 0.45, 0.05)  # default vest orange
 	elif who == "suit":
-		return Color(0.7, 0.2, 0.2)
+		return Color(0.15, 0.15, 0.18)
 	else:
 		return Color(0.95, 0.45, 0.05)
 
 
 func can_claim(who: String) -> bool:
+	if not claiming_enabled:
+		return false
 	if claim_locked:
 		return false
 	if claim_owner == "" or claim_owner == who:
 		return true
 	return false
+
+## Auto-claim this block fully for an owner (used for non-contested floors on Reckoning start)
+func auto_claim(who: String) -> void:
+	claiming_enabled = true
+	claim_owner = who
+	owner_color = _get_color_for_owner(who)
+	claim_progress = 1.0
+	current_strike = STRIKES_TOTAL
+	claim_locked = true
+	_update_borders()
+	_fill.visible = true
+	_fill.color = Color(owner_color, FILL_ALPHA)
 
 
 ## Update the four border Line2Ds based on claim_progress

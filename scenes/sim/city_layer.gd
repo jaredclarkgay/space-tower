@@ -4,7 +4,7 @@ extends Node2D
 ## Call configure() before adding to the scene tree.
 
 const TOWER_LEFT := 0.0
-const TOWER_RIGHT := 768.0  # FLOOR_WIDTH
+const TOWER_RIGHT := 2160.0  # FLOOR_WIDTH
 const SPREAD := 200.0       # buildings extend slightly beyond tower for parallax travel
 
 var _buildings: Array[Dictionary] = []

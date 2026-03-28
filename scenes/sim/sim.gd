@@ -5,8 +5,8 @@ const FLOOR_NAMES := [
 	"LOUNGE", "OBSERVATION", "STORAGE", "MEDICAL", "COMMAND"
 ]
 
-const FLOOR_WIDTH := 768    # 12 blocks × 64px
-const BLOCK_WIDTH := 64
+const FLOOR_WIDTH := 2160   # 12 blocks × 180px
+const BLOCK_WIDTH := 180
 const FLOOR_HEIGHT := 96
 const SLAB_HEIGHT := 4
 const NUM_FLOORS := 10
@@ -42,6 +42,8 @@ const SCREEN_SHAKE_PX := 2.0
 const SCREEN_SHAKE_DURATION := 0.1
 
 const BlockScript: GDScript = preload("res://scenes/sim/block.gd")
+const BreakerScript: GDScript = preload("res://scenes/sim/breaker_panel.gd")
+const NPCScript: GDScript = preload("res://scenes/sim/npc.gd")
 
 # Camera
 const CAM_LERP := 8.0
@@ -65,9 +67,15 @@ var _far_city: Node2D
 var _mid_city: Node2D
 var _near_city: Node2D
 
+const STAIR_WIDTH := 120.0    # width of the stairwell area
+const STAIR_STEPS := 8       # steps per flight
+const C_STAIR := Color(0.28, 0.28, 0.32)
+const C_STAIR_RAIL := Color(0.35, 0.35, 0.40)
+
 func _ready() -> void:
 	_build_exterior_bg()
 	_build_tower()
+	_build_stairs()
 	_build_walls()
 	camera.limit_left = -20
 	camera.limit_right = FLOOR_WIDTH + 20
@@ -120,45 +128,15 @@ func _process(delta: float) -> void:
 	var look_ahead := CAM_LOOK_AHEAD if player.facing_right else -CAM_LOOK_AHEAD
 	var target_x := player.position.x + look_ahead
 	var target_y := player.position.y - 48.0
-	camera.position.x = lerpf(camera.position.x, target_x, CAM_LERP * delta)
-	camera.position.y = lerpf(camera.position.y, target_y, CAM_LERP * delta)
+	camera.position.x = roundf(lerpf(camera.position.x, target_x, CAM_LERP * delta))
+	camera.position.y = roundf(lerpf(camera.position.y, target_y, CAM_LERP * delta))
 
-	# --- Manual parallax ---
-	# Each layer is a world-space Node2D. To create parallax depth:
-	# layer.position.y = base_y + cam_y * (1.0 - depth_factor)
-	# depth_factor: 0.0 = pinned to screen (sky), 1.0 = foreground (no parallax)
-	var cam_y := camera.position.y
-	var sky_base_y := -float(TOWER_HEIGHT) - 400.0
-
-	# Sky — pinned to screen
-	if _sky_rect:
-		_sky_rect.position.y = sky_base_y + cam_y * 1.0
-	if _sky_mat:
-		_sky_mat.set_shader_parameter("camera_y", cam_y)
-
-	# Stars — nearly pinned
-	if _stars_rect:
-		_stars_rect.position.y = sky_base_y + cam_y * 0.975
+	# --- Exterior background (no parallax — revisit later) ---
 	if _stars_mat:
-		_stars_mat.set_shader_parameter("camera_y", cam_y)
+		_stars_mat.set_shader_parameter("camera_y", camera.position.y)
 		_stars_mat.set_shader_parameter("time_val", Time.get_ticks_msec() / 1000.0)
-
-	# City layers — halved vertical parallax
-	if _far_city:
-		_far_city.position.y = cam_y * 0.925   # was 0.85
-	if _mid_city:
-		_mid_city.position.y = cam_y * 0.85    # was 0.70
-	if _near_city:
-		_near_city.position.y = cam_y * 0.75   # was 0.50
-
-	# Fade city at altitude
-	var alt := clampf(-cam_y / float(TOWER_HEIGHT), 0.0, 1.0)
-	if _far_city:
-		_far_city.modulate.a = 1.0 - _smoothstep(0.55, 0.75, alt)
-	if _mid_city:
-		_mid_city.modulate.a = 1.0 - _smoothstep(0.45, 0.65, alt)
-	if _near_city:
-		_near_city.modulate.a = 1.0 - _smoothstep(0.35, 0.55, alt)
+	if _sky_mat:
+		_sky_mat.set_shader_parameter("camera_y", camera.position.y)
 
 func _smoothstep(edge0: float, edge1: float, x: float) -> float:
 	var t := clampf((x - edge0) / (edge1 - edge0), 0.0, 1.0)
@@ -364,7 +342,11 @@ func _build_floor(index: int, y: float) -> void:
 	var col := CollisionShape2D.new()
 	col.position = Vector2(FLOOR_WIDTH / 2.0, SLAB_HEIGHT / 2.0)
 	col.shape = shape
-	if index > 0:
+	if index == 0:
+		# Ground floor: solid from all sides, on layer 2 + 8
+		# Layer 8 stays active even during charged drop
+		floor_node.set_collision_layer_value(8, true)
+	else:
 		col.one_way_collision = true
 	floor_node.add_child(col)
 
@@ -372,9 +354,19 @@ func _build_floor(index: int, y: float) -> void:
 	var label := Label.new()
 	label.text = "F%d  %s" % [index + 1, FLOOR_NAMES[index]]
 	label.position = Vector2(6, block_top + 2)
-	label.add_theme_font_size_override("font_size", 8)
+	label.add_theme_font_size_override("font_size", 11)
 	label.add_theme_color_override("font_color", C_LABEL)
 	floor_node.add_child(label)
+
+	# Breaker panel — left wall, chest height
+	var breaker := Node2D.new()
+	breaker.set_script(BreakerScript)
+	breaker.name = "Breaker_%d" % index
+	breaker.position = Vector2(30, block_top + 30)
+	breaker.z_index = 3
+	floor_node.add_child(breaker)
+	breaker.initialize(index)
+	breaker.panel_activated.connect(_on_floor_activated)
 
 	add_child(floor_node)
 
@@ -411,6 +403,141 @@ func _build_walls() -> void:
 		wall.add_child(rect)
 		add_child(wall)
 
+## ── Stairs ──
+
+func _build_stairs() -> void:
+	# Zigzag stairwell on the right side of the tower.
+	# Two half-flights per floor: right-going (bottom half) then left-going (top half)
+	# with a landing platform at the midpoint.
+	var stair_x := FLOOR_WIDTH - STAIR_WIDTH
+	var half_steps: int = STAIR_STEPS / 2
+	var room_h := FLOOR_HEIGHT - SLAB_HEIGHT  # usable height
+	var half_h := room_h / 2.0
+	var step_h := half_h / float(half_steps)
+	var half_w := STAIR_WIDTH - 20.0  # leave room for railings
+
+	for fi in range(NUM_FLOORS - 1):
+		var floor_y := -fi * FLOOR_HEIGHT
+		var block_top := -FLOOR_HEIGHT + SLAB_HEIGHT
+		var stair_node := StaticBody2D.new()
+		stair_node.name = "Stairs_%d" % fi
+		stair_node.position = Vector2(0, floor_y)
+		stair_node.collision_layer = 2
+		stair_node.collision_mask = 0
+		stair_node.z_index = 1
+
+		# Dark stairwell background
+		var stair_bg := ColorRect.new()
+		stair_bg.position = Vector2(stair_x, block_top)
+		stair_bg.size = Vector2(STAIR_WIDTH, room_h)
+		stair_bg.color = Color(0.06, 0.06, 0.08)
+		stair_bg.z_index = -1
+		stair_node.add_child(stair_bg)
+
+		# --- Bottom half-flight: going right ---
+		for si in range(half_steps):
+			var t := float(si) / float(half_steps)
+			var sx := stair_x + 10.0 + t * half_w
+			var sy := block_top + room_h - (si + 1) * step_h
+
+			# Step tread (top surface)
+			var tread := ColorRect.new()
+			tread.position = Vector2(sx, sy)
+			tread.size = Vector2(half_w / float(half_steps) + 2, 3)
+			tread.color = C_STAIR
+			stair_node.add_child(tread)
+
+			# Step riser (front face) — slightly darker
+			var riser := ColorRect.new()
+			riser.position = Vector2(sx, sy + 3)
+			riser.size = Vector2(half_w / float(half_steps) + 2, step_h - 3)
+			riser.color = Color(0.20, 0.20, 0.24)
+			stair_node.add_child(riser)
+
+			# Collision
+			var step_shape := RectangleShape2D.new()
+			step_shape.size = Vector2(half_w / float(half_steps) + 2, 3)
+			var step_col := CollisionShape2D.new()
+			step_col.shape = step_shape
+			step_col.position = Vector2(sx + (half_w / float(half_steps)) / 2.0, sy + 1.5)
+			step_col.one_way_collision = true
+			stair_node.add_child(step_col)
+
+		# --- Landing platform at midpoint ---
+		var landing_y := block_top + room_h / 2.0 - step_h
+		var landing := ColorRect.new()
+		landing.position = Vector2(stair_x + 6, landing_y)
+		landing.size = Vector2(STAIR_WIDTH - 12, 4)
+		landing.color = Color(0.32, 0.32, 0.36)
+		stair_node.add_child(landing)
+
+		var landing_shape := RectangleShape2D.new()
+		landing_shape.size = Vector2(STAIR_WIDTH - 12, 4)
+		var landing_col := CollisionShape2D.new()
+		landing_col.shape = landing_shape
+		landing_col.position = Vector2(stair_x + STAIR_WIDTH / 2.0, landing_y + 2)
+		landing_col.one_way_collision = true
+		stair_node.add_child(landing_col)
+
+		# --- Top half-flight: going left (zigzag back) ---
+		for si in range(half_steps):
+			var t := float(si) / float(half_steps)
+			var sx := stair_x + STAIR_WIDTH - 10.0 - t * half_w - half_w / float(half_steps)
+			var sy := landing_y - (si + 1) * step_h
+
+			var tread := ColorRect.new()
+			tread.position = Vector2(sx, sy)
+			tread.size = Vector2(half_w / float(half_steps) + 2, 3)
+			tread.color = C_STAIR
+			stair_node.add_child(tread)
+
+			var riser := ColorRect.new()
+			riser.position = Vector2(sx, sy + 3)
+			riser.size = Vector2(half_w / float(half_steps) + 2, step_h - 3)
+			riser.color = Color(0.20, 0.20, 0.24)
+			stair_node.add_child(riser)
+
+			var step_shape := RectangleShape2D.new()
+			step_shape.size = Vector2(half_w / float(half_steps) + 2, 3)
+			var step_col := CollisionShape2D.new()
+			step_col.shape = step_shape
+			step_col.position = Vector2(sx + (half_w / float(half_steps)) / 2.0, sy + 1.5)
+			step_col.one_way_collision = true
+			stair_node.add_child(step_col)
+
+		# --- Railings ---
+		# Left railing
+		var rail_l := ColorRect.new()
+		rail_l.position = Vector2(stair_x + 4, block_top)
+		rail_l.size = Vector2(2, room_h)
+		rail_l.color = C_STAIR_RAIL
+		stair_node.add_child(rail_l)
+
+		# Right railing
+		var rail_r := ColorRect.new()
+		rail_r.position = Vector2(stair_x + STAIR_WIDTH - 6, block_top)
+		rail_r.size = Vector2(2, room_h)
+		rail_r.color = C_STAIR_RAIL
+		stair_node.add_child(rail_r)
+
+		# Center divider between flights
+		var divider := ColorRect.new()
+		divider.position = Vector2(stair_x + STAIR_WIDTH / 2.0 - 1, block_top)
+		divider.size = Vector2(2, room_h)
+		divider.color = Color(0.25, 0.25, 0.30)
+		stair_node.add_child(divider)
+
+		# Floor number on the stairwell wall
+		var stair_label := Label.new()
+		stair_label.text = "%d" % (fi + 1)
+		stair_label.position = Vector2(stair_x + STAIR_WIDTH / 2.0 - 4, block_top + 4)
+		stair_label.add_theme_font_size_override("font_size", 10)
+		stair_label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45, 0.6))
+		stair_node.add_child(stair_label)
+
+		add_child(stair_node)
+
+
 func _is_win_block(bi: int) -> bool:
 	return bi in [3, 7, 11]
 
@@ -426,6 +553,141 @@ func screen_shake(magnitude: float = SCREEN_SHAKE_PX, duration: float = SCREEN_S
 	tween.tween_property(camera, "offset", original + Vector2(magnitude, -magnitude), duration * 0.25)
 	tween.tween_property(camera, "offset", original + Vector2(-magnitude, magnitude), duration * 0.25)
 	tween.tween_property(camera, "offset", original, duration * 0.5)
+
+## NPC population schedule: [builders_added, suits_added] per activation
+const NPC_BATCHES := [
+	[2, 1],  # 1st activation
+	[2, 1],  # 2nd
+	[2, 2],  # 3rd
+	[2, 2],  # 4th
+	[2, 3],  # 5th
+	[2, 3],  # 6th
+	[2, 4],  # 7th
+	[0, 0],  # 8th = Reckoning (no spawn)
+	[0, 0],  # 9th (post-reckoning)
+	[0, 0],  # 10th (post-reckoning)
+]
+
+## Gene's floor appearances (0-indexed)
+const GENE_FLOORS := [1, 3, 5, 7]
+
+func _on_floor_activated(floor_idx: int) -> void:
+	var gs: Node = get_node("/root/GameState")
+	var batch_index: int = gs.floors_activated_count - 1
+	if batch_index < 0 or batch_index >= NPC_BATCHES.size():
+		return
+	var batch: Array = NPC_BATCHES[batch_index]
+	_spawn_npc_batch(batch[0], batch[1])
+
+	# Spawn Gene on his designated floors
+	if floor_idx in GENE_FLOORS:
+		_spawn_gene(floor_idx)
+
+
+func _spawn_npc_batch(builders: int, suits: int) -> void:
+	var gs: Node = get_node("/root/GameState")
+
+	# Gather activated floor indices
+	var active_floors: Array[int] = []
+	for fi in range(NUM_FLOORS):
+		if gs.activated_floors[fi]:
+			active_floors.append(fi)
+	if active_floors.is_empty():
+		return
+
+	# Spawn builders — tend to cluster on lower floors
+	for i in range(builders):
+		var fi: int = _pick_floor_weighted(active_floors, true)
+		_spawn_single_npc(fi, 0)  # 0 = BUILDER
+		gs.total_builders += 1
+
+	# Spawn suits — tend to drift upward
+	for i in range(suits):
+		var fi: int = _pick_floor_weighted(active_floors, false)
+		_spawn_single_npc(fi, 1)  # 1 = SUIT
+		gs.total_suits += 1
+
+
+func _pick_floor_weighted(floors: Array[int], prefer_low: bool) -> int:
+	# Weight lower floors for builders, higher for suits
+	var total_weight := 0.0
+	var weights: Array[float] = []
+	for fi in floors:
+		var w: float
+		if prefer_low:
+			w = float(NUM_FLOORS - fi)  # lower floors get higher weight
+		else:
+			w = float(fi + 1)  # higher floors get higher weight
+		weights.append(w)
+		total_weight += w
+
+	var roll := randf() * total_weight
+	var accum := 0.0
+	for idx in range(floors.size()):
+		accum += weights[idx]
+		if roll <= accum:
+			return floors[idx]
+	return floors[floors.size() - 1]
+
+
+func _spawn_single_npc(fi: int, faction_int: int) -> void:
+	# Spawn on floor 0 (entrance) — NPC walks in and ascends to target floor
+	var ground_floor := get_node_or_null("Floor0")
+	if not ground_floor:
+		return
+
+	var npc := CharacterBody2D.new()
+	npc.set_script(NPCScript)
+	npc.name = "NPC_%d_%d" % [fi, randi() % 9999]
+	# Start at building entrance (left or right edge)
+	var from_left: bool = randf() > 0.5
+	npc.position = Vector2(10.0 if from_left else FLOOR_WIDTH - 10.0, -2.0)
+	ground_floor.add_child(npc)
+	npc.initialize(faction_int, fi)
+	npc._entering_from_left = from_left
+
+	# Track in GameState
+	var gs: Node = get_node("/root/GameState")
+	gs.npc_roster.append({
+		"faction": "builder" if faction_int == 0 else "suit",
+		"floor": fi,
+	})
+
+
+func _spawn_gene(fi: int) -> void:
+	var ground_floor := get_node_or_null("Floor0")
+	if not ground_floor:
+		return
+
+	var npc := CharacterBody2D.new()
+	npc.set_script(NPCScript)
+	npc.name = "Gene_%d" % fi
+	var from_left: bool = randf() > 0.5
+	npc.position = Vector2(10.0 if from_left else FLOOR_WIDTH - 10.0, -2.0)
+	ground_floor.add_child(npc)
+	npc.initialize(1, fi, true)  # Gene looks like a suit
+	npc._entering_from_left = from_left
+
+
+## Find the nearest breaker panel that can be activated
+func find_nearest_breaker(world_pos: Vector2) -> Node2D:
+	var best: Node2D = null
+	var best_dist := INF
+	for fi in range(NUM_FLOORS):
+		var floor_node := get_node_or_null("Floor%d" % fi)
+		if not floor_node:
+			continue
+		var breaker := floor_node.get_node_or_null("Breaker_%d" % fi)
+		if not breaker:
+			continue
+		if not breaker.can_activate():
+			continue
+		var dist := world_pos.distance_to(breaker.global_position + Vector2(10, 14))
+		if dist < best_dist:
+			best_dist = dist
+			best = breaker
+	return best
+
 
 ## Find the nearest claimable Block node to a world position
 func find_nearest_claimable_block(world_pos: Vector2, who: String) -> Node2D:

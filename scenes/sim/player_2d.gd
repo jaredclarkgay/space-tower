@@ -5,13 +5,13 @@ const SPRINT_SPEED := 340.0
 const GRAVITY := 900.0
 
 # Charged jump — hold longer for higher launch
-const JUMP_MIN := -300.0
-const JUMP_MAX := -650.0
+const JUMP_MIN := -425.0
+const JUMP_MAX := -750.0
 const JUMP_CHARGE_TIME := 0.4
 
 # Charged drop — hold longer to fall through more floors
-const DROP_MIN_TIME := 0.2
-const DROP_MAX_TIME := 0.8
+const DROP_MIN_TIME := 0.08
+const DROP_MAX_TIME := 0.6
 const DROP_CHARGE_TIME := 0.3
 const DROP_VELOCITY := 100.0
 const DROP_MAX_VELOCITY := 400.0
@@ -23,7 +23,7 @@ const STRIKE_PAUSE := 0.01
 # Collision layers: 1 = player, 2 = floors, 4 = walls
 const FLOOR_LAYER := 2
 
-enum PlayerState { IDLE, MOVING, JUMPING, CLAIMING }
+enum PlayerState { IDLE, MOVING, JUMPING, CLAIMING, ACTIVATING }
 var state: PlayerState = PlayerState.IDLE
 
 var facing_right := true
@@ -35,6 +35,7 @@ var charging_drop := false
 var sprinting := false
 var flip_frame := 0  # 0-7 somersault frames while airborne
 var _flip_timer := 0.0
+var _jump_charge_t := 0.0  # how charged the current jump was (0.0-1.0)
 
 var _walk_timer := 0.0
 var _was_on_floor := true
@@ -48,13 +49,17 @@ var _claim_timer: float = 0.0
 var _claim_paused: bool = false   # brief pause between strikes
 var _claim_pause_timer: float = 0.0
 
+# Activating state (breaker panel)
+var _activate_timer: float = 0.0
+var _activate_target: Node2D = null
+
 @onready var sprite: Node2D = $Sprite
 var _interact_label: Label = null
 
 func _ready() -> void:
 	_interact_label = Label.new()
 	_interact_label.text = "(E) Engage"
-	_interact_label.add_theme_font_size_override("font_size", 10)
+	_interact_label.add_theme_font_size_override("font_size", 12)
 	_interact_label.add_theme_color_override("font_color", Color(0.85, 0.9, 0.85, 0.9))
 	_interact_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
 	_interact_label.add_theme_constant_override("shadow_offset_x", 1)
@@ -68,21 +73,60 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	# Show/hide interact prompt
-	if state == PlayerState.CLAIMING or not is_on_floor() or absf(velocity.x) > 5.0:
+	if state == PlayerState.CLAIMING or state == PlayerState.ACTIVATING or not is_on_floor() or absf(velocity.x) > 5.0:
 		_interact_label.visible = false
 		return
 	var sim: Node2D = get_parent()
+
+	# Check breaker panels first
+	if sim.has_method("find_nearest_breaker"):
+		var breaker: Node2D = sim.find_nearest_breaker(global_position)
+		if breaker:
+			_interact_label.text = "(E) Activate"
+			_interact_label.visible = true
+			return
+
+	# Check NPCs
+	var found_npc := false
+	for fi in range(10):
+		var floor_node := sim.get_node_or_null("Floor%d" % fi)
+		if not floor_node:
+			continue
+		for child in floor_node.get_children():
+			if child.has_method("show_dialogue") and child.is_player_nearby:
+				_interact_label.text = "(E) Talk"
+				_interact_label.visible = true
+				found_npc = true
+				break
+		if found_npc:
+			return
+
+	# Check claimable blocks
 	if sim.has_method("find_nearest_claimable_block"):
 		var block: Node2D = sim.find_nearest_claimable_block(global_position, "player")
-		_interact_label.visible = block != null
-	else:
-		_interact_label.visible = false
+		if block:
+			_interact_label.text = "(E) Claim"
+			_interact_label.visible = true
+			return
+
+	_interact_label.visible = false
 
 func _physics_process(delta: float) -> void:
+	# --- Activating state (breaker panel) ---
+	if state == PlayerState.ACTIVATING:
+		_activate_timer -= delta
+		if _activate_timer <= 0.0:
+			state = PlayerState.IDLE
+			_activate_target = null
+		move_and_slide()
+		position = position.round()
+		return
+
 	# --- Claiming state ---
 	if state == PlayerState.CLAIMING:
 		_process_claiming(delta)
 		move_and_slide()
+		position = position.round()
 		return
 
 	var on_floor := is_on_floor()
@@ -99,24 +143,53 @@ func _physics_process(delta: float) -> void:
 			_dropping = false
 			set_collision_mask_value(FLOOR_LAYER, true)
 
-	# Gravity + flip animation
+	# Gravity + flip animation (charge-dependent)
 	if not on_floor:
 		velocity.y += GRAVITY * delta
-		_flip_timer += delta
-		if _flip_timer > 0.06:  # ~16 fps flip animation
-			_flip_timer = 0.0
-			flip_frame = (flip_frame + 1) % 8
+		if _jump_charge_t < 0.15:
+			# Quick tap — no flip
+			flip_frame = 0
+		elif _jump_charge_t < 0.7:
+			# Mid charge — exactly one full rotation, timed to airtime
+			# Airtime ≈ 2*|vy|/gravity. Spread 8 frames across first 70% of airtime.
+			_flip_timer += delta
+			var air_est := 2.0 * absf(JUMP_MIN + (JUMP_MAX - JUMP_MIN) * _jump_charge_t) / GRAVITY
+			var frame_dur := (air_est * 0.7) / 8.0
+			if frame_dur < 0.03:
+				frame_dur = 0.03
+			if _flip_timer > frame_dur:
+				_flip_timer = 0.0
+				if flip_frame < 7:
+					flip_frame += 1
+				# else: hold at 7 (=0 visually, full rotation complete)
+		else:
+			# Full charge — continuous double flip
+			_flip_timer += delta
+			var air_est := 2.0 * absf(JUMP_MAX) / GRAVITY
+			var frame_dur := (air_est * 0.8) / 16.0  # 16 frames = 2 rotations
+			if frame_dur < 0.03:
+				frame_dur = 0.03
+			if _flip_timer > frame_dur:
+				_flip_timer = 0.0
+				flip_frame = (flip_frame + 1) % 8
 		state = PlayerState.JUMPING
 	else:
 		flip_frame = 0
 		_flip_timer = 0.0
+		_jump_charge_t = 0.0
 
-	# --- Interact: start claiming ---
+	# --- Interact: breaker → NPC dialogue → block claim ---
 	if on_floor and Input.is_action_just_pressed("interact"):
-		_try_start_claim()
-		if state == PlayerState.CLAIMING:
+		if _try_activate_breaker():
 			move_and_slide()
 			return
+		if _try_talk_to_npc():
+			pass  # dialogue shown, don't change state
+		else:
+			_try_start_claim()
+			if state == PlayerState.CLAIMING:
+				move_and_slide()
+				return
 
 	# --- Charged jump ---
 	if on_floor and Input.is_action_pressed("jump"):
@@ -127,6 +200,7 @@ func _physics_process(delta: float) -> void:
 	elif charging_jump:
 		var t := charge_jump / JUMP_CHARGE_TIME
 		velocity.y = lerpf(JUMP_MIN, JUMP_MAX, t)
+		_jump_charge_t = t
 		charging_jump = false
 		charge_jump = 0.0
 
@@ -155,11 +229,11 @@ func _physics_process(delta: float) -> void:
 			var spd := SPRINT_SPEED if sprinting else SPEED
 			velocity.x = direction * spd
 			facing_right = direction > 0.0
-			var frame_rate := 0.08 if sprinting else 0.12
+			var frame_rate := 0.12 if sprinting else 0.18
 			_walk_timer += delta
 			if _walk_timer > frame_rate:
 				_walk_timer = 0.0
-				walk_frame = (walk_frame + 1) % 4
+				walk_frame = (walk_frame + 1) % 2
 			state = PlayerState.MOVING
 		else:
 			velocity.x = 0.0
@@ -174,13 +248,49 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
+	# Snap to pixel grid — prevents sub-pixel shimmer on pixel art
+	position = position.round()
+
 	# Safety net — if player falls below the tower, teleport to floor 0
 	if position.y > 200.0:
-		position = Vector2(384.0, -10.0)
+		position = Vector2(1080.0, -10.0)
 		velocity = Vector2.ZERO
 		_dropping = false
 		state = PlayerState.IDLE
 		set_collision_mask_value(FLOOR_LAYER, true)
+
+
+func _try_activate_breaker() -> bool:
+	var sim: Node2D = get_parent()
+	if not sim.has_method("find_nearest_breaker"):
+		return false
+	var breaker: Node2D = sim.find_nearest_breaker(global_position)
+	if not breaker:
+		return false
+	# Face left (toward the wall)
+	facing_right = false
+	_activate_target = breaker
+	_activate_timer = breaker.activate()
+	state = PlayerState.ACTIVATING
+	velocity = Vector2.ZERO
+	walk_frame = 0
+	return true
+
+
+func _try_talk_to_npc() -> bool:
+	# Find nearest NPC with is_player_nearby
+	var sim: Node2D = get_parent()
+	for fi in range(10):
+		var floor_node := sim.get_node_or_null("Floor%d" % fi)
+		if not floor_node:
+			continue
+		for child in floor_node.get_children():
+			if not child.has_method("show_dialogue"):
+				continue
+			if child.is_player_nearby:
+				child.show_dialogue()
+				return true
+	return false
 
 
 func _try_start_claim() -> void:

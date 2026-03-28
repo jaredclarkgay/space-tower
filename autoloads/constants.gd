@@ -2,7 +2,7 @@ extends Node
 
 const NUM_FLOORS := 10
 const BLOCKS_PER_FLOOR := 12
-const BLOCK_WIDTH := 64
+const BLOCK_WIDTH := 180
 const FLOOR_HEIGHT := 96
 const FLOOR_SLAB := 4
 
